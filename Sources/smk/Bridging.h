@@ -5,3 +5,4 @@
 #include "services/gatt/ble_svc_gatt.h"
 #include <stdio.h>
 #include "cJSON.h"
+#include "driver/uart.h"

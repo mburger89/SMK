@@ -12,8 +12,9 @@ idf_component_register(SRCS
                        "Sources/smk/GPIORegisters.swift"
                        "Sources/componets/ble_helper.c"
                        "Sources/componets/gpio_init.c"
+                       "Sources/componets/uart_init.c"
                        INCLUDE_DIRS "Sources/smk" "Sources/componets"
-                       REQUIRES esp_hid nvs_flash bt json)
+                       REQUIRES esp_hid nvs_flash bt json driver)
 
 # Specific flags for Embedded Swift on ESP32-C6
 target_compile_options(${COMPONENT_LIB} PRIVATE

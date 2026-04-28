@@ -4,6 +4,12 @@
 @_extern(c, "send_keyboard_report")
 func send_keyboard_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
 
+@_extern(c, "init_wired_link")
+func init_wired_link()
+
+@_extern(c, "send_wired_report")
+func send_wired_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
+
 @_extern(c, "vTaskDelay")
 func vTaskDelay(_ xTicksToDelay: UInt32)
 
@@ -38,10 +44,14 @@ struct HIDReport {
 func app_main() {
     kb_log("Initialising SMK Keyboard...")
     
+    // Initialize Hardware
     let matrix = KeyMatrix()
     var debouncer = DebouncedMatrix()
     var engine = LayerEngine()
     var report = HIDReport()
+
+    // Initialize Wired Link (CH9350)
+    init_wired_link()
 
     // Sample JSON Configuration
     let configJson = """
@@ -122,9 +132,14 @@ func app_main() {
             }
         }
 
+        // 3. Dispatch Reports to all active links
         report.keys.withUnsafeBufferPointer { ptr in
             if let base = ptr.baseAddress {
+                // Send via Bluetooth
                 send_keyboard_report(report.modifier, base)
+
+                // Send via Wired (CH9350)
+                send_wired_report(report.modifier, base)
             }
         }
 
