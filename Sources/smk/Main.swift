@@ -16,6 +16,19 @@ func vTaskDelay(_ xTicksToDelay: UInt32)
 @_extern(c, "kb_log")
 func kb_log(_ msg: UnsafePointer<Int8>)
 
+enum ConnectionMode {
+    case wired
+    case bluetooth
+
+    mutating func toggle() {
+        if self == .wired {
+            self = .bluetooth
+        } else {
+            self = .wired
+        }
+    }
+}
+
 struct HIDReport {
     var modifier: UInt8 = 0
     var keys: [UInt8] = [0, 0, 0, 0, 0, 0]
@@ -53,7 +66,10 @@ func app_main() {
     // Initialize Wired Link (CH9350)
     init_wired_link()
 
-    // Sample JSON Configuration
+    var currentMode = ConnectionMode.wired
+    kb_log("Default connection mode: WIRED")
+
+    // Sample JSON Configuration (Includes toggle_conn on bottom row)
     let configJson = """
     {
         "layers": [
@@ -62,7 +78,7 @@ func app_main() {
                 ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
                 ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
                 ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
-                ["mod:leftShift", "mo:1", "tg:2", "none", "none", "none", "none", "none", "none", "none", "none", "none"]
+                ["mod:leftShift", "mo:1", "tg:2", "toggle_conn", "none", "none", "none", "none", "none", "none", "none", "none"]
             ],
             [
                 ["key:1", "key:2", "key:3", "key:4", "key:5", "key:6", "key:7", "key:8", "key:9", "key:0", "none", "none"],
@@ -99,6 +115,13 @@ func app_main() {
                     engine.toggleLayer(l)
                 case .momentaryLayer(let l):
                     engine.addMomentaryLayer(l)
+                case .toggleConnection:
+                    currentMode.toggle()
+                    if currentMode == .wired {
+                        kb_log("Connection switched to: WIRED")
+                    } else {
+                        kb_log("Connection switched to: BLUETOOTH")
+                    }
                 default:
                     break
                 }
@@ -132,14 +155,14 @@ func app_main() {
             }
         }
 
-        // 3. Dispatch Reports to all active links
+        // 3. Dispatch Reports based on active mode
         report.keys.withUnsafeBufferPointer { ptr in
             if let base = ptr.baseAddress {
-                // Send via Bluetooth
-                send_keyboard_report(report.modifier, base)
-
-                // Send via Wired (CH9350)
-                send_wired_report(report.modifier, base)
+                if currentMode == .bluetooth {
+                    send_keyboard_report(report.modifier, base)
+                } else {
+                    send_wired_report(report.modifier, base)
+                }
             }
         }
 

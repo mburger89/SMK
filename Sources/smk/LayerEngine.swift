@@ -129,10 +129,12 @@ enum KeyAction {
     case momentaryLayer(Int)
     case toggleLayer(Int)
     case transparent
+    case toggleConnection
 
     static func fromString(_ str: String) -> KeyAction {
         if str == "none" { return .none }
         if str == "trans" || str == "transparent" { return .transparent }
+        if str == "toggle_conn" { return .toggleConnection }
 
         // Manual prefix parsing for Embedded Swift
         if str.hasPrefix("key:") {
