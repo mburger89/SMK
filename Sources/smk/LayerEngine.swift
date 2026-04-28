@@ -163,15 +163,7 @@ struct LayerEngine {
     private var momentaryCounts: [Int] = [Int](repeating: 0, count: 16)
 
     // Dynamic keymap
-    private(set) var keymaps: [[[KeyAction]]] = [
-        [ // Default fallback keymap (Layer 0)
-            [.key(.a), .key(.enter), .none, .none, .none, .none, .none, .none, .none, .none, .none, .none],
-            [.none, .none, .none, .none, .none, .none, .none, .none, .none, .none, .none, .none],
-            [.none, .none, .none, .none, .none, .none, .none, .none, .none, .none, .none, .none],
-            [.none, .none, .none, .none, .none, .none, .none, .none, .none, .none, .none, .none],
-            [.modifier(.leftShift), .none, .none, .none, .none, .none, .none, .none, .none, .none, .none, .none]
-        ]
-    ]
+    private(set) var keymaps: [[[KeyAction]]] = []
     
     mutating func loadKeymap(json: String) {
         guard let root = cJSON_Parse(json) else {

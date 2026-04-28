@@ -53,25 +53,46 @@ struct HIDReport {
     }
 }
 
+struct Config {
+    var rowPins: [Int32] = []
+    var colPins: [Int32] = []
+
+    static func fromJson(_ json: String) -> Config {
+        var cfg = Config()
+        guard let root = cJSON_Parse(json) else { return cfg }
+        defer { cJSON_Delete(root) }
+
+        if let matrix = cJSON_GetObjectItem(root, "matrix") {
+            if let rows = cJSON_GetObjectItem(matrix, "rows") {
+                for i in 0..<cJSON_GetArraySize(rows) {
+                    if let item = cJSON_GetArrayItem(rows, i) {
+                        cfg.rowPins.append(Int32(item.pointee.valuedouble))
+                    }
+                }
+            }
+            if let cols = cJSON_GetObjectItem(matrix, "cols") {
+                for i in 0..<cJSON_GetArraySize(cols) {
+                    if let item = cJSON_GetArrayItem(cols, i) {
+                        cfg.colPins.append(Int32(item.pointee.valuedouble))
+                    }
+                }
+            }
+        }
+        return cfg
+    }
+}
+
 @_cdecl("app_main")
 func app_main() {
     kb_log("Initialising SMK Keyboard...")
-    
-    // Initialize Hardware
-    let matrix = KeyMatrix()
-    var debouncer = DebouncedMatrix()
-    var engine = LayerEngine()
-    var report = HIDReport()
 
-    // Initialize Wired Link (CH9350)
-    init_wired_link()
-
-    var currentMode = ConnectionMode.wired
-    kb_log("Default connection mode: WIRED")
-
-    // Sample JSON Configuration (Includes toggle_conn on bottom row)
+    // Sample JSON Configuration (Includes matrix definition)
     let configJson = """
     {
+        "matrix": {
+            "rows": [0, 1, 2, 3, 4],
+            "cols": [5, 6, 7, 9, 10, 11, 18, 19, 20, 21, 22, 23]
+        },
         "layers": [
             [
                 ["key:a", "key:s", "key:d", "key:f", "key:g", "key:h", "key:j", "key:k", "key:l", "key:enter", "none", "none"],
@@ -91,19 +112,39 @@ func app_main() {
     }
     """
 
+    let cfg = Config.fromJson(configJson)
+    if cfg.rowPins.isEmpty || cfg.colPins.isEmpty {
+        kb_log("Critical Error: No matrix defined in JSON")
+        return
+    }
+
+    // Initialize Hardware with dynamic pins
+    let matrix = KeyMatrix(rowPins: cfg.rowPins, colPins: cfg.colPins)
+    var debouncer = DebouncedMatrix(totalKeys: cfg.rowPins.count * cfg.colPins.count)
+    var engine = LayerEngine()
+    var report = HIDReport()
+
+    // Initialize Wired Link (CH9350)
+    init_wired_link()
+
+    var currentMode = ConnectionMode.wired
+    kb_log("Default connection mode: WIRED")
+
     engine.loadKeymap(json: configJson)
 
-    var lastScan = [Bool](repeating: false, count: 60)
-    var pressedActions: [KeyAction] = [KeyAction](repeating: .none, count: 60)
+    let totalKeys = cfg.rowPins.count * cfg.colPins.count
+    let colCount = cfg.colPins.count
+    var lastScan = [Bool](repeating: false, count: totalKeys)
+    var pressedActions: [KeyAction] = [KeyAction](repeating: .none, count: totalKeys)
 
     while true {
         let rawScan = matrix.scan()
         let cleanScan = debouncer.update(rawScan: rawScan)
 
         // 1. Process Edges (Press/Release)
-        for i in 0..<60 {
-            let row = i / 12
-            let col = i % 12
+        for i in 0..<totalKeys {
+            let row = i / colCount
+            let col = i % colCount
 
             if cleanScan[i] && !lastScan[i] {
                 // Key Pressed
@@ -141,7 +182,7 @@ func app_main() {
 
         // 2. Build and Send HID Report
         report.reset()
-        for i in 0..<60 {
+        for i in 0..<totalKeys {
             if cleanScan[i] {
                 let action = pressedActions[i]
                 switch action {
