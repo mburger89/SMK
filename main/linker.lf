@@ -1,0 +1,23 @@
+[sections:swift_metadata]
+entries:
+    .swift_modhash
+    .swift5_typeref
+    .swift5_reflstr
+    .swift5_fieldmd
+    .swift5_assocty
+    .swift5_proto
+    .swift5_types
+    .swift5_protos
+    .swift5_protosel
+    .swift5_capture
+    .swift5_mpenum
+    .swift5_adrt
+
+[scheme:swift_default]
+entries:
+    swift_metadata -> flash_rodata
+
+[mapping:smk_swift_mapping]
+archive: libmain.a
+entries:
+    * (swift_default)

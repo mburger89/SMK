@@ -1,6 +1,9 @@
 // The Swift Programming Language
 // https://docs.swift.org/swift-book
 
+@_extern(c, "init_ble_hid")
+func init_ble_hid()
+
 @_extern(c, "send_keyboard_report")
 func send_keyboard_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
 
@@ -82,8 +85,8 @@ struct Config {
     }
 }
 
-@_cdecl("app_main")
-func app_main() {
+@_cdecl("app_main_swift")
+func app_main_swift() {
     kb_log("Initialising SMK Keyboard...")
 
     // Sample JSON Configuration (Includes matrix definition)
@@ -123,6 +126,9 @@ func app_main() {
     var debouncer = DebouncedMatrix(totalKeys: cfg.rowPins.count * cfg.colPins.count)
     var engine = LayerEngine()
     var report = HIDReport()
+
+    // Initialize BLE Link
+    init_ble_hid()
 
     // Initialize Wired Link (CH9350)
     init_wired_link()

@@ -50,22 +50,22 @@ struct KeyMatrix {
 
         for (rIdx, rPin) in rowPins.enumerated() {
             // Pull row LOW to activate it
-            gpio.outClear.write { $0.raw = UInt32(1 << rPin) }
+            gpio.outClear = UInt32(1 << rPin)
             
             // Brief pause for electrical stabilization
             for _ in 0...50 { }
 
-            let inputState = gpio.input.read().raw
+            let inputState = gpio.input
             
             for (cIdx, cPin) in colPins.enumerated() {
                 // If the column bit is 0, the switch is closed (pressed)
-                if (inputState & (1 << cPin)) == 0 {
+                if (inputState & (1 << UInt32(cPin))) == 0 {
                     state[rIdx * colCount + cIdx] = true
                 }
             }
 
             // Return row HIGH (inactive)
-            gpio.outSet.write { $0.raw = UInt32(1 << rPin) }
+            gpio.outSet = UInt32(1 << rPin)
         }
         return state
     }

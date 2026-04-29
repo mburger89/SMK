@@ -1,18 +1,22 @@
 {
+    "matrix": {
+        "rows": [0, 1, 2, 3, 4],
+        "cols": [5, 6, 7, 9, 10, 11, 18, 19, 20, 21, 22, 23]
+    },
     "layers": [
         [
-            ["key:q", "key:w", "key:e", "key:r", "key:t", "key:y", "key:u", "key:i", "key:o", "key:p", "none", "none"],
-            ["key:a", "key:s", "key:d", "key:f", "key:g", "key:h", "key:j", "key:k", "key:l", "none", "none", "none"],
-            ["key:z", "key:x", "key:c", "key:v", "key:b", "key:n", "key:m", "none", "none", "none", "none", "none"],
+            ["key:a", "key:s", "key:d", "key:f", "key:g", "key:h", "key:j", "key:k", "key:l", "key:enter", "none", "none"],
             ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
-            ["mod:leftShift", "mo:1", "tg:2", "key:space", "key:enter", "none", "none", "none", "none", "none", "none", "none"]
+            ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
+            ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
+            ["mod:leftShift", "mo:1", "tg:2", "toggle_conn", "none", "none", "none", "none", "none", "none", "none", "none"]
         ],
         [
             ["key:1", "key:2", "key:3", "key:4", "key:5", "key:6", "key:7", "key:8", "key:9", "key:0", "none", "none"],
-            ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "none", "none", "none"],
-            ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "none", "none", "none", "none", "none"],
             ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
-            ["trans", "trans", "trans", "trans", "trans", "none", "none", "none", "none", "none", "none", "none"]
+            ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
+            ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
+            ["trans", "trans", "trans", "none", "none", "none", "none", "none", "none", "none", "none", "none"]
         ]
     ]
 }

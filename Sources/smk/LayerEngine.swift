@@ -58,67 +58,64 @@ enum KeyCode: UInt8 {
         }
     }
 
-    static func fromName(_ name: String) -> KeyCode {
-        switch name {
-        case "a": return .a
-        case "b": return .b
-        case "c": return .c
-        case "d": return .d
-        case "e": return .e
-        case "f": return .f
-        case "g": return .g
-        case "h": return .h
-        case "i": return .i
-        case "j": return .j
-        case "k": return .k
-        case "l": return .l
-        case "m": return .m
-        case "n": return .n
-        case "o": return .o
-        case "p": return .p
-        case "q": return .q
-        case "r": return .r
-        case "s": return .s
-        case "t": return .t
-        case "u": return .u
-        case "v": return .v
-        case "w": return .w
-        case "x": return .x
-        case "y": return .y
-        case "z": return .z
-        case "1": return .k1
-        case "2": return .k2
-        case "3": return .k3
-        case "4": return .k4
-        case "5": return .k5
-        case "6": return .k6
-        case "7": return .k7
-        case "8": return .k8
-        case "9": return .k9
-        case "0": return .k0
-        case "enter": return .enter
-        case "escape": return .escape
-        case "backspace": return .backspace
-        case "tab": return .tab
-        case "space": return .space
-        default: return .noKey
-        }
+    static func fromCString(_ cStr: UnsafePointer<Int8>) -> KeyCode {
+        // Use strcmp for direct byte comparison to avoid Swift String normalization
+        if strcmp(cStr, "a") == 0 { return .a }
+        if strcmp(cStr, "b") == 0 { return .b }
+        if strcmp(cStr, "c") == 0 { return .c }
+        if strcmp(cStr, "d") == 0 { return .d }
+        if strcmp(cStr, "e") == 0 { return .e }
+        if strcmp(cStr, "f") == 0 { return .f }
+        if strcmp(cStr, "g") == 0 { return .g }
+        if strcmp(cStr, "h") == 0 { return .h }
+        if strcmp(cStr, "i") == 0 { return .i }
+        if strcmp(cStr, "j") == 0 { return .j }
+        if strcmp(cStr, "k") == 0 { return .k }
+        if strcmp(cStr, "l") == 0 { return .l }
+        if strcmp(cStr, "m") == 0 { return .m }
+        if strcmp(cStr, "n") == 0 { return .n }
+        if strcmp(cStr, "o") == 0 { return .o }
+        if strcmp(cStr, "p") == 0 { return .p }
+        if strcmp(cStr, "q") == 0 { return .q }
+        if strcmp(cStr, "r") == 0 { return .r }
+        if strcmp(cStr, "s") == 0 { return .s }
+        if strcmp(cStr, "t") == 0 { return .t }
+        if strcmp(cStr, "u") == 0 { return .u }
+        if strcmp(cStr, "v") == 0 { return .v }
+        if strcmp(cStr, "w") == 0 { return .w }
+        if strcmp(cStr, "x") == 0 { return .x }
+        if strcmp(cStr, "y") == 0 { return .y }
+        if strcmp(cStr, "z") == 0 { return .z }
+        if strcmp(cStr, "1") == 0 { return .k1 }
+        if strcmp(cStr, "2") == 0 { return .k2 }
+        if strcmp(cStr, "3") == 0 { return .k3 }
+        if strcmp(cStr, "4") == 0 { return .k4 }
+        if strcmp(cStr, "5") == 0 { return .k5 }
+        if strcmp(cStr, "6") == 0 { return .k6 }
+        if strcmp(cStr, "7") == 0 { return .k7 }
+        if strcmp(cStr, "8") == 0 { return .k8 }
+        if strcmp(cStr, "9") == 0 { return .k9 }
+        if strcmp(cStr, "0") == 0 { return .k0 }
+        if strcmp(cStr, "enter") == 0 { return .enter }
+        if strcmp(cStr, "escape") == 0 { return .escape }
+        if strcmp(cStr, "backspace") == 0 { return .backspace }
+        if strcmp(cStr, "tab") == 0 { return .tab }
+        if strcmp(cStr, "space") == 0 { return .space }
+        return .noKey
     }
 }
 
 extension Modifier {
-    static func fromName(_ name: String) -> Modifier {
-        switch name {
-        case "leftCtrl": return .leftCtrl
-        case "leftShift": return .leftShift
-        case "leftAlt": return .leftAlt
-        case "leftGUI": return .leftGUI
-        case "rightCtrl": return .rightCtrl
-        case "rightShift": return .rightShift
-        case "rightAlt": return .rightAlt
-        case "rightGUI": return .rightGUI
-        default: return .leftCtrl // Default fallback
-        }
+    static func fromCString(_ cStr: UnsafePointer<Int8>) -> Modifier {
+        if strcmp(cStr, "leftCtrl") == 0 { return .leftCtrl }
+        if strcmp(cStr, "leftShift") == 0 { return .leftShift }
+        if strcmp(cStr, "leftAlt") == 0 { return .leftAlt }
+        if strcmp(cStr, "leftGUI") == 0 { return .leftGUI }
+        if strcmp(cStr, "rightCtrl") == 0 { return .rightCtrl }
+        if strcmp(cStr, "rightShift") == 0 { return .rightShift }
+        if strcmp(cStr, "rightAlt") == 0 { return .rightAlt }
+        if strcmp(cStr, "rightGUI") == 0 { return .rightGUI }
+        return .leftCtrl
     }
 }
 
@@ -131,26 +128,23 @@ enum KeyAction {
     case transparent
     case toggleConnection
 
-    static func fromString(_ str: String) -> KeyAction {
-        if str == "none" { return .none }
-        if str == "trans" || str == "transparent" { return .transparent }
-        if str == "toggle_conn" { return .toggleConnection }
+    static func fromCString(_ cStr: UnsafePointer<Int8>) -> KeyAction {
+        if strcmp(cStr, "none") == 0 { return .none }
+        if strcmp(cStr, "trans") == 0 || strcmp(cStr, "transparent") == 0 { return .transparent }
+        if strcmp(cStr, "toggle_conn") == 0 { return .toggleConnection }
 
-        // Manual prefix parsing for Embedded Swift
-        if str.hasPrefix("key:") {
-            let name = String(str.dropFirst(4))
-            return .key(KeyCode.fromName(name))
+        if strncmp(cStr, "key:", 4) == 0 {
+            return .key(KeyCode.fromCString(cStr.advanced(by: 4)))
         }
-        if str.hasPrefix("mod:") {
-            let name = String(str.dropFirst(4))
-            return .modifier(Modifier.fromName(name))
+        if strncmp(cStr, "mod:", 4) == 0 {
+            return .modifier(Modifier.fromCString(cStr.advanced(by: 4)))
         }
-        if str.hasPrefix("mo:") {
-            let val = Int(str.dropFirst(3)) ?? 0
+        if strncmp(cStr, "mo:", 3) == 0 {
+            let val = Int(atoi(cStr.advanced(by: 3)))
             return .momentaryLayer(val)
         }
-        if str.hasPrefix("tg:") {
-            let val = Int(str.dropFirst(3)) ?? 0
+        if strncmp(cStr, "tg:", 3) == 0 {
+            let val = Int(atoi(cStr.advanced(by: 3)))
             return .toggleLayer(val)
         }
 
@@ -162,53 +156,54 @@ struct LayerEngine {
     private var toggledLayers: [Bool] = [Bool](repeating: false, count: 16)
     private var momentaryCounts: [Int] = [Int](repeating: 0, count: 16)
 
-    // Dynamic keymap
     private(set) var keymaps: [[[KeyAction]]] = []
     
     mutating func loadKeymap(json: String) {
-        guard let root = cJSON_Parse(json) else {
-            kb_log("JSON Parse Error")
-            return
-        }
-        defer { cJSON_Delete(root) }
-
-        guard let layersArray = cJSON_GetObjectItem(root, "layers") else {
-            kb_log("JSON Missing 'layers' key")
-            return
-        }
-
-        let layerCount = cJSON_GetArraySize(layersArray)
-        if layerCount == 0 { return }
-
-        var newKeymaps: [[[KeyAction]]] = []
-
-        for i in 0..<layerCount {
-            guard let layerObj = cJSON_GetArrayItem(layersArray, i) else { continue }
-            let rowCount = cJSON_GetArraySize(layerObj)
-            var layer: [[KeyAction]] = []
-
-            for r in 0..<rowCount {
-                guard let rowObj = cJSON_GetArrayItem(layerObj, r) else { continue }
-                let colCount = cJSON_GetArraySize(rowObj)
-                var row: [KeyAction] = []
-
-                for c in 0..<colCount {
-                    guard let cellObj = cJSON_GetArrayItem(rowObj, c) else { continue }
-                    if let cStr = cellObj.pointee.valuestring {
-                        let actionStr = String(cString: cStr)
-                        row.append(KeyAction.fromString(actionStr))
-                    } else {
-                        row.append(.none)
-                    }
-                }
-                layer.append(row)
+        // Use JSON as a C string to avoid Swift String processing
+        json.withCString { cJsonStr in
+            guard let root = cJSON_Parse(cJsonStr) else {
+                kb_log("JSON Parse Error")
+                return
             }
-            newKeymaps.append(layer)
-        }
+            defer { cJSON_Delete(root) }
 
-        if !newKeymaps.isEmpty {
-            self.keymaps = newKeymaps
-            kb_log("Keymap loaded successfully")
+            guard let layersArray = cJSON_GetObjectItem(root, "layers") else {
+                kb_log("JSON Missing 'layers' key")
+                return
+            }
+
+            let layerCount = cJSON_GetArraySize(layersArray)
+            if layerCount == 0 { return }
+
+            var newKeymaps: [[[KeyAction]]] = []
+
+            for i in 0..<layerCount {
+                guard let layerObj = cJSON_GetArrayItem(layersArray, i) else { continue }
+                let rowCount = cJSON_GetArraySize(layerObj)
+                var layer: [[KeyAction]] = []
+
+                for r in 0..<rowCount {
+                    guard let rowObj = cJSON_GetArrayItem(layerObj, r) else { continue }
+                    let colCount = cJSON_GetArraySize(rowObj)
+                    var row: [KeyAction] = []
+
+                    for c in 0..<colCount {
+                        guard let cellObj = cJSON_GetArrayItem(rowObj, c) else { continue }
+                        if let cStr = cellObj.pointee.valuestring {
+                            row.append(KeyAction.fromCString(cStr))
+                        } else {
+                            row.append(.none)
+                        }
+                    }
+                    layer.append(row)
+                }
+                newKeymaps.append(layer)
+            }
+
+            if !newKeymaps.isEmpty {
+                self.keymaps = newKeymaps
+                kb_log("Keymap loaded successfully")
+            }
         }
     }
 

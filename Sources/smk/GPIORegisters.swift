@@ -1,19 +1,27 @@
-import MMIO
-
-@RegisterBank
 struct GPIORegisters {
+    let baseAddress: UnsafeMutablePointer<UInt32>
+
+    init(address: UInt32) {
+        self.baseAddress = UnsafeMutablePointer<UInt32>(bitPattern: UInt(address))!
+    }
+
     // Offset 0x0004: GPIO_OUT_W1TS_REG (Set bits)
-    @Register(bitWidth: 32)
-    var outSet: OutSet
+    var outSet: UInt32 {
+        get { baseAddress.advanced(by: 1).pointee }
+        nonmutating set { baseAddress.advanced(by: 1).pointee = newValue }
+    }
     
     // Offset 0x0008: GPIO_OUT_W1TC_REG (Clear bits)
-    @Register(bitWidth: 32)
-    var outClear: OutClear
+    var outClear: UInt32 {
+        get { baseAddress.advanced(by: 2).pointee }
+        nonmutating set { baseAddress.advanced(by: 2).pointee = newValue }
+    }
     
     // Offset 0x003C: GPIO_IN_REG (Read data)
-    @Register(bitWidth: 32)
-    var input: Input
+    var input: UInt32 {
+        get { baseAddress.advanced(by: 15).pointee }
+    }
 }
 
-// Instantiate the bank at the correct memory address
-let gpio = GPIORegisters(unsafeAddress: 0x60091000)
+// Instantiate the bank at the correct memory address for ESP32-C6 GPIO
+let gpio = GPIORegisters(address: 0x60091000)
