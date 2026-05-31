@@ -26,17 +26,18 @@ jobs:
             apt-get install -y binutils-dev libcurl4-openssl-dev libedit-dev libicu-dev libncurses5-dev libpython3-dev libsqlite3-dev libxml2-dev libz3-dev pkg-config tzdata zlib1g-dev
 
             # Download and setup Swift Nightly (Experimental RISC-V support is in snapshots)
-            # Using a specific snapshot known to have better RISC-V/Embedded support
             SWIFT_SNAPSHOT="swift-6.0-DEVELOPMENT-SNAPSHOT-2024-09-19-a"
-            curl -L -o swift.tar.gz https://download.swift.org/swift-6.0-branch/ubuntu2204/${SWIFT_SNAPSHOT}/${SWIFT_SNAPSHOT}-ubuntu22.04.tar.gz
+            curl -L -o swift.tar.gz https://download.swift.org/swift-6.0-branch/ubuntu2204/${SWIFT_SNAPSHOT}/${SWIFT_SNAPSHOT}-ubuntu2204.tar.gz
             tar xzf swift.tar.gz
-            export PATH=$PATH:$(pwd)/${SWIFT_SNAPSHOT}-ubuntu22.04/usr/bin
+            
+            # Find the actual bin directory (resilient to folder structure changes)
+            export SWIFTC_PATH=$(pwd)/$(find . -name swiftc -type f | head -n 1)
+            export PATH=$(dirname $SWIFTC_PATH):$PATH
 
             # Verify toolchain
-            swiftc --version
+            $SWIFTC_PATH --version
             
             # Build project (Passing SWIFTC_PATH explicitly to CMake)
-            export SWIFTC_PATH=$(which swiftc)
             idf.py build -DSWIFTC_PATH=$SWIFTC_PATH
 
       - name: Upload Artifacts
