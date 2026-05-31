@@ -1,0 +1,43 @@
+name: Build SMK Firmware
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.0"
+
+      - name: Build Firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v6.0
+          target: esp32c6
+          command: |
+            # Ensure Swift is in the PATH for the sub-shell
+            export PATH=$PATH:$(dirname $(which swiftc))
+            
+            # Configure and Build
+            idf.py build
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: smk-firmware
+          path: |
+            build/my_swift_keyboard.bin
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+            build/flashing_args

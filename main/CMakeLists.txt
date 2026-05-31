@@ -29,13 +29,15 @@ if(NOT EXISTS "${SWIFTC_PATH}")
     set(SWIFTC_PATH "swiftc")
 endif()
 
-set(idf_p "$ENV{IDF_PATH}")
+set(idf_p "${IDF_PATH}")
 if(NOT idf_p)
-    set(idf_p "$ENV{HOME}/.espressif/v6.0.1/esp-idf")
+    set(idf_p "$ENV{IDF_PATH}")
 endif()
 
-# Identify the RISC-V toolchain's include directory
-set(RISCV_TOOLCHAIN_INCLUDE "$ENV{HOME}/.espressif/tools/riscv32-esp-elf/esp-15.2.0_20251204/riscv32-esp-elf/riscv32-esp-elf/include")
+# Identify the RISC-V toolchain's include directory dynamically
+get_filename_component(gcc_dir "${CMAKE_C_COMPILER}" DIRECTORY)
+get_filename_component(toolchain_root "${gcc_dir}/.." ABSOLUTE)
+set(RISCV_TOOLCHAIN_INCLUDE "${toolchain_root}/riscv32-esp-elf/include")
 
 # Comprehensive include directories for Swift
 set(include_dirs
