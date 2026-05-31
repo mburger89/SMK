@@ -26,11 +26,18 @@ jobs:
             apt-get update
             apt-get install -y binutils-dev libcurl4-openssl-dev libedit-dev libicu-dev libncurses5-dev libpython3-dev libsqlite3-dev libxml2-dev libz3-dev pkg-config tzdata zlib1g-dev
 
-            # Download and setup Swift Nightly
-            SWIFT_SNAPSHOT="swift-6.0-DEVELOPMENT-SNAPSHOT-2024-09-19-a"
+            # Download and setup Swift Nightly (Experimental RISC-V support is in snapshots)
+            # Using a known stable snapshot for Ubuntu 22.04
+            SWIFT_SNAPSHOT="swift-6.0-DEVELOPMENT-SNAPSHOT-2024-07-03-a"
             SWIFT_URL="https://download.swift.org/swift-6.0-branch/ubuntu2204/${SWIFT_SNAPSHOT}/${SWIFT_SNAPSHOT}-ubuntu22.04.tar.gz"
             echo "Downloading Swift from $SWIFT_URL"
-            curl -L -o swift.tar.gz "$SWIFT_URL"
+            
+            # Using wget with retries and checking if file is valid
+            wget -q "$SWIFT_URL" -O swift.tar.gz
+            if [ ! -s swift.tar.gz ]; then
+                echo "Error: Failed to download Swift toolchain"
+                exit 1
+            fi
             
             mkdir -p swift-toolchain
             tar xzf swift.tar.gz -C swift-toolchain --strip-components=1
@@ -38,16 +45,10 @@ jobs:
             export SWIFTC_PATH="$(pwd)/swift-toolchain/usr/bin/swiftc"
             export PATH="$(pwd)/swift-toolchain/usr/bin:$PATH"
 
-            if [ ! -f "$SWIFTC_PATH" ]; then
-                echo "Error: swiftc not found at $SWIFTC_PATH"
-                find swift-toolchain -name swiftc
-                exit 1
-            fi
-
             # Verify toolchain
             $SWIFTC_PATH --version
             
-            # Build project (Passing SWIFTC_PATH explicitly to CMake)
+            # Build project
             idf.py build -DSWIFTC_PATH="$SWIFTC_PATH"
 
       - name: Upload Artifacts
