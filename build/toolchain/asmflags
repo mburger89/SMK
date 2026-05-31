@@ -1,2 +1,0 @@
--march=rv32imac_zicsr_zifencei_zaamo_zalrsc
-"-specs=/Users/maxburger/esp/smk/build/specs/picolibc.specs"
