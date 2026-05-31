@@ -29,33 +29,47 @@ get_filename_component(bridging_header "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/s
 
 # Locate Swift Compiler
 if(NOT SWIFTC_PATH)
-    # 1. Check if swiftc is in the environment
+    # 1. Check if SWIFTC_PATH is passed via CMake define (e.g. -DSWIFTC_PATH=...)
+    # 2. Check if SWIFTC_PATH is in the environment
     if(DEFINED ENV{SWIFTC_PATH})
         set(SWIFTC_PATH "$ENV{SWIFTC_PATH}")
     endif()
 endif()
 
 if(NOT SWIFTC_PATH)
-    # 2. Prioritize custom toolchains over system ones
-    file(GLOB custom_toolchains "/Users/maxburger/Library/Developer/Toolchains/*.xctoolchain")
-    foreach(toolchain ${custom_toolchains})
-        if(EXISTS "${toolchain}/usr/bin/swiftc")
-            set(TRY_SWIFTC "${toolchain}/usr/bin/swiftc")
-            # Test if this compiler supports our target
-            execute_process(COMMAND ${TRY_SWIFTC} -target ${TARGET_TRIPLE} -print-target-info
-                            RESULT_VARIABLE target_ok
-                            OUTPUT_QUIET ERROR_QUIET)
-            if(target_ok EQUAL 0)
-                set(SWIFTC_PATH "${TRY_SWIFTC}")
-                break()
+    # 3. Prioritize custom toolchains over system ones
+    set(TOOLCHAIN_SEARCH_PATHS
+        "$ENV{HOME}/Library/Developer/Toolchains"
+        "/Library/Developer/Toolchains"
+    )
+    foreach(search_path ${TOOLCHAIN_SEARCH_PATHS})
+        file(GLOB custom_toolchains "${search_path}/*.xctoolchain")
+        foreach(toolchain ${custom_toolchains})
+            if(EXISTS "${toolchain}/usr/bin/swiftc")
+                set(TRY_SWIFTC "${toolchain}/usr/bin/swiftc")
+                # Test if this compiler supports our target
+                execute_process(COMMAND ${TRY_SWIFTC} -target ${TARGET_TRIPLE} -print-target-info
+                                RESULT_VARIABLE target_ok
+                                OUTPUT_QUIET ERROR_QUIET)
+                if(target_ok EQUAL 0)
+                    set(SWIFTC_PATH "${TRY_SWIFTC}")
+                    break()
+                endif()
             endif()
+        endforeach()
+        if(SWIFTC_PATH)
+            break()
         endif()
     endforeach()
 endif()
 
 if(NOT SWIFTC_PATH)
-    # 3. Fallback to system swiftc
+    # 4. Fallback to system swiftc
     find_program(SWIFTC_PATH swiftc)
+endif()
+
+if(NOT SWIFTC_PATH)
+    message(FATAL_ERROR "Swift compiler (swiftc) not found! Please set SWIFTC_PATH.")
 endif()
 message(STATUS "Using Swift compiler: ${SWIFTC_PATH}")
 

@@ -34,9 +34,9 @@ jobs:
 
             # Verify toolchain
             swiftc --version
-
-            # Build project
-            idf.py build
+            
+            # Build project (Passing SWIFTC_PATH explicitly to CMake)
+            idf.py build -DSWIFTC_PATH=$(which swiftc)
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
