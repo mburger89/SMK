@@ -2,23 +2,18 @@ name: Build SMK Firmware
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Setup Swift
-        uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: "6.0"
 
       - name: Build Firmware
         uses: espressif/esp-idf-ci-action@v1
@@ -26,10 +21,20 @@ jobs:
           esp_idf_version: v6.0
           target: esp32c6
           command: |
-            # Ensure Swift is in the PATH for the sub-shell
-            export PATH=$PATH:$(dirname $(which swiftc))
-            
-            # Configure and Build
+            # Install Swift dependencies inside the container
+            apt-get update
+            apt-get install -y binutils-dev libcurl4-openssl-dev libedit-dev libicu-dev libncurses5-dev libpython3-dev libsqlite3-dev libxml2-dev libz3-dev pkg-config tzdata zlib1g-dev
+
+            # Download and setup Swift 6.3.1
+            SWIFT_FILE="swift-6.3.1-RELEASE-ubuntu22.04"
+            curl -L -o swift.tar.gz https://download.swift.org/swift-6.3.1-release/ubuntu2204/swift-6.3.1-RELEASE/${SWIFT_FILE}.tar.gz
+            tar xzf swift.tar.gz
+            export PATH=$PATH:$(pwd)/${SWIFT_FILE}/usr/bin
+
+            # Verify toolchain
+            swiftc --version
+
+            # Build project
             idf.py build
 
       - name: Upload Artifacts

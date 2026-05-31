@@ -23,11 +23,15 @@ idf_component_register(SRCS ${c_srcs}
 # Absolute path for bridging header
 get_filename_component(bridging_header "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/Bridging.h" ABSOLUTE)
 
-# Use the 6.3.1 toolchain
-set(SWIFTC_PATH "$ENV{HOME}/Library/Developer/Toolchains/swift-6.3.1-RELEASE.xctoolchain/usr/bin/swiftc")
-if(NOT EXISTS "${SWIFTC_PATH}")
-    set(SWIFTC_PATH "swiftc")
+# Locate Swift Compiler
+if(NOT SWIFTC_PATH)
+    find_program(SWIFTC_PATH swiftc)
 endif()
+if(NOT SWIFTC_PATH)
+    set(SWIFTC_PATH "$ENV{HOME}/Library/Developer/Toolchains/swift-6.3.1-RELEASE.xctoolchain/usr/bin/swiftc")
+endif()
+message(STATUS "Using Swift compiler: ${SWIFTC_PATH}")
+
 
 set(idf_p "${IDF_PATH}")
 if(NOT idf_p)
