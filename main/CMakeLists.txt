@@ -20,15 +20,42 @@ idf_component_register(SRCS ${c_srcs}
 
 # --- Swift Compilation Step ---
 
+# Target triple for ESP32-C6 (RISC-V)
+set(TARGET_TRIPLE "riscv32-none-none-eabi")
+message(STATUS "Targeting triple: ${TARGET_TRIPLE}")
+
 # Absolute path for bridging header
 get_filename_component(bridging_header "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/Bridging.h" ABSOLUTE)
 
 # Locate Swift Compiler
 if(NOT SWIFTC_PATH)
-    find_program(SWIFTC_PATH swiftc)
+    # 1. Check if swiftc is in the environment
+    if(DEFINED ENV{SWIFTC_PATH})
+        set(SWIFTC_PATH "$ENV{SWIFTC_PATH}")
+    endif()
 endif()
+
 if(NOT SWIFTC_PATH)
-    set(SWIFTC_PATH "$ENV{HOME}/Library/Developer/Toolchains/swift-6.3.1-RELEASE.xctoolchain/usr/bin/swiftc")
+    # 2. Prioritize custom toolchains over system ones
+    file(GLOB custom_toolchains "/Users/maxburger/Library/Developer/Toolchains/*.xctoolchain")
+    foreach(toolchain ${custom_toolchains})
+        if(EXISTS "${toolchain}/usr/bin/swiftc")
+            set(TRY_SWIFTC "${toolchain}/usr/bin/swiftc")
+            # Test if this compiler supports our target
+            execute_process(COMMAND ${TRY_SWIFTC} -target ${TARGET_TRIPLE} -print-target-info
+                            RESULT_VARIABLE target_ok
+                            OUTPUT_QUIET ERROR_QUIET)
+            if(target_ok EQUAL 0)
+                set(SWIFTC_PATH "${TRY_SWIFTC}")
+                break()
+            endif()
+        endif()
+    endforeach()
+endif()
+
+if(NOT SWIFTC_PATH)
+    # 3. Fallback to system swiftc
+    find_program(SWIFTC_PATH swiftc)
 endif()
 message(STATUS "Using Swift compiler: ${SWIFTC_PATH}")
 
@@ -103,9 +130,6 @@ if(component_defines)
         endif()
     endforeach()
 endif()
-
-# Target triple
-set(TARGET_TRIPLE "riscv32-none-none-eabi")
 
 set(swift_obj "${CMAKE_CURRENT_BINARY_DIR}/smk_swift.o")
 
