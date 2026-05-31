@@ -43,6 +43,9 @@ if(NOT SWIFTC_PATH)
         "/Library/Developer/Toolchains"
     )
     foreach(search_path ${TOOLCHAIN_SEARCH_PATHS})
+        if(NOT EXISTS "${search_path}")
+            continue()
+        endif()
         file(GLOB custom_toolchains "${search_path}/*.xctoolchain")
         foreach(toolchain ${custom_toolchains})
             if(EXISTS "${toolchain}/usr/bin/swiftc")
@@ -65,7 +68,10 @@ endif()
 
 if(NOT SWIFTC_PATH)
     # 4. Fallback to system swiftc
-    find_program(SWIFTC_PATH swiftc)
+    find_program(SWIFTC_PATH_PROG swiftc)
+    if(SWIFTC_PATH_PROG)
+        set(SWIFTC_PATH "${SWIFTC_PATH_PROG}")
+    endif()
 endif()
 
 if(NOT SWIFTC_PATH)
