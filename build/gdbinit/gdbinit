@@ -1,0 +1,2 @@
+source /Users/maxburger/esp/smk/build/gdbinit/symbols
+source /Users/maxburger/esp/smk/build/gdbinit/connect

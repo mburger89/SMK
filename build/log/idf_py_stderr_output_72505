@@ -1,0 +1,10 @@
+Command: cmake -G Ninja -B /Users/maxburger/esp/smk/build -DPYTHON_DEPS_CHECKED=1 -DPYTHON=/Users/maxburger/.espressif/tools/python/v6.0.1/venv/bin/python -DESP_PLATFORM=1 -DIDF_TARGET=esp32c6 -DCCACHE_ENABLE=False /Users/maxburger/esp/smk
+Loading defaults file /Users/maxburger/esp/smk/sdkconfig.defaults...
+Configuration Report               
+ ───────────────────────────────── 
+   Parser Version: 1               
+   Verbosity: default              
+   Defaults policy: sdkconfig      
+   Status: Finished successfully   
+                                   
+ ───────────────────────────────── 

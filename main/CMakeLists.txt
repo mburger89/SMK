@@ -15,7 +15,7 @@ set(c_srcs
 # Register C sources and linker fragment
 idf_component_register(SRCS ${c_srcs}
                        INCLUDE_DIRS "../Sources/smk" "../Sources/componets"
-                       REQUIRES esp_hid nvs_flash bt json driver esp_event esp_driver_uart
+                       REQUIRES esp_hid nvs_flash bt cjson driver esp_event esp_driver_uart esp_driver_gpio
                        LDFRAGMENTS "linker.lf")
 
 # --- Swift Compilation Step ---
@@ -24,18 +24,18 @@ idf_component_register(SRCS ${c_srcs}
 get_filename_component(bridging_header "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/Bridging.h" ABSOLUTE)
 
 # Use the 6.3.1 toolchain
-set(SWIFTC_PATH "/Users/ansonburger/Library/Developer/Toolchains/swift-6.3.1-RELEASE.xctoolchain/usr/bin/swiftc")
+set(SWIFTC_PATH "$ENV{HOME}/Library/Developer/Toolchains/swift-6.3.1-RELEASE.xctoolchain/usr/bin/swiftc")
 if(NOT EXISTS "${SWIFTC_PATH}")
     set(SWIFTC_PATH "swiftc")
 endif()
 
 set(idf_p "$ENV{IDF_PATH}")
 if(NOT idf_p)
-    set(idf_p "/Users/ansonburger/esp/esp-idf")
+    set(idf_p "$ENV{HOME}/.espressif/v6.0.1/esp-idf")
 endif()
 
 # Identify the RISC-V toolchain's include directory
-set(RISCV_TOOLCHAIN_INCLUDE "/Users/ansonburger/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20250730/riscv32-esp-elf/riscv32-esp-elf/include")
+set(RISCV_TOOLCHAIN_INCLUDE "$ENV{HOME}/.espressif/tools/riscv32-esp-elf/esp-15.2.0_20251204/riscv32-esp-elf/riscv32-esp-elf/include")
 
 # Comprehensive include directories for Swift
 set(include_dirs
@@ -43,7 +43,7 @@ set(include_dirs
     "${CMAKE_BINARY_DIR}/config"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/componets"
-    "${idf_p}/components/newlib/platform_include"
+    "${idf_p}/components/esp_libc/platform_include"
     "${idf_p}/components/freertos/FreeRTOS-Kernel/include"
     "${idf_p}/components/freertos/FreeRTOS-Kernel/include/freertos"
     "${idf_p}/components/freertos/FreeRTOS-Kernel/portable/riscv/include"
@@ -76,7 +76,9 @@ set(include_dirs
     "${idf_p}/components/esp_event/include"
     "${idf_p}/components/driver/include"
     "${idf_p}/components/esp_driver_uart/include"
-    "${idf_p}/components/json/cJSON"
+    "${idf_p}/components/esp_driver_gpio/include"
+    "${idf_p}/components/esp_timer/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../managed_components/espressif__cjson/cJSON"
 )
 
 set(swift_flags "")
