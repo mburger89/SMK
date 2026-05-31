@@ -172,7 +172,7 @@ func app_main_swift() {
                 default:
                     break
                 }
-            } else if !lastScan[i] && cleanScan[i] == false { // Key Released
+            } else if lastScan[i] && !cleanScan[i] { // Key Released
                 let action = pressedActions[i]
 
                 switch action {
@@ -213,6 +213,6 @@ func app_main_swift() {
             }
         }
 
-        vTaskDelay(10) 
+        vTaskDelay(1)
     }
 }
