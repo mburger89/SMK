@@ -77,6 +77,3 @@ To enable code completion and syntax highlighting in VS Code or Xcode:
 1. Ensure `Package.swift` is present in the root.
 2. The `Package.swift` is configured to point to your local ESP-IDF headers.
 3. Restart your Swift Language Server (SourceKit-LSP) after making changes to dependencies.
-
-## License
-[Add License Info Here]
