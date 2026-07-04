@@ -3,6 +3,7 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/LayerEngine.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/KeyMatrix.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/GPIORegisters.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/RGBLighting.swift"
 )
 
 set(c_srcs
@@ -10,12 +11,14 @@ set(c_srcs
     "../Sources/componets/gpio_init.c"
     "../Sources/componets/uart_init.c"
     "../Sources/componets/kb_main.c"
+    "../Sources/componets/led_strip_encoder.c"
+    "../Sources/componets/led_strip_driver.c"
 )
 
 # Register C sources and linker fragment
 idf_component_register(SRCS ${c_srcs}
                        INCLUDE_DIRS "../Sources/smk" "../Sources/componets"
-                       REQUIRES esp_hid nvs_flash bt cjson driver esp_event esp_driver_uart esp_driver_gpio
+                       REQUIRES esp_hid nvs_flash bt cjson driver esp_event esp_driver_uart esp_driver_gpio esp_driver_rmt
                        LDFRAGMENTS "linker.lf")
 
 # --- Swift Compilation Step ---
