@@ -1,0 +1,7 @@
+# GDB init for RP2040 remote debugging via OpenOCD + picoprobe
+# Used by the "Debug Pico" and "Debug Pico W" CLion run configurations.
+
+set mem inaccessible-by-default off
+
+# Halt both cores on connect; RP2040 is dual-core so target core0 explicitly
+monitor reset halt

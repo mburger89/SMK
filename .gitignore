@@ -24,3 +24,19 @@ DerivedData/
 # Project Specific
 .artifacts/
 .cache/
+
+# RP2040 build output
+build_rp2040_pico/
+build_rp2040_pico_w/
+
+# CMakePresets.json files hardcode local toolchain paths (ESP-IDF, pico-sdk) —
+# personal machine config, not portable across contributors.
+CMakePresets.json
+ports/rp2040/CMakePresets.json
+
+# Flash/debug helper scripts with hardcoded local ESP-IDF paths
+flash_esp32c6.sh
+openocd_esp32c6.sh
+
+# Claude scratch / discovery files
+.scratch/

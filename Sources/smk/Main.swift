@@ -127,6 +127,11 @@ func app_main_swift() {
     var engine = LayerEngine()
     var report = HIDReport()
 
+    // Per-key RGB backlight (SK6812MINI-E chain, IO0 per the PCB's GPIO
+    // mapping). RGBLighting maps (row, col) -> chain position internally —
+    // see its ledChainIndex, which must match generate_pcb.py's.
+    var rgb = RGBLighting(gpioNum: 0, rowCount: cfg.rowPins.count, colCount: cfg.colPins.count)
+
     // Initialize BLE Link
     init_ble_hid()
 
@@ -156,6 +161,7 @@ func app_main_swift() {
                 // Key Pressed
                 let action = engine.getAction(row: row, col: col)
                 pressedActions[i] = action
+                rgb.setKey(row: row, col: col, r: 255, g: 255, b: 255)
 
                 switch action {
                 case .toggleLayer(let l):
@@ -174,6 +180,7 @@ func app_main_swift() {
                 }
             } else if lastScan[i] && !cleanScan[i] { // Key Released
                 let action = pressedActions[i]
+                rgb.setKey(row: row, col: col, r: 0, g: 0, b: 0)
 
                 switch action {
                 case .momentaryLayer(let l):
@@ -185,6 +192,7 @@ func app_main_swift() {
             }
         }
         lastScan = cleanScan
+        rgb.refreshIfDirty()
 
         // 2. Build and Send HID Report
         report.reset()
