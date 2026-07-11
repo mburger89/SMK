@@ -1,0 +1,16 @@
+# GDB init for ESP32-C6 remote debugging via OpenOCD
+# Used by the "Debug ESP32-C6" CLion run configuration.
+
+set mem inaccessible-by-default off
+set remote hardware-watchpoint-limit 2
+
+# Halt the core on connect so we can set breakpoints before continuing
+monitor reset halt
+
+# Load symbols (ELF already specified in run config, this is a no-op safety net)
+# add-symbol-file build/my_swift_keyboard.elf 0
+
+# Handy aliases
+define restart
+  monitor reset halt
+end
