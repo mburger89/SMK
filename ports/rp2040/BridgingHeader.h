@@ -20,9 +20,11 @@
 
 // --- Platform glue implemented in ports/rp2040/platform/*.c ---
 
-// GPIO matrix (gpio_init.c)
+// GPIO matrix (gpio_init.c) — colsAreDriven selects which wiring convention
+// to configure; see the comment in Sources/smk/KeyMatrix.swift.
 void init_keyboard_pins(const int32_t *rows, int32_t row_count,
-                        const int32_t *cols, int32_t col_count);
+                        const int32_t *cols, int32_t col_count,
+                        int32_t colsAreDriven);
 
 // USB HID — the "wired" path on RP2040 (usb_hid.c)
 void init_wired_link(void);
@@ -31,6 +33,12 @@ void send_wired_report(uint8_t modifier, uint8_t *keycodes);
 // BLE HID — real on Pico W, no-op stub on plain Pico (ble_hid.c)
 void init_ble_hid(void);
 void send_keyboard_report(uint8_t modifier, uint8_t *keycodes);
+
+// Board/connection-mode config (platform_glue.c). RP2040 always has real
+// native-USB wired HID, so this is hardcoded true/wired-default here rather
+// than driven by a Kconfig-style option (no menuconfig on this build).
+int smk_has_wired_bridge(void);
+int smk_default_mode_is_wired(void);
 
 // Logging + cooperative delay (platform_glue.c)
 void kb_log(const char *msg);

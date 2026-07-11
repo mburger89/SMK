@@ -19,6 +19,27 @@ func vTaskDelay(_ xTicksToDelay: UInt32)
 @_extern(c, "kb_log")
 func kb_log(_ msg: UnsafePointer<Int8>)
 
+// Board/connection-mode config — see Sources/componets/smk_config.c (ESP32,
+// backed by Kconfig) and ports/rp2040/platform/platform_glue.c (RP2040,
+// hardcoded since that build always has real native-USB wired HID).
+@_extern(c, "smk_has_wired_bridge")
+func smk_has_wired_bridge() -> Int32
+
+@_extern(c, "smk_default_mode_is_wired")
+func smk_default_mode_is_wired() -> Int32
+
+// RGB backlight config — only declared/referenced when this build compiles
+// RGBLighting.swift in (ESP32-C6, via -DSMK_RGB_AVAILABLE in
+// main/CMakeLists.txt). RP2040 doesn't include RGBLighting.swift at all, so
+// this whole block must not exist there either, or the type lookup fails.
+#if SMK_RGB_AVAILABLE
+@_extern(c, "smk_has_rgb_backlight")
+func smk_has_rgb_backlight() -> Int32
+
+@_extern(c, "smk_rgb_gpio")
+func smk_rgb_gpio() -> Int32
+#endif
+
 enum ConnectionMode {
     case wired
     case bluetooth
@@ -59,6 +80,7 @@ struct HIDReport {
 struct Config {
     var rowPins: [Int32] = []
     var colPins: [Int32] = []
+    var colsAreDriven: Bool = false
 
     static func fromJson(_ json: String) -> Config {
         var cfg = Config()
@@ -80,6 +102,9 @@ struct Config {
                     }
                 }
             }
+            if let driven = cJSON_GetObjectItem(matrix, "colsAreDriven") {
+                cfg.colsAreDriven = driven.pointee.valuedouble != 0
+            }
         }
         return cfg
     }
@@ -89,27 +114,44 @@ struct Config {
 func app_main_swift() {
     kb_log("Initialising SMK Keyboard...")
 
-    // Sample JSON Configuration (Includes matrix definition)
+    // gateron_lp_kbd board (ESP32-C6-MINI-1) — GPIO map per that PCB's
+    // README (source of truth for firmware pin assignments):
+    //   ROW0-3 = IO0-IO3, ROW4 = IO5 (sense inputs, pull-down)
+    //   COL0-11 = IO6, IO7, IO8, IO14, IO15, IO18, IO19, IO20, IO21, IO22,
+    //             IO23, IO17 (strobe outputs)
+    //   IO4 is reserved for the battery-sense ADC (VBAT/2 divider) on this
+    //   board and must NOT be used by the matrix.
+    // colsAreDriven:1 because this board's matrix is COL2ROW (diode anode
+    // at the column/switch side) — see KeyMatrix.swift for why that means
+    // columns must be the driven/output side, not rows.
+    //
+    // Row 4 layout is irregular per the PCB: 5 keys (cols 0-4), one 2U key
+    // (col 5), no switch at col 6, then 5 more keys (cols 7-11) — 59
+    // physical keys total over the 5x12 = 60 matrix positions.
+    //
+    // This board has no per-key RGB chain and no CH9350 wired-HID bridge —
+    // see notes below on both.
     let configJson = """
     {
         "matrix": {
-            "rows": [0, 1, 2, 3, 4],
-            "cols": [5, 6, 7, 9, 10, 11, 18, 19, 16, 17, 22, 23]
+            "rows": [0, 1, 2, 3, 5],
+            "cols": [6, 7, 8, 14, 15, 18, 19, 20, 21, 22, 23, 17],
+            "colsAreDriven": 1
         },
         "layers": [
             [
-                ["key:a", "key:s", "key:d", "key:f", "key:g", "key:h", "key:j", "key:k", "key:l", "key:enter", "none", "none"],
-                ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
-                ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
-                ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
-                ["mod:leftShift", "mo:1", "tg:2", "toggle_conn", "none", "none", "none", "none", "none", "none", "none", "none"]
+                ["key:1", "key:2", "key:3", "key:4", "key:5", "key:6", "key:7", "key:8", "key:9", "key:0", "key:minus", "key:backspace"],
+                ["key:tab", "key:q", "key:w", "key:e", "key:r", "key:t", "key:y", "key:u", "key:i", "key:o", "key:p", "key:backslash"],
+                ["key:escape", "key:a", "key:s", "key:d", "key:f", "key:g", "key:h", "key:j", "key:k", "key:l", "key:semicolon", "key:enter"],
+                ["mod:leftShift", "key:z", "key:x", "key:c", "key:v", "key:b", "key:n", "key:m", "key:comma", "key:period", "key:slash", "mod:rightShift"],
+                ["mod:leftCtrl", "mod:leftGUI", "mod:leftAlt", "mo:1", "mod:leftShift", "key:space", "none", "mod:rightShift", "mo:1", "mod:rightAlt", "mod:rightGUI", "mod:rightCtrl"]
             ],
             [
-                ["key:1", "key:2", "key:3", "key:4", "key:5", "key:6", "key:7", "key:8", "key:9", "key:0", "none", "none"],
-                ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
-                ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
-                ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
-                ["trans", "trans", "trans", "none", "none", "none", "none", "none", "none", "none", "none", "none"]
+                ["toggle_conn", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "key:left", "key:down", "key:up", "key:right", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "none", "trans", "trans", "trans", "trans", "trans"]
             ]
         ]
     }
@@ -122,24 +164,46 @@ func app_main_swift() {
     }
 
     // Initialize Hardware with dynamic pins
-    let matrix = KeyMatrix(rowPins: cfg.rowPins, colPins: cfg.colPins)
+    let matrix = KeyMatrix(rowPins: cfg.rowPins, colPins: cfg.colPins, colsAreDriven: cfg.colsAreDriven)
     var debouncer = DebouncedMatrix(totalKeys: cfg.rowPins.count * cfg.colPins.count)
     var engine = LayerEngine()
     var report = HIDReport()
 
-    // Per-key RGB backlight (SK6812MINI-E chain, IO0 per the PCB's GPIO
-    // mapping). RGBLighting maps (row, col) -> chain position internally —
-    // see its ledChainIndex, which must match generate_pcb.py's.
-    var rgb = RGBLighting(gpioNum: 0, rowCount: cfg.rowPins.count, colCount: cfg.colPins.count)
+    // Per-key RGB backlight — opt-in, off by default. The stock gateron_lp_kbd
+    // PCB has no SK6812MINI-E chain (just a fixed charge-status LED), so
+    // there's nothing to drive unless you've wired one up yourself. Enable
+    // via `idf.py menuconfig` -> SMK Keyboard Configuration ->
+    // SMK_HAS_RGB_BACKLIGHT, and set SMK_RGB_GPIO to match your wiring
+    // (defaults to IO16, the PCB's one documented spare/unconnected pad).
+    // Guarded against colliding with a matrix pin, since GPIO0 (the old
+    // hardcoded default) is ROW0 here and would silently break scanning.
+    #if SMK_RGB_AVAILABLE
+    var rgb: RGBLighting? = nil
+    if smk_has_rgb_backlight() != 0 {
+        let ledPin = smk_rgb_gpio()
+        if cfg.rowPins.contains(ledPin) || cfg.colPins.contains(ledPin) {
+            kb_log("RGB backlight disabled: SMK_RGB_GPIO collides with a matrix pin")
+        } else {
+            rgb = RGBLighting(gpioNum: ledPin, rowCount: cfg.rowPins.count, colCount: cfg.colPins.count)
+            kb_log("RGB backlight enabled")
+        }
+    }
+    #endif
 
     // Initialize BLE Link
     init_ble_hid()
 
-    // Initialize Wired Link (CH9350)
-    init_wired_link()
+    // Initialize Wired Link — only if this board actually has the CH9350
+    // bridge (Kconfig SMK_HAS_WIRED_BRIDGE / RP2040 hardcoded true). The
+    // gateron_lp_kbd board doesn't: its UART1 RX pin (GPIO20) is also a
+    // matrix column, so claiming it for UART here would break scanning.
+    let hasWiredBridge = smk_has_wired_bridge() != 0
+    if hasWiredBridge {
+        init_wired_link()
+    }
 
-    var currentMode = ConnectionMode.wired
-    kb_log("Default connection mode: WIRED")
+    var currentMode: ConnectionMode = (hasWiredBridge && smk_default_mode_is_wired() != 0) ? .wired : .bluetooth
+    kb_log(currentMode == .wired ? "Default connection mode: WIRED" : "Default connection mode: BLUETOOTH")
 
     engine.loadKeymap(json: configJson)
 
@@ -161,7 +225,9 @@ func app_main_swift() {
                 // Key Pressed
                 let action = engine.getAction(row: row, col: col)
                 pressedActions[i] = action
-                rgb.setKey(row: row, col: col, r: 255, g: 255, b: 255)
+                #if SMK_RGB_AVAILABLE
+                rgb?.setKey(row: row, col: col, r: 255, g: 255, b: 255)
+                #endif
 
                 switch action {
                 case .toggleLayer(let l):
@@ -169,18 +235,20 @@ func app_main_swift() {
                 case .momentaryLayer(let l):
                     engine.addMomentaryLayer(l)
                 case .toggleConnection:
-                    currentMode.toggle()
-                    if currentMode == .wired {
-                        kb_log("Connection switched to: WIRED")
+                    if hasWiredBridge {
+                        currentMode.toggle()
+                        kb_log(currentMode == .wired ? "Connection switched to: WIRED" : "Connection switched to: BLUETOOTH")
                     } else {
-                        kb_log("Connection switched to: BLUETOOTH")
+                        kb_log("toggle_conn ignored: this board has no wired HID bridge")
                     }
                 default:
                     break
                 }
             } else if lastScan[i] && !cleanScan[i] { // Key Released
                 let action = pressedActions[i]
-                rgb.setKey(row: row, col: col, r: 0, g: 0, b: 0)
+                #if SMK_RGB_AVAILABLE
+                rgb?.setKey(row: row, col: col, r: 0, g: 0, b: 0)
+                #endif
 
                 switch action {
                 case .momentaryLayer(let l):
@@ -192,7 +260,9 @@ func app_main_swift() {
             }
         }
         lastScan = cleanScan
-        rgb.refreshIfDirty()
+        #if SMK_RGB_AVAILABLE
+        rgb?.refreshIfDirty()
+        #endif
 
         // 2. Build and Send HID Report
         report.reset()

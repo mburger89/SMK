@@ -28,6 +28,13 @@ void vTaskDelay(uint32_t ticks) {
     sleep_ms(ticks);
 }
 
+// --- Connection-mode config --------------------------------------------------
+// RP2040 always has real native-USB wired HID (usb_hid.c/TinyUSB), so it's
+// always available and stays the boot default, unchanged from before this
+// option existed. See ports/rp2040/BridgingHeader.h.
+int smk_has_wired_bridge(void) { return 1; }
+int smk_default_mode_is_wired(void) { return 1; }
+
 // --- Entry point -----------------------------------------------------------
 int main(void) {
     stdio_init_all();

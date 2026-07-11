@@ -78,18 +78,46 @@ Each target provides its own `GPIORegisters.swift` with the **same** `outSet`/`o
 | ESP32-C6 | `Sources/smk/GPIORegisters.swift` | `0x60091000` |
 | RP2040 | `ports/rp2040/GPIORegisters.swift` | `0xD0000000` (SIO) |
 
+### gateron_lp_kbd board (ESP32-C6-MINI-1)
+
+The active `configJson` in `Main.swift` targets this specific board (59-key, 5×12, BLE + Li-ion + USB-C charging, no wired-HID bridge, no per-key RGB). GPIO map, straight from the PCB project's README (source of truth for pin assignments):
+
+| Function | GPIO |
+|---|---|
+| ROW0–ROW3 (sense, pull-down) | IO0–IO3 |
+| ROW4 (sense, pull-down) | IO5 |
+| COL0–COL11 (strobe, push-pull) | IO6, IO7, IO8, IO14, IO15, IO18, IO19, IO20, IO21, IO22, IO23, IO17 |
+| VBAT sense (÷2 divider) | IO4 / ADC1_CH4 — **not used by firmware yet** |
+| USB D−/D+ (native, flashing only) | IO12/IO13 |
+| BOOT / RESET | IO9 / EN |
+
+Row 4 is irregular: 5 keys (cols 0–4), one 2U key (col 5), no switch at col 6, then 5 more keys (cols 7–11) — 59 physical keys over the 60-position matrix. Battery-voltage ADC reading (fuel gauge) is not yet implemented in firmware despite the hardware supporting it.
+
 ### C Sources (`Sources/componets/`) — ESP32-C6 only
 
 | File | Responsibility |
 |---|---|
 | `ble_helper.c` | NimBLE/esp_hidd BLE HID init and `send_keyboard_report()` |
-| `uart_init.c` | UART1 init (TX:21, RX:20) and CH9350 wired HID bridge via `send_wired_report()` |
-| `gpio_init.c` | `init_keyboard_pins()` — rows as push-pull outputs, columns as inputs with pull-ups |
+| `uart_init.c` | UART1 init (TX:21, RX:20) and CH9350 wired HID bridge via `send_wired_report()` — only safe to enable via `SMK_HAS_WIRED_BRIDGE` (see below); the current board (gateron_lp_kbd) has no CH9350 chip, and GPIO20 doubles as a matrix column on it |
+| `gpio_init.c` | `init_keyboard_pins()` — configures rows/columns as push-pull output vs. pull-up/pull-down input depending on the `colsAreDriven` flag passed in from the JSON config (see Matrix scan loop below) |
 | `kb_main.c` | `app_main()` C entry point; Unicode linker stubs for Embedded Swift |
+| `smk_config.c` | `smk_has_wired_bridge()` / `smk_default_mode_is_wired()`, backed by `main/Kconfig.projbuild` — lets `idf.py menuconfig` pick the boot-default connection mode and whether wired HID hardware exists on the board |
+
+### Board Configuration (Kconfig)
+
+`main/Kconfig.projbuild` adds a "SMK Keyboard Configuration" menu (`idf.py menuconfig`):
+- `SMK_HAS_WIRED_BRIDGE` (default **off**) — only enable if the board actually has a CH9350 bridge chip.
+- `SMK_DEFAULT_CONNECTION_MODE` (Bluetooth / Wired, default **Bluetooth**) — boot-time default; forced to Bluetooth regardless of this setting if `SMK_HAS_WIRED_BRIDGE` is off.
+- `SMK_HAS_RGB_BACKLIGHT` (default **off**) — opt-in per-key RGB backlight; enable only if you've wired an SK6812MINI-E/WS2812 chain yourself (the stock board hasn't got one).
+- `SMK_RGB_GPIO` (default **16**, the PCB's one documented spare pad) — only shown when RGB is enabled; firmware checks it against the matrix pins at boot and disables the chain (with a log warning) rather than silently breaking scanning if they collide.
 
 ### Key Architectural Patterns
 
-**Matrix scan loop** (in `Main.swift`): pulls each row LOW → reads column input register → restores row HIGH. Column pin reads `0` = key pressed (active-low with pull-up). The `DebouncedMatrix` wraps raw scans and requires 5 consecutive agreeing samples before reporting a state change.
+**Matrix scan loop** (in `Main.swift`/`KeyMatrix.swift`): direction depends on `matrix.colsAreDriven` in the JSON config, since different boards wire the diodes/strobe direction oppositely:
+- `colsAreDriven: false` (RP2040 boards): rows are strobed LOW one at a time (push-pull outputs, idle HIGH), columns are read as inputs with pull-ups (idle HIGH, reads `0` = pressed).
+- `colsAreDriven: true` (ESP32-C6 **gateron_lp_kbd** board — its matrix is COL2ROW, diode anode at the column/switch side): columns are strobed HIGH one at a time (push-pull outputs, idle LOW), rows are read as inputs with pull-downs (idle LOW, reads `1` = pressed).
+
+The `DebouncedMatrix` wraps raw scans and requires 5 consecutive agreeing samples before reporting a state change.
 
 **Layer resolution** (`LayerEngine.getAction`): iterates layers from highest index to 0, skipping inactive layers and transparent keys, returning the first non-transparent action. Layer 0 is always active.
 
@@ -102,7 +130,7 @@ Each target provides its own `GPIORegisters.swift` with the **same** `outSet`/`o
 | `GPIORegisters.swift` | RP2040 SIO registers (`0xD0000000`) — same API as ESP32 version |
 | `BridgingHeader.h` | RP2040 bridging header: cJSON + libc + platform glue prototypes |
 | `CMakeLists.txt` | pico-sdk + native CMake Swift integration; auto-discovers swiftc |
-| `platform/gpio_init.c` | `init_keyboard_pins()` via `hardware/gpio.h` |
+| `platform/gpio_init.c` | `init_keyboard_pins()` via `hardware/gpio.h`; rows driven / columns sensed by default (`colsAreDriven: false`) |
 | `platform/usb_hid.c` | `init_wired_link()` / `send_wired_report()` via TinyUSB |
 | `platform/usb_descriptors.c` | TinyUSB device + HID keyboard report descriptors |
 | `platform/tusb_config.h` | TinyUSB device config |
@@ -113,7 +141,13 @@ Each target provides its own `GPIORegisters.swift` with the **same** `outSet`/`o
 
 ### Keymap Configuration
 
-The active keymap is the `configJson` string literal in `Sources/smk/Main.swift:93`. The `keymap.json` at the repo root is a reference copy — changes there do **not** affect the firmware until copied into `Main.swift`.
+The active keymap is the `configJson` string literal in `Sources/smk/Main.swift`. The `keymap.json` at the repo root is a reference copy — changes there do **not** affect the firmware until copied into `Main.swift`.
+
+### RGB Backlight (opt-in, off by default)
+
+`RGBLighting.swift` and `led_strip_driver.c`/`led_strip_encoder.c` implement an SK6812MINI-E per-key RGB chain, but the stock gateron_lp_kbd board has no such chain (its only LED is a fixed charge-status indicator wired straight to the charger IC). Enable via `SMK_HAS_RGB_BACKLIGHT` in `idf.py menuconfig` if you wire one up yourself.
+
+Gated two ways: compiled in only for the ESP32-C6 build (`-DSMK_RGB_AVAILABLE` in `main/CMakeLists.txt`; RP2040 doesn't include `RGBLighting.swift` at all, so the `#if SMK_RGB_AVAILABLE` block in `Main.swift` compiles out there instead of failing a type lookup), and instantiated at runtime only if the Kconfig option is on. `SMK_RGB_GPIO` (default IO16, the PCB's documented spare pad) is checked against the matrix pins at boot; a collision (e.g. the old hardcoded GPIO0, which is ROW0) disables the chain with a log warning instead of corrupting the scan.
 
 **Key action syntax:**
 - `key:<char>` — standard keycode (e.g. `key:a`, `key:enter`)

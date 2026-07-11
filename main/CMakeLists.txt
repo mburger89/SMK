@@ -11,6 +11,7 @@ set(c_srcs
     "../Sources/componets/gpio_init.c"
     "../Sources/componets/uart_init.c"
     "../Sources/componets/kb_main.c"
+    "../Sources/componets/smk_config.c"
     "../Sources/componets/led_strip_encoder.c"
     "../Sources/componets/led_strip_driver.c"
 )
@@ -170,6 +171,14 @@ endif()
 
 set(swift_obj "${CMAKE_CURRENT_BINARY_DIR}/smk_swift.o")
 
+# SMK_RGB_AVAILABLE gates the `#if SMK_RGB_AVAILABLE` block in Main.swift
+# that references RGBLighting — only this (ESP32-C6) build includes
+# RGBLighting.swift in swift_srcs above; the RP2040 build
+# (ports/rp2040/CMakeLists.txt) does not define this flag, so that block
+# compiles out there instead of failing to find the type. Whether the RGB
+# chain actually initializes at runtime is a separate, Kconfig-driven check
+# (SMK_HAS_RGB_BACKLIGHT) — this flag only controls what's compiled in.
+
 # Custom command to compile Swift files
 add_custom_command(
     OUTPUT "${swift_obj}"
@@ -181,6 +190,7 @@ add_custom_command(
             -enable-experimental-feature Extern
             -wmo
             -import-objc-header "${bridging_header}"
+            -DSMK_RGB_AVAILABLE
             ${swift_flags}
             "-Xcc" "-fno-pic"
             -emit-object

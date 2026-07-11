@@ -1,8 +1,16 @@
-// Per-key RGB backlighting over the SK6812MINI-E chain (driven via RMT,
+// Per-key RGB backlighting over an SK6812MINI-E chain (driven via RMT,
 // see led_strip_driver.c).
 //
-// The chain is wired serpentine/boustrophedon, not raster — this mirrors
-// tools/generate_pcb.py's led_chain_index() in the PCB repo exactly. Even
+// Opt-in, off by default: the stock gateron_lp_kbd PCB has no addressable
+// LED chain — only a single fixed charge-status LED — so there's nothing to
+// drive unless you've wired one up yourself. Compiled in only for the
+// ESP32-C6 build (guarded by -DSMK_RGB_AVAILABLE in main/CMakeLists.txt;
+// RP2040 doesn't include this file at all) and instantiated at runtime only
+// if `idf.py menuconfig` -> SMK_HAS_RGB_BACKLIGHT is enabled — see Main.swift.
+//
+// If you wire one up: the chain is assumed wired serpentine/boustrophedon,
+// not raster — ledChainIndex below must mirror however you actually wired
+// it (or your PCB generator's led_chain_index(), if you have one). Even
 // rows run col 0->COLS-1, odd rows run COLS-1->0, so chain-adjacent LEDs
 // stay physically adjacent. Getting this wrong doesn't break compilation or
 // scanning — it just lights the wrong LED under the wrong key, silently.

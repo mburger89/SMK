@@ -31,8 +31,10 @@ Ensure your ESP-IDF environment is sourced:
 ### 2. Configure Hardware & Keymap
 Currently, the hardware configuration and keymap are defined in `Sources/smk/Main.swift`. You can modify the `configJson` string to match your keyboard's matrix and desired layers.
 
+The checked-in `configJson` targets the **gateron_lp_kbd** board (ESP32-C6-MINI-1, 59-key 5×12, BLE + battery) — see `CLAUDE.md` for its full GPIO map. If you're building different hardware, update the pin lists and `colsAreDriven` flag to match your wiring.
+
 **JSON Schema:**
-- `matrix`: Defines the `rows` and `cols` GPIO pins.
+- `matrix`: Defines the `rows` and `cols` GPIO pins, plus `colsAreDriven` (0/1) — whether columns are the strobed/output side (1) or rows are (0, default). This depends on your diode orientation; see `CLAUDE.md`'s "Matrix scan loop" section.
 - `layers`: An array of layers, where each layer is a 2D array of strings.
   - `key:<char>`: Standard keycode (e.g., `key:a`, `key:enter`).
   - `mod:<name>`: Modifier keys (e.g., `mod:leftShift`).
@@ -112,6 +114,8 @@ See [`ports/rp2040/README.md`](ports/rp2040/README.md) for full details.
 ## Known Issues / TODOs
 - **Hardcoded Paths**: `Package.swift` contains hardcoded paths to your local ESP-IDF installation and toolchains. These should be parameterized using environment variables.
 - **Typo**: `Sources/componets/` contains a typo in the directory name.
+- **No battery-level reporting yet**: the gateron_lp_kbd board has a VBAT divider on IO4 for fuel gauging, but firmware doesn't read it yet.
+- **Wired HID (CH9350) is opt-in**: only enable `SMK_HAS_WIRED_BRIDGE` in `idf.py menuconfig` if your board actually has that chip — see `CLAUDE.md`.
 
 ## IDE Support
 To enable code completion and syntax highlighting in VS Code or Xcode:

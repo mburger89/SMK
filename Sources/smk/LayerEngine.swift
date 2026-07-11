@@ -8,6 +8,14 @@ enum KeyCode: UInt8 {
     case backspace
     case tab
     case space
+    case minus
+    case backslash
+    case semicolon
+    case quote
+    case comma
+    case period
+    case slash
+    case leftArrow, rightArrow, upArrow, downArrow
     case transparent // Like QMK's KC_TRNS
 
     var rawValue: UInt8 {
@@ -54,6 +62,17 @@ enum KeyCode: UInt8 {
         case .backspace: return 0x2A
         case .tab: return 0x2B
         case .space: return 0x2C
+        case .minus: return 0x2D
+        case .backslash: return 0x31
+        case .semicolon: return 0x33
+        case .quote: return 0x34
+        case .comma: return 0x36
+        case .period: return 0x37
+        case .slash: return 0x38
+        case .rightArrow: return 0x4F
+        case .leftArrow: return 0x50
+        case .downArrow: return 0x51
+        case .upArrow: return 0x52
         case .transparent: return 0xFF
         }
     }
@@ -101,6 +120,17 @@ enum KeyCode: UInt8 {
         if strcmp(cStr, "backspace") == 0 { return .backspace }
         if strcmp(cStr, "tab") == 0 { return .tab }
         if strcmp(cStr, "space") == 0 { return .space }
+        if strcmp(cStr, "minus") == 0 { return .minus }
+        if strcmp(cStr, "backslash") == 0 { return .backslash }
+        if strcmp(cStr, "semicolon") == 0 { return .semicolon }
+        if strcmp(cStr, "quote") == 0 { return .quote }
+        if strcmp(cStr, "comma") == 0 { return .comma }
+        if strcmp(cStr, "period") == 0 { return .period }
+        if strcmp(cStr, "slash") == 0 { return .slash }
+        if strcmp(cStr, "left") == 0 { return .leftArrow }
+        if strcmp(cStr, "right") == 0 { return .rightArrow }
+        if strcmp(cStr, "up") == 0 { return .upArrow }
+        if strcmp(cStr, "down") == 0 { return .downArrow }
         return .noKey
     }
 }
