@@ -9,6 +9,8 @@ A keyboard firmware written in **Embedded Swift**, targeting the **ESP32-C6** an
 - **Dynamic Matrix**: Configurable GPIO pins for rows and columns.
 - **Layer Engine**: Supports momentary layers, toggled layers, and transparent keys (similar to QMK).
 - **JSON Configuration**: Keymaps and hardware settings defined via JSON.
+- **Per-Key RGB (opt-in)**: SK6812MINI-E/WS2812 backlight driver (ESP32-C6 only), off by default.
+- **Kconfig Board Options**: `idf.py menuconfig` toggles wired-bridge presence, default connection mode, and RGB backlight per board without touching source.
 
 ## Prerequisites
 
@@ -43,14 +45,26 @@ The checked-in `configJson` targets the **gateron_lp_kbd** board (ESP32-C6-MINI-
   - `trans`: Transparent key (falls through to lower layer).
   - `toggle_conn`: Switches between Wired and Bluetooth modes.
 
-### 3. Build the Project
+### 3. Board Configuration (Kconfig)
+Run `idf.py menuconfig` → **SMK Keyboard Configuration** to set board-specific options without editing source:
+
+| Option | Default | Purpose |
+|---|---|---|
+| `SMK_HAS_WIRED_BRIDGE` | off | Enable only if your board has a CH9350 UART-to-HID bridge chip. |
+| `SMK_DEFAULT_CONNECTION_MODE` | Bluetooth | Boot-time default (Bluetooth/Wired). Forced to Bluetooth if `SMK_HAS_WIRED_BRIDGE` is off. |
+| `SMK_HAS_RGB_BACKLIGHT` | off | Enable if you've wired an SK6812MINI-E/WS2812 per-key RGB chain. |
+| `SMK_RGB_GPIO` | 16 | GPIO for the RGB data line (shown only when RGB is enabled). Checked against matrix pins at boot; a collision disables the chain with a log warning instead of corrupting the scan. |
+
+The stock **gateron_lp_kbd** board has neither a wired bridge nor an RGB chain, so all of these default off.
+
+### 4. Build the Project
 Set the target to ESP32-C6 and build:
 ```bash
 idf.py set-target esp32c6
 idf.py build
 ```
 
-### 4. Flash and Monitor
+### 5. Flash and Monitor
 Connect your ESP32-C6 via USB and run:
 ```bash
 idf.py flash monitor
@@ -115,7 +129,6 @@ See [`ports/rp2040/README.md`](ports/rp2040/README.md) for full details.
 - **Hardcoded Paths**: `Package.swift` contains hardcoded paths to your local ESP-IDF installation and toolchains. These should be parameterized using environment variables.
 - **Typo**: `Sources/componets/` contains a typo in the directory name.
 - **No battery-level reporting yet**: the gateron_lp_kbd board has a VBAT divider on IO4 for fuel gauging, but firmware doesn't read it yet.
-- **Wired HID (CH9350) is opt-in**: only enable `SMK_HAS_WIRED_BRIDGE` in `idf.py menuconfig` if your board actually has that chip — see `CLAUDE.md`.
 
 ## IDE Support
 To enable code completion and syntax highlighting in VS Code or Xcode:
