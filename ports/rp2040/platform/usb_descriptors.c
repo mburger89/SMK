@@ -6,6 +6,8 @@
 
 #include "tusb.h"
 
+void smk_keymap_dispatch_packet(const uint8_t *packet, uint8_t *response);
+
 // ---------------------------------------------------------------------------
 // Device Descriptor
 // ---------------------------------------------------------------------------
@@ -40,29 +42,60 @@ uint8_t const desc_hid_report[] = {
     TUD_HID_REPORT_DESC_KEYBOARD()
 };
 
+// ---------------------------------------------------------------------------
+// HID Report Descriptor — 32-byte vendor-defined raw channel, used only for
+// keymap upload (see smk_keymap_protocol.c). Its own interface, so no
+// Report ID is needed (unlike the BLE side, which multiplexes this onto the
+// same GATT report characteristic as the keyboard and needs one).
+// ---------------------------------------------------------------------------
+uint8_t const desc_hid_report_raw[] = {
+    0x06, 0x00, 0xFF,        // Usage Page (Vendor Defined 0xFF00)
+    0x09, 0x01,              // Usage (0x01)
+    0xA1, 0x01,              // Collection (Application)
+    0x15, 0x00,              //   Logical Minimum (0)
+    0x26, 0xFF, 0x00,        //   Logical Maximum (255)
+    0x75, 0x08,              //   Report Size (8)
+    0x95, 0x20,              //   Report Count (32)
+    0x09, 0x01,              //   Usage (0x01)
+    0x81, 0x02,              //   Input (Data,Var,Abs)
+    0x95, 0x20,              //   Report Count (32)
+    0x09, 0x01,              //   Usage (0x01)
+    0x91, 0x02,              //   Output (Data,Var,Abs)
+    0xC0                     // End Collection
+};
+
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance) {
-    (void)instance;
-    return desc_hid_report;
+    // instance 0 = keyboard (desc_hid_report), instance 1 = raw upload
+    // channel (desc_hid_report_raw) — TinyUSB numbers HID instances in
+    // declaration order within desc_configuration below.
+    return (instance == 1) ? desc_hid_report_raw : desc_hid_report;
 }
 
 // ---------------------------------------------------------------------------
 // Configuration Descriptor
 // ---------------------------------------------------------------------------
-enum { ITF_NUM_HID, ITF_NUM_TOTAL };
+enum { ITF_NUM_HID, ITF_NUM_RAWHID, ITF_NUM_TOTAL };
 
 #define EPNUM_HID 0x81
+#define EPNUM_RAWHID_OUT 0x02
+#define EPNUM_RAWHID_IN  0x82
 
-#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN)
+#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_HID_INOUT_DESC_LEN)
 
 uint8_t const desc_configuration[] = {
     // Config: number, interface count, string index, total length, attribute, power (mA)
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN,
                           TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
 
-    // HID Interface: string index, boot protocol (keyboard), report descriptor len,
-    //                EP In address, EP size, polling interval (ms)
+    // Keyboard HID: string index, boot protocol, report descriptor len,
+    //               EP In address, EP size, polling interval (ms)
     TUD_HID_DESCRIPTOR(ITF_NUM_HID, 0, HID_ITF_PROTOCOL_KEYBOARD,
                        sizeof(desc_hid_report), EPNUM_HID, CFG_TUD_HID_EP_BUFSIZE, 5),
+
+    // Raw HID (keymap upload channel): vendor-defined, IN+OUT.
+    TUD_HID_INOUT_DESCRIPTOR(ITF_NUM_RAWHID, 0, HID_ITF_PROTOCOL_NONE,
+                             sizeof(desc_hid_report_raw), EPNUM_RAWHID_OUT, EPNUM_RAWHID_IN,
+                             CFG_TUD_HID_EP_BUFSIZE, 5),
 };
 
 uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
@@ -119,6 +152,11 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
                            hid_report_type_t report_type, uint8_t const *buffer,
                            uint16_t bufsize) {
-    // Host LED state (Caps/Num lock) would arrive here; unused for now.
-    (void)instance; (void)report_id; (void)report_type; (void)buffer; (void)bufsize;
+    if (instance == 1 && bufsize >= 32) {
+        uint8_t response[32];
+        smk_keymap_dispatch_packet(buffer, response);
+        tud_hid_n_report(1, 0, response, sizeof(response));
+        return;
+    }
+    (void)report_id; (void)report_type;
 }
