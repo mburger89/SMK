@@ -28,6 +28,14 @@ func smk_has_wired_bridge() -> Int32
 @_extern(c, "smk_default_mode_is_wired")
 func smk_default_mode_is_wired() -> Int32
 
+// Runtime keymap store — see Sources/componets/smk_keymap_store.c (ESP32)
+// and ports/rp2040/platform/smk_keymap_store.c (RP2040).
+@_extern(c, "smk_keymap_load")
+func smk_keymap_load(_ buf: UnsafeMutablePointer<Int8>, _ bufSize: UInt32) -> Int32
+
+@_extern(c, "smk_keymap_erase")
+func smk_keymap_erase()
+
 // RGB backlight config — only declared/referenced when this build compiles
 // RGBLighting.swift in (ESP32-C6, via -DSMK_RGB_AVAILABLE in
 // main/CMakeLists.txt). RP2040 doesn't include RGBLighting.swift at all, so
@@ -205,7 +213,61 @@ func app_main_swift() {
     var currentMode: ConnectionMode = (hasWiredBridge && smk_default_mode_is_wired() != 0) ? .wired : .bluetooth
     kb_log(currentMode == .wired ? "Default connection mode: WIRED" : "Default connection mode: BLUETOOTH")
 
-    engine.loadKeymap(json: configJson)
+    // Factory-reset escape hatch: hold the key at row 0 / col 0 during boot
+    // to erase the stored keymap and fall back to the compiled default.
+    // Uses the same per-iteration vTaskDelay(1) unit as the main scan loop
+    // below, so the actual wall-clock hold time follows whatever "1 tick"
+    // means on this platform already (~1s intended — time it with a
+    // stopwatch during hardware testing and adjust resetHoldScans if it
+    // feels too short or too long). This runs before the store is even
+    // consulted, so it works even if a bad uploaded keymap somehow makes
+    // the upload/erase command itself unreachable.
+    let resetHoldScans = 100
+    var resetHeld = true
+    for _ in 0..<resetHoldScans {
+        if !matrix.scan()[0] { // row 0, col 0
+            resetHeld = false
+            break
+        }
+        vTaskDelay(1)
+    }
+    if resetHeld {
+        smk_keymap_erase()
+        kb_log("Factory reset: stored keymap erased, using compiled default")
+    }
+
+    // Load a previously-uploaded keymap from the on-device store in place
+    // of the compiled default. keymapBufSize must exceed the store's
+    // SMK_KEYMAP_MAX_LEN (4085) by at least 1 byte for the null terminator.
+    let keymapBufSize = 4096
+    var keymapBuf = [Int8](repeating: 0, count: keymapBufSize)
+    var loadedFromStore = false
+    if !resetHeld {
+        let storedLen = keymapBuf.withUnsafeMutableBufferPointer { ptr -> Int32 in
+            guard let base = ptr.baseAddress else { return -1 }
+            return smk_keymap_load(base, UInt32(ptr.count))
+        }
+        if storedLen >= 0 {
+            keymapBuf[Int(storedLen)] = 0
+            loadedFromStore = true
+        }
+    }
+
+    if loadedFromStore {
+        keymapBuf.withUnsafeBufferPointer { ptr in
+            if let base = ptr.baseAddress {
+                engine.loadKeymap(cJsonStr: base)
+            }
+        }
+        if engine.keymaps.isEmpty {
+            kb_log("Stored keymap invalid, falling back to compiled default")
+            engine.loadKeymap(json: configJson)
+        } else {
+            kb_log("Loaded keymap from on-device store")
+        }
+    } else {
+        engine.loadKeymap(json: configJson)
+    }
 
     let totalKeys = cfg.rowPins.count * cfg.colPins.count
     let colCount = cfg.colPins.count
