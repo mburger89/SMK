@@ -12,6 +12,7 @@ set(c_srcs
     "../Sources/componets/uart_init.c"
     "../Sources/componets/kb_main.c"
     "../Sources/componets/smk_config.c"
+    "../Sources/componets/smk_keymap_store.c"
     "../Sources/componets/led_strip_encoder.c"
     "../Sources/componets/led_strip_driver.c"
 )

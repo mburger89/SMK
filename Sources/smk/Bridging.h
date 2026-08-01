@@ -37,3 +37,11 @@ void led_strip_driver_init(int32_t gpio_num, int32_t num_leds);
 void led_strip_set_pixel(int32_t index, uint8_t r, uint8_t g, uint8_t b);
 void led_strip_refresh(void);
 void led_strip_clear(void);
+
+// Runtime keymap store (Sources/componets/smk_keymap_store.c, NVS-backed).
+// See docs/superpowers/specs/2026-07-31-runtime-keymap-updates-design.md.
+int32_t smk_keymap_load(char *buf, uint32_t buf_size);
+void smk_keymap_erase(void);
+int32_t smk_keymap_begin_write(uint16_t total_len);
+int32_t smk_keymap_write_chunk(uint16_t offset, const uint8_t *data, uint16_t len);
+int32_t smk_keymap_commit(uint32_t crc32);
