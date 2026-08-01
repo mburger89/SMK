@@ -46,7 +46,7 @@ int32_t smk_keymap_load(char *buf, uint32_t buf_size) {
         return -1;
     }
 
-    uint8_t frame[SMK_KEYMAP_FRAME_LEN];
+    static uint8_t frame[SMK_KEYMAP_FRAME_LEN];
     size_t frame_len = sizeof(frame);
     esp_err_t err = nvs_get_blob(handle, NVS_KEY, frame, &frame_len);
     nvs_close(handle);
