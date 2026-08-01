@@ -189,51 +189,57 @@ struct LayerEngine {
     private(set) var keymaps: [[[KeyAction]]] = []
     
     mutating func loadKeymap(json: String) {
-        // Use JSON as a C string to avoid Swift String processing
-        json.withCString { cJsonStr in
-            guard let root = cJSON_Parse(cJsonStr) else {
-                kb_log("JSON Parse Error")
-                return
-            }
-            defer { cJSON_Delete(root) }
+        json.withCString { loadKeymap(cJsonStr: $0) }
+    }
 
-            guard let layersArray = cJSON_GetObjectItem(root, "layers") else {
-                kb_log("JSON Missing 'layers' key")
-                return
-            }
+    // Parses a keymap already available as a C string — used both by
+    // loadKeymap(json:) above (compiled-in default) and by Main.swift's
+    // stored-keymap boot path (a null-terminated buffer read from the
+    // on-device keymap store), which is already a C buffer and shouldn't be
+    // round-tripped through a Swift String just to get back to one.
+    mutating func loadKeymap(cJsonStr: UnsafePointer<Int8>) {
+        guard let root = cJSON_Parse(cJsonStr) else {
+            kb_log("JSON Parse Error")
+            return
+        }
+        defer { cJSON_Delete(root) }
 
-            let layerCount = cJSON_GetArraySize(layersArray)
-            if layerCount == 0 { return }
+        guard let layersArray = cJSON_GetObjectItem(root, "layers") else {
+            kb_log("JSON Missing 'layers' key")
+            return
+        }
 
-            var newKeymaps: [[[KeyAction]]] = []
+        let layerCount = cJSON_GetArraySize(layersArray)
+        if layerCount == 0 { return }
 
-            for i in 0..<layerCount {
-                guard let layerObj = cJSON_GetArrayItem(layersArray, i) else { continue }
-                let rowCount = cJSON_GetArraySize(layerObj)
-                var layer: [[KeyAction]] = []
+        var newKeymaps: [[[KeyAction]]] = []
 
-                for r in 0..<rowCount {
-                    guard let rowObj = cJSON_GetArrayItem(layerObj, r) else { continue }
-                    let colCount = cJSON_GetArraySize(rowObj)
-                    var row: [KeyAction] = []
+        for i in 0..<layerCount {
+            guard let layerObj = cJSON_GetArrayItem(layersArray, i) else { continue }
+            let rowCount = cJSON_GetArraySize(layerObj)
+            var layer: [[KeyAction]] = []
 
-                    for c in 0..<colCount {
-                        guard let cellObj = cJSON_GetArrayItem(rowObj, c) else { continue }
-                        if let cStr = cellObj.pointee.valuestring {
-                            row.append(KeyAction.fromCString(cStr))
-                        } else {
-                            row.append(.none)
-                        }
+            for r in 0..<rowCount {
+                guard let rowObj = cJSON_GetArrayItem(layerObj, r) else { continue }
+                let colCount = cJSON_GetArraySize(rowObj)
+                var row: [KeyAction] = []
+
+                for c in 0..<colCount {
+                    guard let cellObj = cJSON_GetArrayItem(rowObj, c) else { continue }
+                    if let cStr = cellObj.pointee.valuestring {
+                        row.append(KeyAction.fromCString(cStr))
+                    } else {
+                        row.append(.none)
                     }
-                    layer.append(row)
                 }
-                newKeymaps.append(layer)
+                layer.append(row)
             }
+            newKeymaps.append(layer)
+        }
 
-            if !newKeymaps.isEmpty {
-                self.keymaps = newKeymaps
-                kb_log("Keymap loaded successfully")
-            }
+        if !newKeymaps.isEmpty {
+            self.keymaps = newKeymaps
+            kb_log("Keymap loaded successfully")
         }
     }
 
