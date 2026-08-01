@@ -14,13 +14,23 @@ void kb_log(const char *msg) {
     ESP_LOGI(TAG, "%s", msg);
 }
 
-// HID Report Map for a standard keyboard
+void smk_keymap_dispatch_packet(const uint8_t *packet, uint8_t *response);
+
+// HID Report Map: a standard keyboard (Report ID 1) plus a 32-byte
+// vendor-defined channel (Report ID 2) used only for keymap upload — see
+// smk_keymap_protocol.c for what rides over it.
 static const uint8_t hid_report_map[] = {
     0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, 0x85, 0x01, 0x05, 0x07, 0x19, 0xe0, 0x29, 0xe7, 0x15, 0x00,
     0x25, 0x01, 0x75, 0x01, 0x95, 0x08, 0x81, 0x02, 0x95, 0x01, 0x75, 0x08, 0x81, 0x03, 0x95, 0x05,
     0x75, 0x01, 0x05, 0x08, 0x19, 0x01, 0x29, 0x05, 0x91, 0x02, 0x95, 0x01, 0x75, 0x03, 0x91, 0x03,
     0x95, 0x06, 0x75, 0x08, 0x15, 0x00, 0x25, 0x65, 0x05, 0x07, 0x19, 0x00, 0x29, 0x65, 0x81, 0x00,
-    0xc0
+    0xc0,
+    // Keymap upload channel — Usage Page (Vendor Defined 0xFF00), Report ID 2
+    0x06, 0x00, 0xFF, 0x09, 0x01, 0xA1, 0x01, 0x85, 0x02,
+    0x75, 0x08, 0x95, 0x20, 0x15, 0x00, 0x26, 0xFF, 0x00,
+    0x09, 0x01, 0x81, 0x02,
+    0x09, 0x01, 0x91, 0x02,
+    0xC0
 };
 
 static esp_hid_raw_report_map_t ble_report_maps[] = {
@@ -73,7 +83,6 @@ static void start_advertising(void) {
 static void ble_hidd_event_callback(void *handler_args, esp_event_base_t base, int32_t id, void *event_data) {
     (void)handler_args;
     (void)base;
-    (void)event_data;
     esp_hidd_event_t event = (esp_hidd_event_t)id;
 
     switch (event) {
@@ -84,6 +93,15 @@ static void ble_hidd_event_callback(void *handler_args, esp_event_base_t base, i
         case ESP_HIDD_CONNECT_EVENT:
             ESP_LOGI(TAG, "BLE HID Connected");
             break;
+        case ESP_HIDD_OUTPUT_EVENT: {
+            esp_hidd_event_data_t *p = (esp_hidd_event_data_t *)event_data;
+            if (p != NULL && p->output.report_id == 2 && p->output.length >= 32) {
+                uint8_t response[32];
+                smk_keymap_dispatch_packet(p->output.data, response);
+                esp_hidd_dev_input_set(s_hid_dev, 0, 2, response, sizeof(response));
+            }
+            break;
+        }
         case ESP_HIDD_DISCONNECT_EVENT:
             ESP_LOGI(TAG, "BLE HID Disconnected");
             start_advertising();
