@@ -10,6 +10,8 @@
 #include "pico/stdlib.h"
 #include <stdint.h>
 
+void smk_keymap_usb_service(void); // usb_descriptors.c
+
 void init_wired_link(void) {
     // Initialise TinyUSB device stack on the default root-hub port.
     tusb_init();
@@ -19,6 +21,7 @@ void init_wired_link(void) {
 // shim in platform_glue.c calls this every scan tick.
 void kb_usb_task(void) {
     tud_task();
+    smk_keymap_usb_service();
 }
 
 // Send a standard 8-byte boot-keyboard report: [modifier][reserved][6 keys].

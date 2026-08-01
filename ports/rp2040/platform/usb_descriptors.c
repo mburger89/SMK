@@ -5,6 +5,8 @@
 //   VID 0x16C0, PID 0x05DF, "SMK Keyboard" by "Swift".
 
 #include "tusb.h"
+#include <string.h>
+#include <stdbool.h>
 
 void smk_keymap_dispatch_packet(const uint8_t *packet, uint8_t *response);
 
@@ -149,14 +151,31 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,
     return 0;
 }
 
+static uint8_t s_pending_packet[32];
+static volatile bool s_packet_pending = false;
+
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
                            hid_report_type_t report_type, uint8_t const *buffer,
                            uint16_t bufsize) {
     if (instance == 1 && bufsize >= 32) {
-        uint8_t response[32];
-        smk_keymap_dispatch_packet(buffer, response);
-        tud_hid_n_report(1, 0, response, sizeof(response));
+        memcpy(s_pending_packet, buffer, sizeof(s_pending_packet));
+        s_packet_pending = true;
         return;
     }
     (void)report_id; (void)report_type;
+}
+
+// Services a keymap-upload packet received by tud_hid_set_report_cb, called
+// from the main loop (kb_usb_task in usb_hid.c) rather than from inside the
+// USB callback itself -- smk_keymap_dispatch_packet can trigger a multi-ms
+// flash erase+program (see smk_keymap_commit in smk_keymap_store.c), which
+// must not block the USB stack's own callback context.
+void smk_keymap_usb_service(void) {
+    if (!s_packet_pending) {
+        return;
+    }
+    s_packet_pending = false;
+    uint8_t response[32];
+    smk_keymap_dispatch_packet(s_pending_packet, response);
+    tud_hid_n_report(1, 0, response, sizeof(response));
 }
