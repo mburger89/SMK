@@ -43,3 +43,11 @@ int smk_default_mode_is_wired(void);
 // Logging + cooperative delay (platform_glue.c)
 void kb_log(const char *msg);
 void vTaskDelay(uint32_t ticks); // shim: pumps USB then sleeps ~ticks ms
+
+// Runtime keymap store (platform/smk_keymap_store.c, flash-backed). See
+// docs/superpowers/specs/2026-07-31-runtime-keymap-updates-design.md.
+int32_t smk_keymap_load(char *buf, uint32_t buf_size);
+void smk_keymap_erase(void);
+int32_t smk_keymap_begin_write(uint16_t total_len);
+int32_t smk_keymap_write_chunk(uint16_t offset, const uint8_t *data, uint16_t len);
+int32_t smk_keymap_commit(uint32_t crc32);

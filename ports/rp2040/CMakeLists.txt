@@ -89,6 +89,7 @@ set(PLATFORM_C_SRCS
     platform/usb_descriptors.c
     platform/platform_glue.c
     platform/ble_hid.c
+    platform/smk_keymap_store.c
     # Portable cJSON (no ESP-IDF dependency)
     "${CMAKE_CURRENT_SOURCE_DIR}/../../managed_components/espressif__cjson/cJSON/cJSON.c"
 )
@@ -118,6 +119,8 @@ pico_add_extra_outputs(smk_rp2040)
 target_link_libraries(smk_rp2040
     pico_stdlib
     hardware_gpio
+    hardware_flash
+    hardware_sync
     tinyusb_device
     tinyusb_board
 )
