@@ -28,7 +28,11 @@ void smk_keymap_dispatch_packet(const uint8_t *packet, uint8_t *response) {
         case SMK_OP_CHUNK: {
             uint16_t offset = (uint16_t)packet[1] | ((uint16_t)packet[2] << 8);
             uint8_t chunk_len = packet[3];
-            result = smk_keymap_write_chunk(offset, &packet[4], chunk_len);
+            if (chunk_len > SMK_KEYMAP_PACKET_LEN - 4) {
+                result = -1;
+            } else {
+                result = smk_keymap_write_chunk(offset, &packet[4], chunk_len);
+            }
             break;
         }
         case SMK_OP_COMMIT: {
