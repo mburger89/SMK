@@ -74,6 +74,27 @@ pico_sdk_init()
 enable_language(Swift)
 
 # ---------------------------------------------------------------------------
+# Target board selection — independent of PICO_BOARD.
+#
+# PICO_BOARD tells pico-sdk which *electrical* hardware descriptor to use
+# (flash size/timing, crystal, default pin muxing). SMK_TARGET_BOARD picks
+# which *application* pin map / feature set SMK itself uses (matrix GPIOs,
+# RGB chain, BLE transport). These are usually the same ("pico" / "pico_w"),
+# but the custom smk_kbd_rp2040 chip-down PCB (see ~/esp/SMK_Keyboard)
+# reuses PICO_BOARD=pico as its electrical descriptor — its external flash
+# (Winbond W25Q16JV) and 12MHz crystal are electrically identical to the
+# stock Pico's own (generate_kbd_rp2040.py deliberately chose the same part
+# Raspberry Pi's Pico uses) — while selecting its own real matrix/RGB/BLE
+# code paths via this separate variable. Set by build_rp2040.sh; defaults to
+# mirroring PICO_BOARD for plain `cmake ... -DPICO_BOARD=pico_w` invocations.
+set(SMK_TARGET_BOARD "${PICO_BOARD}" CACHE STRING
+    "SMK application board profile: pico | pico_w | smk_kbd_rp2040")
+set(SMK_IS_KBD_RP2040 FALSE)
+if(SMK_TARGET_BOARD STREQUAL "smk_kbd_rp2040")
+    set(SMK_IS_KBD_RP2040 TRUE)
+endif()
+
+# ---------------------------------------------------------------------------
 # Source files
 # ---------------------------------------------------------------------------
 set(SHARED_SWIFT_SRCS
@@ -88,13 +109,30 @@ set(PLATFORM_C_SRCS
     platform/usb_hid.c
     platform/usb_descriptors.c
     platform/platform_glue.c
-    platform/ble_hid.c
     platform/smk_keymap_store.c
     # Portable cJSON (no ESP-IDF dependency)
     "${CMAKE_CURRENT_SOURCE_DIR}/../../managed_components/espressif__cjson/cJSON/cJSON.c"
     # Shared upload-packet dispatch (see Sources/componets/smk_keymap_protocol.c)
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/componets/smk_keymap_protocol.c"
 )
+
+if(SMK_IS_KBD_RP2040)
+    # smk_kbd_rp2040 has a real 59-key SK6812MINI-E chain (RGBLighting
+    # is opt-in/off elsewhere, but always-on here since the hardware exists)
+    # and its own CYW43439-over-UART BLE transport instead of Pico W's
+    # SPI-wired one — see platform/ble_hid_kbd_uart.c.
+    list(APPEND SHARED_SWIFT_SRCS
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/smk/RGBLighting.swift"
+    )
+    list(APPEND PLATFORM_C_SRCS
+        platform/led_strip_driver.c
+        platform/ble_hid_kbd_uart.c
+        platform/cyw43439_patchram.c
+    )
+else()
+    # Plain Pico / Pico W: unchanged behavior from before this board existed.
+    list(APPEND PLATFORM_C_SRCS platform/ble_hid.c)
+endif()
 
 # ---------------------------------------------------------------------------
 # Executable target
@@ -128,9 +166,26 @@ target_link_libraries(smk_rp2040
 )
 
 # ---------------------------------------------------------------------------
-# Pico W: CYW43 + BTstack BLE HID (scaffolded)
+# BLE: three distinct paths depending on SMK_TARGET_BOARD.
+#   - pico_w: Pico W's onboard CYW43 (SPI-wired) + BTstack BLE HID (scaffolded,
+#             unchanged from before this board existed).
+#   - smk_kbd_rp2040: chip-down CYW43439 wired over a dedicated 4-wire
+#             UART instead of SPI (see generate_kbd_rp2040.py's GPIO map) —
+#             needs BTstack's generic H4/UART transport, not pico_cyw43_arch
+#             (which assumes the SPI/PIO wiring pico-sdk's cyw43-driver talks
+#             to), plus BTstack's own btstack_chipset_bcm PatchRAM driver
+#             (chipset/bcm/ in the vendored BTstack source, added as a raw
+#             source file below since pico_btstack's CMakeLists.txt doesn't
+#             expose it as its own library target) and the async_context-
+#             based run loop (pico_btstack_run_loop_async_context) so
+#             BTstack's HCI/L2CAP/SM state machines actually get pumped from
+#             this project's cooperative tick loop. See
+#             platform/ble_hid_kbd_uart.c for what's implemented vs. the one
+#             remaining gap (the actual PatchRAM firmware bytes — see
+#             platform/cyw43439_patchram.c).
+#   - plain pico: no radio at all; ble_hid.c's stub branch is linked instead.
 # ---------------------------------------------------------------------------
-if(PICO_BOARD STREQUAL "pico_w")
+if(PICO_BOARD STREQUAL "pico_w" AND NOT SMK_IS_KBD_RP2040)
     message(STATUS "Building for Pico W — enabling CYW43 + BTstack BLE HID")
 
     # Generate smk_hid.h from smk_hid.gatt in the build directory.
@@ -151,6 +206,61 @@ if(PICO_BOARD STREQUAL "pico_w")
     )
 
     target_compile_definitions(smk_rp2040 PRIVATE SMK_ENABLE_BLE)
+elseif(SMK_IS_KBD_RP2040)
+    message(STATUS "Building for smk_kbd_rp2040 — enabling CYW43439-over-UART BLE HID + RGB")
+
+    # Generate smk_hid.h from smk_hid.gatt in the build directory (same GATT
+    # profile as Pico W — the HID-over-GATT service doesn't depend on transport).
+    pico_btstack_make_gatt_header(smk_rp2040 PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/platform/smk_hid.gatt"
+    )
+
+    target_link_libraries(smk_rp2040
+        pico_btstack_base         # BTstack core (run loop glue) — transport-agnostic
+        pico_btstack_ble
+        pico_btstack_run_loop_async_context # async_context-driven run loop (see ble_hid_kbd_uart.c)
+        pico_async_context_poll   # plain polling async_context — nothing here is IRQ-driven
+        hardware_uart              # CYW43439 HCI link (GPIO20/21, +CTS/RTS on 22/23)
+        hardware_pio                # SK6812MINI-E chain driver
+    )
+
+    # btstack_chipset_bcm.c isn't exposed as its own pico_btstack library
+    # target, so it's added directly here as a source file. Same story for
+    # hci_transport_h4.c: pico_btstack_base's own CMakeLists.txt doesn't
+    # compile it in (Pico W's onboard CYW43 talks over cyw43-driver's SPI/PIO
+    # link, not literal UART H4, so pico-sdk has no need for it) -- but this
+    # board's dedicated 4-wire BT UART does need it, for hci_transport_h4_instance()
+    # (used in init_ble_hid() below). PICO_BTSTACK_PATH is set by
+    # pico_btstack's own CMakeLists.txt (promoted via
+    # pico_promote_common_scope_vars() once pico_btstack_base is linked
+    # above); fall back to pico-sdk's own default location if for some
+    # reason it isn't visible yet in this scope.
+    if(NOT PICO_BTSTACK_PATH)
+        set(PICO_BTSTACK_PATH "${PICO_SDK_PATH}/lib/btstack")
+    endif()
+    target_sources(smk_rp2040 PRIVATE
+        "${PICO_BTSTACK_PATH}/chipset/bcm/btstack_chipset_bcm.c"
+        "${PICO_BTSTACK_PATH}/src/hci_transport_h4.c"
+    )
+    target_include_directories(smk_rp2040 PRIVATE
+        "${PICO_BTSTACK_PATH}/chipset/bcm"
+    )
+
+    target_include_directories(smk_rp2040 PRIVATE
+        "${CMAKE_CURRENT_BINARY_DIR}"    # smk_hid.h lands here
+        "${CMAKE_CURRENT_SOURCE_DIR}/platform"
+    )
+
+    # Generate ws2812.pio.h from the PIO program used by led_strip_driver.c.
+    pico_generate_pio_header(smk_rp2040
+        "${CMAKE_CURRENT_SOURCE_DIR}/platform/ws2812.pio"
+    )
+
+    target_compile_definitions(smk_rp2040 PRIVATE
+        SMK_ENABLE_BLE            # reused by smk_hid.gatt / profile plumbing
+        SMK_BOARD_KBD_RP2040
+        SMK_RGB_AVAILABLE
+    )
 else()
     message(STATUS "Building for plain Pico — USB HID only, BLE stubs active")
 endif()
@@ -224,6 +334,19 @@ foreach(_dir ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
     string(CONCAT _implicit_incs ${_implicit_incs} "-Xcc -I${_dir} ")
 endforeach()
 
+# SMK's own Swift compilation-condition flags (`#if FOO` in Main.swift /
+# RGBLighting.swift) — passed as bare swiftc `-D` (Swift's own conditional-
+# compilation flag), distinct from ${_compile_defs} above which is C-level
+# `-Xcc -D...` for the Clang importer. target_compile_definitions() also sets
+# these for the C sources (gpio_init.c etc. see them as normal #ifdef macros);
+# this is the belt-and-suspenders explicit form so Main.swift's own `#if`
+# definitely sees them too, regardless of how CMake's native Swift-language
+# support maps COMPILE_DEFINITIONS for a mixed C/Swift target.
+set(_smk_swift_defs "")
+if(SMK_IS_KBD_RP2040)
+    set(_smk_swift_defs "-DSMK_BOARD_KBD_RP2040 -DSMK_RGB_AVAILABLE")
+endif()
+
 # ---------------------------------------------------------------------------
 # Swift compiler flags
 # ---------------------------------------------------------------------------
@@ -238,6 +361,7 @@ target_compile_options(smk_rp2040 PRIVATE
         -Xcc -fshort-enums
         -Xfrontend -function-sections
         -import-bridging-header ${CMAKE_CURRENT_SOURCE_DIR}/BridgingHeader.h
+        ${_smk_swift_defs}
         ${_compile_defs}
         ${_implicit_incs}
     >"
