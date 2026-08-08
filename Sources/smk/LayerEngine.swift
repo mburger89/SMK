@@ -9,13 +9,28 @@ enum KeyCode: UInt8 {
     case tab
     case space
     case minus
+    case equal
+    case leftBracket
+    case rightBracket
     case backslash
     case semicolon
     case quote
+    case grave
     case comma
     case period
     case slash
+    case capsLock
+    case f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12
+    case printScreen
+    case scrollLock
+    case pause
+    case home
+    case pageUp
+    case delete
+    case end
+    case pageDown
     case leftArrow, rightArrow, upArrow, downArrow
+    case application
     case transparent // Like QMK's KC_TRNS
 
     var rawValue: UInt8 {
@@ -63,16 +78,42 @@ enum KeyCode: UInt8 {
         case .tab: return 0x2B
         case .space: return 0x2C
         case .minus: return 0x2D
+        case .equal: return 0x2E
+        case .leftBracket: return 0x2F
+        case .rightBracket: return 0x30
         case .backslash: return 0x31
         case .semicolon: return 0x33
         case .quote: return 0x34
+        case .grave: return 0x35
         case .comma: return 0x36
         case .period: return 0x37
         case .slash: return 0x38
+        case .capsLock: return 0x39
+        case .f1: return 0x3A
+        case .f2: return 0x3B
+        case .f3: return 0x3C
+        case .f4: return 0x3D
+        case .f5: return 0x3E
+        case .f6: return 0x3F
+        case .f7: return 0x40
+        case .f8: return 0x41
+        case .f9: return 0x42
+        case .f10: return 0x43
+        case .f11: return 0x44
+        case .f12: return 0x45
+        case .printScreen: return 0x46
+        case .scrollLock: return 0x47
+        case .pause: return 0x48
+        case .home: return 0x4A
+        case .pageUp: return 0x4B
+        case .delete: return 0x4C
+        case .end: return 0x4D
+        case .pageDown: return 0x4E
         case .rightArrow: return 0x4F
         case .leftArrow: return 0x50
         case .downArrow: return 0x51
         case .upArrow: return 0x52
+        case .application: return 0x65
         case .transparent: return 0xFF
         }
     }
@@ -121,16 +162,42 @@ enum KeyCode: UInt8 {
         if strcmp(cStr, "tab") == 0 { return .tab }
         if strcmp(cStr, "space") == 0 { return .space }
         if strcmp(cStr, "minus") == 0 { return .minus }
+        if strcmp(cStr, "equal") == 0 { return .equal }
+        if strcmp(cStr, "leftBracket") == 0 { return .leftBracket }
+        if strcmp(cStr, "rightBracket") == 0 { return .rightBracket }
         if strcmp(cStr, "backslash") == 0 { return .backslash }
         if strcmp(cStr, "semicolon") == 0 { return .semicolon }
         if strcmp(cStr, "quote") == 0 { return .quote }
+        if strcmp(cStr, "grave") == 0 { return .grave }
         if strcmp(cStr, "comma") == 0 { return .comma }
         if strcmp(cStr, "period") == 0 { return .period }
         if strcmp(cStr, "slash") == 0 { return .slash }
+        if strcmp(cStr, "capsLock") == 0 { return .capsLock }
+        if strcmp(cStr, "f1") == 0 { return .f1 }
+        if strcmp(cStr, "f2") == 0 { return .f2 }
+        if strcmp(cStr, "f3") == 0 { return .f3 }
+        if strcmp(cStr, "f4") == 0 { return .f4 }
+        if strcmp(cStr, "f5") == 0 { return .f5 }
+        if strcmp(cStr, "f6") == 0 { return .f6 }
+        if strcmp(cStr, "f7") == 0 { return .f7 }
+        if strcmp(cStr, "f8") == 0 { return .f8 }
+        if strcmp(cStr, "f9") == 0 { return .f9 }
+        if strcmp(cStr, "f10") == 0 { return .f10 }
+        if strcmp(cStr, "f11") == 0 { return .f11 }
+        if strcmp(cStr, "f12") == 0 { return .f12 }
+        if strcmp(cStr, "printScreen") == 0 { return .printScreen }
+        if strcmp(cStr, "scrollLock") == 0 { return .scrollLock }
+        if strcmp(cStr, "pause") == 0 { return .pause }
+        if strcmp(cStr, "home") == 0 { return .home }
+        if strcmp(cStr, "pageUp") == 0 { return .pageUp }
+        if strcmp(cStr, "delete") == 0 { return .delete }
+        if strcmp(cStr, "end") == 0 { return .end }
+        if strcmp(cStr, "pageDown") == 0 { return .pageDown }
         if strcmp(cStr, "left") == 0 { return .leftArrow }
         if strcmp(cStr, "right") == 0 { return .rightArrow }
         if strcmp(cStr, "up") == 0 { return .upArrow }
         if strcmp(cStr, "down") == 0 { return .downArrow }
+        if strcmp(cStr, "application") == 0 { return .application }
         return .noKey
     }
 }
