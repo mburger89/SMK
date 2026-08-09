@@ -29,7 +29,7 @@ func init_keyboard_pins(_ rows: UnsafePointer<Int32>, _ rowCount: Int32, _ cols:
 //   - colsAreDriven == false (legacy/RP2040): rows are push-pull outputs
 //     (idle HIGH, strobed LOW one at a time); columns are inputs with
 //     pull-ups (idle HIGH, read LOW when a key on the active row is pressed).
-//   - colsAreDriven == true (ESP32-C6 gateron_lp_kbd board): the opposite —
+//   - colsAreDriven == true (ESP32-C6 smk_kbd board): the opposite —
 //     columns are push-pull outputs (idle LOW, strobed HIGH one at a time);
 //     rows are inputs with pull-downs (idle LOW, read HIGH when a key on the
 //     active column is pressed). This matches that board's COL2ROW diode

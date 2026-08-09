@@ -5,7 +5,7 @@
 // cols_are_driven == 0 (legacy): rows are push-pull outputs (idle HIGH),
 // columns are inputs with pull-ups (idle HIGH, pressed reads LOW).
 //
-// cols_are_driven != 0 (ESP32-C6 gateron_lp_kbd board): columns are
+// cols_are_driven != 0 (ESP32-C6 smk_kbd board): columns are
 // push-pull outputs (idle LOW), rows are inputs with pull-downs (idle LOW,
 // pressed reads HIGH). This board's matrix is COL2ROW (diode anode at the
 // switch/column side, cathode at the row side), so the driven line must be

@@ -129,6 +129,32 @@ void init_ble_hid(void) {
     // Initialize the HID device stack
     ESP_ERROR_CHECK(esp_hidd_dev_init(&ble_hid_config, ESP_HID_TRANSPORT_BLE, ble_hidd_event_callback, &s_hid_dev));
 
+    // Make the advertised/GATT device name match what we broadcast in
+    // start_advertising() (esp_hidd_dev_init leaves the GAP service with the
+    // Kconfig default name, e.g. "nimble").
+    ble_svc_gap_device_name_set(ble_hid_config.device_name);
+
+    // Security: require encryption + bonding so macOS (and other hosts)
+    // remember this keyboard and auto-reconnect after the first pairing,
+    // instead of treating every reconnect as a brand-new device.
+    //  - sm_io_cap = NO_IO: the board has no display/keypad for a passkey,
+    //    so pairing is "Just Works" (no MITM protection).
+    //  - sm_bonding = 1: actually persist the pairing instead of only
+    //    encrypting for the current connection.
+    //  - sm_our_key_dist / sm_their_key_dist include ID: exchanges the
+    //    Identity Resolving Key, which is what lets the host resolve our
+    //    address on later advertisements and reconnect silently rather than
+    //    showing up as an unknown device each time.
+    // (CONFIG_BT_NIMBLE_SM_LVL and CONFIG_BT_NIMBLE_NVS_PERSIST in sdkconfig
+    // must also be enabled — see sdkconfig.defaults — for this to actually
+    // take effect and survive a reboot.)
+    ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
+    ble_hs_cfg.sm_bonding = 1;
+    ble_hs_cfg.sm_mitm = 0;
+    ble_hs_cfg.sm_sc = 1;
+    ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+    ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+
     // Initialize NimBLE port
     nimble_port_init();
 
