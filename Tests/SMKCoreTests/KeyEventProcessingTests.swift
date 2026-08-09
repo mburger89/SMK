@@ -105,8 +105,7 @@ import Testing
     )
 
     #expect(currentMode == .wired)
-    #expect(result.connectionModeChanged == true)
-    #expect(result.connectionToggleIgnored == false)
+    #expect(result.connectionEvents == [.toggled(.wired)])
 }
 
 @Test func keyEventProcessingIgnoresConnectionToggleWithoutWiredBridge() {
@@ -124,8 +123,7 @@ import Testing
     )
 
     #expect(currentMode == .bluetooth)
-    #expect(result.connectionModeChanged == false)
-    #expect(result.connectionToggleIgnored == true)
+    #expect(result.connectionEvents == [.ignored])
 }
 
 @Test func keyEventProcessingAddsModifierBitsSeparatelyFromKeys() {

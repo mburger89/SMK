@@ -16,8 +16,6 @@ enum ConnectionToggleEvent: Equatable {
 struct KeyEventProcessingResult {
     var report = HIDReport()
     var transitions: [KeyTransition] = []
-    var connectionModeChanged = false
-    var connectionToggleIgnored = false
     var connectionEvents: [ConnectionToggleEvent] = []
 }
 
@@ -34,9 +32,6 @@ struct KeyEventProcessingResult {
 /// logging — replaying it reproduces the exact log sequence the original
 /// inline-per-press logging produced, even if a future keymap binds
 /// toggle_conn to multiple keys that transition in the same cycle.
-/// `connectionModeChanged`/`connectionToggleIgnored` remain as
-/// simple last-write-wins summary flags for callers that only care
-/// whether *any* toggle/ignore happened this cycle.
 func processKeyEvents(
     cleanScan: [Bool],
     lastScan: [Bool],
@@ -65,10 +60,8 @@ func processKeyEvents(
             case .toggleConnection:
                 if hasWiredBridge {
                     currentMode.toggle()
-                    result.connectionModeChanged = true
                     result.connectionEvents.append(.toggled(currentMode))
                 } else {
-                    result.connectionToggleIgnored = true
                     result.connectionEvents.append(.ignored)
                 }
             default:

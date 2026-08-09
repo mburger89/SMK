@@ -58,6 +58,35 @@ import Testing
     #expect(engine.getAction(row: 0, col: 0) == .key(.b))
 }
 
+@Test func layerEngineLoadKeymapLeavesKeymapsEmptyOnMalformedJSON() {
+    var engine = LayerEngine()
+    engine.loadKeymap(json: "not json")
+    #expect(engine.keymaps.isEmpty)
+}
+
+@Test func layerEngineLoadKeymapLeavesKeymapsEmptyWhenLayersKeyMissing() {
+    var engine = LayerEngine()
+    engine.loadKeymap(json: "{}")
+    #expect(engine.keymaps.isEmpty)
+}
+
+@Test func layerEngineLoadKeymapLeavesKeymapsEmptyWhenLayersArrayIsEmpty() {
+    var engine = LayerEngine()
+    engine.loadKeymap(json: #"{"layers": []}"#)
+    #expect(engine.keymaps.isEmpty)
+}
+
+@Test func layerEngineLoadKeymapKeepsPreviousKeymapWhenSubsequentLoadFails() {
+    var engine = LayerEngine()
+    engine.loadKeymap(json: """
+    { "layers": [ [ ["key:a"] ] ] }
+    """)
+    #expect(!engine.keymaps.isEmpty)
+    engine.loadKeymap(json: "not json")
+    #expect(!engine.keymaps.isEmpty)
+    #expect(engine.getAction(row: 0, col: 0) == .key(.a))
+}
+
 @Test func keyActionFromCStringParsesAllPrefixes() {
     #expect("none".withCString { KeyAction.fromCString($0) } == .none)
     #expect("trans".withCString { KeyAction.fromCString($0) } == .transparent)
