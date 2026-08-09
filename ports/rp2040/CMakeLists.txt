@@ -191,6 +191,7 @@ if(SMK_IS_KBD_RP2040)
     # SPI-wired one — see platform/ble_hid_kbd_uart.c.
     list(APPEND SHARED_SWIFT_SRCS
         "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/smk/RGBLighting.swift"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LEDChainMapping.swift"
     )
     list(APPEND PLATFORM_C_SRCS
         platform/led_strip_driver.c

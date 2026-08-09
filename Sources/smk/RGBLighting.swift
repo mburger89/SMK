@@ -27,16 +27,6 @@ func led_strip_refresh()
 @_extern(c, "led_strip_clear")
 func led_strip_clear()
 
-/// Chain position (0-indexed) of key (row, col) — must match
-/// generate_pcb.py's `led_chain_index`.
-func ledChainIndex(row: Int, col: Int, colCount: Int) -> Int {
-    if row % 2 == 0 {
-        return row * colCount + col
-    } else {
-        return row * colCount + (colCount - 1 - col)
-    }
-}
-
 struct RGBLighting {
     let rowCount: Int
     let colCount: Int
