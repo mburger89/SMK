@@ -70,6 +70,20 @@
 // already declared by sdc_hci.h's own transitive #include "nrf_errno.h",
 // confirmed via grep over ~/sdk-nrfxlib/softdevice_controller/include/.
 // Listing it here would just be a redundant/conflicting redefinition.
+//
+// --- Upstream attribution ---------------------------------------------
+// Portions of this file — the five bt_hci_evt_hdr / bt_hci_cmd_hdr /
+// bt_hci_evt_cmd_complete / bt_hci_evt_cmd_status / bt_hci_evt_cc_status
+// struct layouts below, and the IS_ENABLED / Z_IS_ENABLED* macro chain —
+// are adapted from the Zephyr Project's
+// include/zephyr/bluetooth/hci_types.h and
+// include/zephyr/sys/util_internal.h.
+//
+// Copyright (c) 2015-2016 Intel Corporation
+// Copyright (c) 2011-2014 Wind River Systems, Inc.
+// Copyright (c) 2020-2023 Nordic Semiconductor ASA
+//
+// SPDX-License-Identifier: Apache-2.0
 #ifndef SMK_SDC_BT_COMPAT_H
 #define SMK_SDC_BT_COMPAT_H
 
@@ -105,10 +119,12 @@
 #define BT_OGF(opcode) (((opcode) >> 10) & 0x3f)
 
 // --- HCI packet header layouts (Bluetooth Core Spec Vol 4, Part E) --------
-// Field layouts copied verbatim from Zephyr's
-// include/zephyr/bluetooth/hci_types.h (Apache-2.0) — this is wire format,
-// not Zephyr-internal representation, so byte-for-byte compatibility with
-// upstream Zephyr's struct layout is exactly what's needed here.
+// Field layouts match Zephyr's include/zephyr/bluetooth/hci_types.h
+// (Apache-2.0) — this is wire format, not Zephyr-internal representation,
+// so byte-for-byte compatibility with upstream Zephyr's struct layout is
+// exactly what's needed here. (bt_hci_evt_hdr here omits upstream's
+// trailing `uint8_t data[];` flexible array member — confirmed unused by
+// this vendored dispatcher, so the fixed two-field layout is sufficient.)
 struct bt_hci_evt_hdr {
     uint8_t evt;
     uint8_t len;
