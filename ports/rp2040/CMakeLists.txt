@@ -44,7 +44,20 @@ if(NOT SWIFTC_PATH OR NOT EXISTS "${SWIFTC_PATH}")
         "$ENV{HOME}/Library/Developer/Toolchains"
         "/Library/Developer/Toolchains"
     )
-    set(_probe_target "armv6m-none-none-eabi")
+    if(SMK_TARGET_BOARD STREQUAL "pico2" OR SMK_TARGET_BOARD STREQUAL "pico2_w")
+        set(_probe_target "armv8m.main-none-none-eabi")
+    else()
+        set(_probe_target "armv6m-none-none-eabi")
+    endif()
+    # -print-target-info below only confirms LLVM recognizes the target
+    # triple, not that this toolchain ships a prebuilt Embedded Swift
+    # stdlib for it (confirmed: swift-6.3.2-RELEASE returns 0 for
+    # -target armv8m.main-none-none-eabi -print-target-info yet has no
+    # such stdlib, failing later at the real build with "could not find
+    # module 'Swift'"). Typecheck a trivial probe source against the
+    # target as a second, stronger gate before accepting a toolchain.
+    set(_smk_probe_src "${CMAKE_BINARY_DIR}/_smk_toolchain_probe.swift")
+    file(WRITE "${_smk_probe_src}" "public func _smkToolchainProbe() {}\n")
     foreach(_dir ${_tc_dirs})
         file(GLOB _tcs "${_dir}/*.xctoolchain")
         foreach(_tc ${_tcs})
@@ -57,8 +70,18 @@ if(NOT SWIFTC_PATH OR NOT EXISTS "${SWIFTC_PATH}")
                     RESULT_VARIABLE _ok OUTPUT_QUIET ERROR_QUIET
                 )
                 if(_ok EQUAL 0)
-                    set(SWIFTC_PATH "${_sc}" CACHE PATH "Path to swiftc")
-                    break()
+                    execute_process(
+                        COMMAND "${_sc}" -target ${_probe_target}
+                                -enable-experimental-feature Embedded
+                                -parse-as-library
+                                -typecheck
+                                "${_smk_probe_src}"
+                        RESULT_VARIABLE _stdlib_ok OUTPUT_QUIET ERROR_QUIET
+                    )
+                    if(_stdlib_ok EQUAL 0)
+                        set(SWIFTC_PATH "${_sc}" CACHE PATH "Path to swiftc")
+                        break()
+                    endif()
                 endif()
             endif()
         endforeach()
