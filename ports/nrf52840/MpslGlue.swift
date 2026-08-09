@@ -44,6 +44,15 @@ func mpsl_low_priority_process()
 @_extern(c, "MPSL_IRQ_CLOCK_Handler")
 func MPSL_IRQ_CLOCK_Handler()
 
+@_extern(c, "MPSL_IRQ_RADIO_Handler")
+func MPSL_IRQ_RADIO_Handler()
+
+@_extern(c, "MPSL_IRQ_RTC0_Handler")
+func MPSL_IRQ_RTC0_Handler()
+
+@_extern(c, "MPSL_IRQ_TIMER0_Handler")
+func MPSL_IRQ_TIMER0_Handler()
+
 // --- NVIC register access ---------------------------------------------
 //
 // DEVIATION FROM PLAN: the plan called for `@_extern(c, "NVIC_SetPriority")`
@@ -111,14 +120,34 @@ func mpsl_glue_init() {
     nvicEnableIRQ(mpslLowPrioIRQn)
 }
 
-// RADIO/RTC0/TIMER0 interrupt handlers are provided by MPSL itself
-// (reserved instances, per mpsl.rst — "must not be reconfigured while
-// MPSL is enabled"); no application-side handler needed for those beyond
-// the nvicEnableIRQ(radioIRQn) above (RTC0's is auto-enabled by
-// mpsl_init). POWER_CLOCK is NOT auto-enabled and needs an explicit
-// application-provided handler forwarding to MPSL — same @_cdecl
-// mechanism app_main_swift uses to be found by name, here found by the
-// vector table in gcc_startup_nrf52840.S instead of C's main().
+// RADIO/RTC0/TIMER0 are "reserved instances" MPSL claims and auto-enables
+// the NVIC line for internally as part of mpsl_init (per mpsl.rst) — but
+// per mpsl.h's doc comments on MPSL_IRQ_RADIO_Handler/_RTC0_Handler/
+// _TIMER0_Handler, each "should be placed in the interrupt vector table"
+// by the application, same as MPSL_IRQ_CLOCK_Handler below. Without an
+// application-provided forwarding handler, these vector-table slots (in
+// gcc_startup_nrf52840.S) fall through to the weak Default_Handler
+// (infinite loop) and hang the firmware the moment MPSL's internal
+// scheduler first fires RTC0 — same @_cdecl mechanism app_main_swift uses
+// to be found by name, here found by the vector table in
+// gcc_startup_nrf52840.S instead of C's main().
+@_cdecl("RADIO_IRQHandler")
+func RADIO_IRQHandler() {
+    MPSL_IRQ_RADIO_Handler()
+}
+
+@_cdecl("RTC0_IRQHandler")
+func RTC0_IRQHandler() {
+    MPSL_IRQ_RTC0_Handler()
+}
+
+@_cdecl("TIMER0_IRQHandler")
+func TIMER0_IRQHandler() {
+    MPSL_IRQ_TIMER0_Handler()
+}
+
+// POWER_CLOCK is NOT auto-enabled by mpsl_init and also needs an explicit
+// application-provided handler forwarding to MPSL.
 @_cdecl("POWER_CLOCK_IRQHandler")
 func POWER_CLOCK_IRQHandler() {
     MPSL_IRQ_CLOCK_Handler()
