@@ -3,6 +3,7 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/SMKCore/Modifier.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/LayerEngine.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/KeyMatrix.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/SMKCore/Debounce.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/GPIORegisters.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/RGBLighting.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/GPIOInit.swift"
