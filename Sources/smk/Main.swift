@@ -68,7 +68,38 @@ func app_main_swift() {
     // main/CMakeLists.txt always defines the ESP32 one). Both boards share
     // the same COL2ROW matrix topology and keymap layout — only the GPIO
     // numbers differ.
-#if SMK_BOARD_KBD_RP2040
+#if SMK_BOARD_NRF52840DK
+    // nrf52840dk board (Nordic PCA10056) — GPIO map deferred to hardware
+    // bring-up (no board schematic consulted in this pass, per
+    // docs/superpowers/specs/2026-08-09-nrf52840-support-design.md's
+    // build-only scope). Placeholder pin numbers below MUST be replaced
+    // before this board is ever flashed.
+    let configJson = """
+    {
+        "matrix": {
+            "rows": [0, 1, 2, 3, 4],
+            "cols": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            "colsAreDriven": 0
+        },
+        "layers": [
+            [
+                ["key:1", "key:2", "key:3", "key:4", "key:5", "key:6", "key:7", "key:8", "key:9", "key:0", "key:minus", "key:backspace"],
+                ["key:tab", "key:q", "key:w", "key:e", "key:r", "key:t", "key:y", "key:u", "key:i", "key:o", "key:p", "key:backslash"],
+                ["key:escape", "key:a", "key:s", "key:d", "key:f", "key:g", "key:h", "key:j", "key:k", "key:l", "key:semicolon", "key:enter"],
+                ["mod:leftShift", "key:z", "key:x", "key:c", "key:v", "key:b", "key:n", "key:m", "key:comma", "key:period", "key:slash", "mod:rightShift"],
+                ["mod:leftCtrl", "mod:leftGUI", "mod:leftAlt", "mo:1", "mod:leftShift", "key:space", "none", "mod:rightShift", "mo:1", "mod:rightAlt", "mod:rightGUI", "mod:rightCtrl"]
+            ],
+            [
+                ["toggle_conn", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "key:left", "key:down", "key:up", "key:right", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "none", "trans", "trans", "trans", "trans", "trans"]
+            ]
+        ]
+    }
+    """
+#elseif SMK_BOARD_KBD_RP2040
     // smk_kbd_rp2040 board (RP2040 QFN-56 chip-down) — GPIO map per
     // generate_kbd_rp2040.py (source of truth for this board's pin
     // assignments; see that file's header docstring for verification notes):
