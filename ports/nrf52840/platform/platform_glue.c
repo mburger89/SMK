@@ -59,20 +59,38 @@ int smk_default_mode_is_wired(void) { return 1; }
 // resolve at link time even though no real transport exists yet on this
 // build-only pass. No dedicated usb_hid.c/ble_hid.c exists for this board
 // yet (unlike RP2040's), so the no-op stubs live here temporarily.
-// Task 4 (TinyUSB) replaces init_wired_link/send_wired_report; Task 7
-// (SDC + BTstack GATT HID) replaces init_ble_hid/send_keyboard_report —
-// at which point these stub bodies move out of this file.
+// init_wired_link/send_wired_report: Task 4 (TinyUSB) implements these for
+// real in Swift (ports/nrf52840/UsbHid.swift, no @_cdecl — reached via
+// ordinary same-module Swift symbol resolution). These C stubs are NOT
+// removed by Task 4; they become harmless dead code after it lands (Swift's
+// version uses a different, mangled symbol name, so there's no link
+// conflict) but could be deleted as cleanup.
+//
+// init_ble_hid/send_keyboard_report: Task 7 (SDC + BTstack GATT HID) adds
+// ports/nrf52840/platform/ble_hid_sdc.c with real C-linkage definitions of
+// the same names. Unlike the wired pair, THESE stubs must be disabled (see
+// SMK_HAS_REAL_BLE_HID_SDC guard below) or the build will fail with a
+// duplicate-symbol linker error once ble_hid_sdc.c is added.
 void init_wired_link(void) {}
 void send_wired_report(uint8_t modifier, uint8_t *keycodes) {
     (void)modifier;
     (void)keycodes;
 }
 
-void init_ble_hid(void) {}
+#ifndef SMK_HAS_REAL_BLE_HID_SDC
+void init_ble_hid(void) {
+    // Stub — Task 7 (ble_hid_sdc.c) provides the real implementation.
+    // Once ble_hid_sdc.c is added to the CMake source list, define
+    // SMK_HAS_REAL_BLE_HID_SDC (e.g. via target_compile_definitions) to
+    // disable this stub and avoid a duplicate-symbol link error.
+}
+
 void send_keyboard_report(uint8_t modifier, uint8_t *keycodes) {
+    // Stub — see init_ble_hid above.
     (void)modifier;
     (void)keycodes;
 }
+#endif
 
 // --- Entry point -----------------------------------------------------------
 int main(void) {
