@@ -73,15 +73,6 @@ The RP2040 build uses CMake's native Swift support (`enable_language(Swift)`) wi
 | `LayerEngine.swift` | `KeyCode`/`Modifier`/`KeyAction` enums, `LayerEngine` struct (JSON keymap loading, layer state, action resolution) |
 | `KeyMatrix.swift` | `Modifier` enum, `KeyMatrix` (GPIO scan), `DebouncedMatrix` (counter-based debounce, threshold=5) |
 
-### Platform-specific GPIO (`GPIORegisters.swift`)
-
-Each target provides its own `GPIORegisters.swift` with the **same** `outSet`/`outClear`/`input` API (bit = GPIO number):
-
-| Target | File | Base address |
-|---|---|---|
-| ESP32-C6 | `Sources/smk/GPIORegisters.swift` | `0x60091000` |
-| RP2040 / RP2350 | `ports/rp2040/GPIORegisters.swift` | `0xD0000000` (SIO — identical register layout on both chips) |
-
 ### Hardware-Independent Sources (`Sources/SMKCore/`) — compiled for ALL targets, host-testable
 
 Same flat-file-compilation treatment as `Sources/smk/` (added to `main/CMakeLists.txt`'s and `ports/rp2040/CMakeLists.txt`'s `swift_srcs` lists, no module boundary in the real build) — but these files have zero hardware/`@_extern` calls, so `Package.swift` also exposes them as a real `SMKCore` library target for host-side testing (`swift test`, no ESP-IDF/pico-sdk needed). See `docs/superpowers/specs/2026-08-09-host-unit-tests-design.md`.
@@ -99,6 +90,15 @@ Same flat-file-compilation treatment as `Sources/smk/` (added to `main/CMakeList
 | `Logging.swift` | host-only `kb_log` no-op shim (not compiled into the embedded build) |
 
 Run the test suite: `SMK_HOST_TESTS_ONLY=1 swift test`.
+
+### Platform-specific GPIO (`GPIORegisters.swift`)
+
+Each target provides its own `GPIORegisters.swift` with the **same** `outSet`/`outClear`/`input` API (bit = GPIO number):
+
+| Target | File | Base address |
+|---|---|---|
+| ESP32-C6 | `Sources/smk/GPIORegisters.swift` | `0x60091000` |
+| RP2040 / RP2350 | `ports/rp2040/GPIORegisters.swift` | `0xD0000000` (SIO — identical register layout on both chips) |
 
 ### ESP32-C6-only Swift Sources (`Sources/smk/`)
 
