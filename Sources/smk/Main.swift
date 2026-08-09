@@ -19,14 +19,19 @@ func vTaskDelay(_ xTicksToDelay: UInt32)
 @_extern(c, "kb_log")
 func kb_log(_ msg: UnsafePointer<Int8>)
 
-// Board/connection-mode config — see Sources/componets/smk_config.c (ESP32,
-// backed by Kconfig) and ports/rp2040/platform/platform_glue.c (RP2040,
-// hardcoded since that build always has real native-USB wired HID).
+// Board/connection-mode config — ESP32-C6 provides these as plain Swift
+// functions (SmkConfig.swift, part of this same module, backed by
+// Kconfig); RP2040 provides them as hardcoded C functions
+// (ports/rp2040/platform/platform_glue.c, since that build always has real
+// native-USB wired HID), so only that build declares them here as extern
+// symbols to link against.
+#if !SMK_TARGET_ESP32C6
 @_extern(c, "smk_has_wired_bridge")
 func smk_has_wired_bridge() -> Int32
 
 @_extern(c, "smk_default_mode_is_wired")
 func smk_default_mode_is_wired() -> Int32
+#endif
 
 // Runtime keymap store — see Sources/componets/smk_keymap_store.c (ESP32)
 // and ports/rp2040/platform/smk_keymap_store.c (RP2040).
@@ -40,12 +45,18 @@ func smk_keymap_erase()
 // RGBLighting.swift in (ESP32-C6, via -DSMK_RGB_AVAILABLE in
 // main/CMakeLists.txt). RP2040 doesn't include RGBLighting.swift at all, so
 // this whole block must not exist there either, or the type lookup fails.
+// Within that, ESP32-C6 provides these as plain Swift functions
+// (SmkConfig.swift); only smk_kbd_rp2040 (the other SMK_RGB_AVAILABLE
+// board) needs the extern — it backs them with hardcoded C functions since
+// that board always has the RGB chain wired.
 #if SMK_RGB_AVAILABLE
+#if !SMK_TARGET_ESP32C6
 @_extern(c, "smk_has_rgb_backlight")
 func smk_has_rgb_backlight() -> Int32
 
 @_extern(c, "smk_rgb_gpio")
 func smk_rgb_gpio() -> Int32
+#endif
 #endif
 
 enum ConnectionMode {

@@ -4,14 +4,14 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/KeyMatrix.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/GPIORegisters.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/RGBLighting.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/GPIOInit.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/SmkConfig.swift"
 )
 
 set(c_srcs
     "../Sources/componets/ble_helper.c"
-    "../Sources/componets/gpio_init.c"
     "../Sources/componets/uart_init.c"
     "../Sources/componets/kb_main.c"
-    "../Sources/componets/smk_config.c"
     "../Sources/componets/smk_keymap_store.c"
     "../Sources/componets/smk_keymap_protocol.c"
     "../Sources/componets/led_strip_encoder.c"
@@ -181,6 +181,30 @@ set(swift_obj "${CMAKE_CURRENT_BINARY_DIR}/smk_swift.o")
 # chain actually initializes at runtime is a separate, Kconfig-driven check
 # (SMK_HAS_RGB_BACKLIGHT) — this flag only controls what's compiled in.
 
+# SMK_TARGET_ESP32C6 tells the shared Swift sources (KeyMatrix.swift,
+# Main.swift) that init_keyboard_pins()/smk_has_wired_bridge()/etc. are
+# defined right here in Swift (GPIOInit.swift, SmkConfig.swift) rather than
+# needing an `@_extern(c, ...)` declaration to link against a C
+# implementation, the way RP2040 still does.
+#
+# SMK_HAS_WIRED_BRIDGE / SMK_DEFAULT_MODE_WIRED / SMK_HAS_RGB_BACKLIGHT feed
+# SmkConfig.swift's `#if` checks — the Swift-level equivalent of the
+# `#if defined(CONFIG_SMK_...)` checks the old Sources/componets/smk_config.c
+# did in C. CONFIG_SMK_* are ordinary CMake variables here because ESP-IDF
+# loads sdkconfig.cmake project-wide; a Kconfig bool that's off is simply
+# unset (falsy), not defined-as-0, which is why this can't just forward
+# component_defines like the loop above does.
+set(smk_config_swift_defs "")
+if(CONFIG_SMK_HAS_WIRED_BRIDGE)
+    list(APPEND smk_config_swift_defs "-DSMK_HAS_WIRED_BRIDGE")
+endif()
+if(CONFIG_SMK_DEFAULT_MODE_WIRED)
+    list(APPEND smk_config_swift_defs "-DSMK_DEFAULT_MODE_WIRED")
+endif()
+if(CONFIG_SMK_HAS_RGB_BACKLIGHT)
+    list(APPEND smk_config_swift_defs "-DSMK_HAS_RGB_BACKLIGHT")
+endif()
+
 # Custom command to compile Swift files
 add_custom_command(
     OUTPUT "${swift_obj}"
@@ -193,6 +217,8 @@ add_custom_command(
             -wmo
             -import-objc-header "${bridging_header}"
             -DSMK_RGB_AVAILABLE
+            -DSMK_TARGET_ESP32C6
+            ${smk_config_swift_defs}
             ${swift_flags}
             "-Xcc" "-fno-pic"
             -emit-object
