@@ -278,6 +278,18 @@ target_sources(smk_nrf52840 PRIVATE
 # ---------------------------------------------------------------------------
 target_link_libraries(smk_nrf52840 PRIVATE "${NRFXLIB_PATH}/mpsl/lib/nrf52/soft-float/libmpsl.a")
 
+# ---------------------------------------------------------------------------
+# SoftDevice Controller HCI command dispatcher (Task 6) — Nordic's own
+# hci_internal.c, vendored and adapted (Zephyr header deps replaced by
+# sdc_bt_compat.h) rather than reimplemented from scratch; see
+# platform/sdc_hci_dispatch.c's header comment. Not called from anywhere
+# yet — Task 7 wires it up via the sdc_hci*.h-declared functions it calls
+# and the hci_internal_cmd_put()/hci_internal_msg_get() it exposes. This
+# step only proves the file compiles standalone.
+# ---------------------------------------------------------------------------
+target_include_directories(smk_nrf52840 PRIVATE "${NRFXLIB_PATH}/softdevice_controller/include")
+target_sources(smk_nrf52840 PRIVATE platform/sdc_hci_dispatch.c)
+
 add_custom_command(TARGET smk_nrf52840 POST_BUILD
     COMMAND arm-none-eabi-objcopy -O ihex $<TARGET_FILE:smk_nrf52840> smk_nrf52840.hex
     COMMENT "Generating smk_nrf52840.hex"

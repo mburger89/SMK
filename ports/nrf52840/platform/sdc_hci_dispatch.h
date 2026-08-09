@@ -1,0 +1,127 @@
+/*
+ * Adapted for SMK's nRF52840 port from nrfconnect/sdk-nrf's
+ * subsys/bluetooth/controller/hci_internal.h, pinned commit
+ * f48ab6dfbddeb240a21cda86109480d0e2e12f57. The two Zephyr header
+ * dependencies this file had (<zephyr/drivers/bluetooth.h>, for the
+ * bt_hci_recv_t typedef used only by the unused struct hci_driver_data
+ * below; <zephyr/sys/slist.h>, transitively needed by sdc_hci_dispatch.c's
+ * use of STRUCT_SECTION_FOREACH) have been replaced by sdc_bt_compat.h. See
+ * that file's header comment for the full symbol list this adaptation
+ * needed, and sdc_hci_dispatch.c's header comment for why. DO NOT re-sync
+ * this file against a newer Zephyr-coupled upstream without redoing this
+ * adaptation — see Task 6 of
+ * docs/superpowers/plans/2026-08-09-nrf52840-support.md.
+ *
+ * Original copyright notice preserved below, as required by its license.
+ *
+ * Copyright (c) 2020 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+ */
+
+/** @file
+ *  @brief Internal HCI interface
+ */
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <sdc_hci_cmd_le.h>
+#include <sdc_hci_cmd_info_params.h>
+#include "sdc_bt_compat.h"
+
+#ifndef HCI_INTERNAL_H__
+#define HCI_INTERNAL_H__
+
+struct hci_driver_data {
+	bt_hci_recv_t recv_func;
+};
+
+/** @brief Send an HCI command packet to the SoftDevice Controller.
+ *
+ * If the application has provided user handlers, these handlers get precedence
+ * above the default HCI command handlers. See @ref hci_internal_user_cmd_handler_register and
+ * @ref hci_internal_user_extension_handler_register.
+ *
+ * @param[in] cmd_in  HCI Command packet. The first byte in the buffer should correspond to
+ *                    OpCode, as specified by the Bluetooth Core Specification.
+ *
+ * @return Zero on success or (negative) error code otherwise.
+ */
+int hci_internal_cmd_put(uint8_t *cmd_in);
+
+/** A user implementable HCI command handler
+ *
+ * What is done in the command handler is up to the user.
+ * Parameters can be returned to the host through the raw_event_out output parameter.
+ *
+ * When the command handler returns, a Command Complete or Command Status event is generated.
+ *
+ * @param[in]  cmd               The HCI command itself. The first byte in the buffer corresponds
+ *                               to OpCode, as specified by the Bluetooth Core Specification.
+ * @param[out] raw_event_out     Parameters to be returned from the event as return parameters in
+ *                               the Command Complete event.
+ *                               Parameters can only be returned if the generated event is
+ *                               a Command Complete event.
+ * @param[out] param_length_out  Length of parameters to be returned.
+ * @param[out] gives_cmd_status  Set to true if the command is returning a Command Status event.
+ *
+ * @return Bluetooth status code. BT_HCI_ERR_UNKNOWN_CMD if unknown.
+ */
+typedef uint8_t (*hci_internal_user_cmd_handler_t)(uint8_t const *cmd,
+						   uint8_t *raw_event_out,
+						   uint8_t *param_length_out,
+						   bool *gives_cmd_status);
+
+/** @brief Register a user handler for HCI commands.
+ *
+ * The user handler can be used to handle custom HCI commands.
+ *
+ * The user handler will have precedence over all other command handling.
+ * Therefore, the application needs to ensure it is not using opcodes that
+ * are used for other Bluetooth or vendor specific HCI commands.
+ * See sdc_hci_vs.h for the opcodes that are reserved.
+ *
+ * @note Only one handler can be registered.
+ *
+ * @param[in] handler A user implementable HCI command handler.
+ * @return Zero on success or (negative) error code otherwise
+ *
+ * @deprecated Use @ref hci_internal_user_extension_handler_register instead
+ */
+int hci_internal_user_cmd_handler_register(const hci_internal_user_cmd_handler_t handler);
+
+struct hci_internal_user_extension_handler {
+	hci_internal_user_cmd_handler_t hci_handler;
+	int (*init)(void);
+};
+
+#define DEFINE_HCI_USER_EXTENSION_HANDLER(name, cmd_handler, init_handler)                         \
+	STRUCT_SECTION_ITERABLE(hci_internal_user_extension_handler, name) = {                     \
+		.hci_handler = cmd_handler,                                                        \
+		.init = init_handler,                                                              \
+	}
+
+/** @brief Retrieve an HCI packet from the SoftDevice Controller.
+ *
+ * This API is non-blocking.
+ *
+ * @note The application should ensure that the size of the provided buffer is at least
+ *       @ref HCI_EVENT_PACKET_MAX_SIZE bytes.
+ *
+ * @param[in,out] msg_out Buffer where the HCI packet will be stored.
+ *                        If an event is retrieved, the first byte corresponds to Event Code,
+ *                        as specified by the Bluetooth Core Specification.
+ * @param[out] msg_type_out Indicates the type of hci message received.
+ *
+ * @return Zero on success or (negative) error code otherwise.
+ */
+int hci_internal_msg_get(uint8_t *msg_out, sdc_hci_msg_type_t *msg_type_out);
+
+/** @brief Retrieve the list of supported commands configured for this build
+ *
+ * @param[out] cmds The list of supported commands
+ */
+void hci_internal_supported_commands(
+	sdc_hci_ip_supported_commands_t *cmds);
+
+#endif
