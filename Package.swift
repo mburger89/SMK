@@ -6,16 +6,49 @@ let home = ProcessInfo.processInfo.environment["HOME"] ?? "/Users/maxburger"
 let idfPath = "\(home)/.espressif/v6.0.1/esp-idf"
 let toolchainInclude = "\(home)/.espressif/tools/riscv32-esp-elf/esp-15.2.0_20251204/riscv32-esp-elf/riscv32-esp-elf/include"
 
-let package = Package(
-    name: "smk",
-    platforms: [.macOS(.v15)],
-    products: [
-        .executable(name: "SMK", targets: ["smk"])
-    ],
-    dependencies: [
-        .package(url: "https://github.com/apple/swift-mmio", branch: "main")
-    ],
-    targets: [
+// CI (and anyone who only wants the host-side SMKCore test suite) sets
+// this so `swift build`/`swift test` never touch the `smk` executable
+// target — it needs a real ESP-IDF checkout, the Embedded Swift RISC-V
+// toolchain, and unsafe flags hardcoding this machine's paths, none of
+// which exist on a CI runner. See
+// docs/superpowers/specs/2026-08-09-host-unit-tests-design.md.
+let hostTestsOnly = ProcessInfo.processInfo.environment["SMK_HOST_TESTS_ONLY"] != nil
+
+var packageDependencies: [Package.Dependency] = []
+if !hostTestsOnly {
+    packageDependencies.append(.package(url: "https://github.com/apple/swift-mmio", branch: "main"))
+}
+
+var packageTargets: [Target] = [
+    // Vendored cJSON (managed_components/espressif__cjson), compiled for
+    // the host so SMKCore's JSON-parsing code (Config, LayerEngine) runs
+    // in tests against the exact same parser the firmware ships.
+    .target(
+        name: "CJSON",
+        path: "Sources/CJSON",
+        sources: ["cJSON.c"],
+        publicHeadersPath: "include"
+    ),
+    // Hardware-independent logic shared with the embedded build. NOT a
+    // real module boundary for the embedded build — main/CMakeLists.txt
+    // and ports/rp2040/CMakeLists.txt compile these files directly into
+    // their flat swiftc invocation, same as Sources/smk's own files, no
+    // `import` involved there. This target exists so `swift test` can
+    // build and run them on the host.
+    .target(
+        name: "SMKCore",
+        dependencies: ["CJSON"],
+        path: "Sources/SMKCore"
+    ),
+    .testTarget(
+        name: "SMKCoreTests",
+        dependencies: ["SMKCore"],
+        path: "Tests/SMKCoreTests"
+    ),
+]
+
+if !hostTestsOnly {
+    packageTargets.append(
         .executableTarget(
             name: "smk",
             dependencies: [
@@ -23,7 +56,7 @@ let package = Package(
             ],
             path: "Sources/smk",
             exclude: ["Bridging.h"],
-            sources: ["Main.swift", "LayerEngine.swift", "KeyMatrix.swift", "GPIORegisters.swift"],
+            sources: ["Main.swift", "LayerEngine.swift", "KeyMatrix.swift", "GPIORegisters.swift", "RGBLighting.swift", "GPIOInit.swift", "SmkConfig.swift"],
             swiftSettings: [
                 .enableExperimentalFeature("Embedded"),
                 .enableExperimentalFeature("Extern"),
@@ -73,6 +106,16 @@ let package = Package(
                     "-Xcc", "-I\(home)/esp/smk/build/config"
                 ])
             ]
-        ),
-    ]
+        )
+    )
+}
+
+let package = Package(
+    name: "smk",
+    platforms: [.macOS(.v15)],
+    products: hostTestsOnly ? [] : [
+        .executable(name: "SMK", targets: ["smk"])
+    ],
+    dependencies: packageDependencies,
+    targets: packageTargets
 )
