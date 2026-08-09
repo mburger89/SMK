@@ -30,6 +30,14 @@ SMK (Swift Matrix Keyboard) is keyboard firmware written in **Embedded Swift** t
 - **Swift ≥ 6.3 Embedded ARM toolchain** installed in `~/Library/Developer/Toolchains/`
 - **RP2350 (`pico2`/`pico2_w`) additionally requires a Swift development-snapshot toolchain** (confirmed: `swift-DEVELOPMENT-SNAPSHOT-2026-05-27-a` or later) that ships a real Embedded-Swift stdlib for `armv8m.main-none-none-eabi` (RP2350's Cortex-M33 target). Released `swift-6.3.x` toolchains report support for that triple via `-print-target-info` but fail an actual compile — they don't ship the stdlib.
 
+### nRF52840
+- **nRF5 SDK** (CMSIS device header + Cortex-M4 startup/linker script — modern `nrfx` no longer bundles these) at `~/nRF5_SDK` — download from Nordic's nRF5 SDK page (v17.1.0 or later) and unzip. Only `modules/nrfx/mdk/` is used.
+- **sdk-nrfxlib** (prebuilt SoftDevice Controller + MPSL libraries) at `~/sdk-nrfxlib`: `git clone https://github.com/nrfconnect/sdk-nrfxlib ~/sdk-nrfxlib`
+- **TinyUSB** at `~/tinyusb`: `git clone https://github.com/hathach/tinyusb ~/tinyusb`
+- **BTstack** at `~/btstack`: `git clone https://github.com/bluekitchen/btstack ~/btstack`
+- **ARM toolchain with newlib**: same `arm-gcc-bin@14` already required for RP2040 — no new install.
+- **Swift Embedded ARM toolchain**: same one already required for RP2040/ESP32-C6 — `armv7em-none-none-eabi` has a real stdlib on every currently-installed toolchain (verified during this port's feasibility spike), no dev-snapshot requirement.
+
 ## Build & Flash Commands
 
 ### ESP32-C6
