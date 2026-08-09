@@ -127,6 +127,8 @@ message(STATUS "Using Swift compiler: ${SWIFTC_PATH}")
 # ---------------------------------------------------------------------------
 set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/smoke_test.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/GPIORegisters.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/GPIOInit.swift"
 )
 
 set(swift_obj "${CMAKE_CURRENT_BINARY_DIR}/smk_swift.o")
@@ -139,6 +141,7 @@ add_custom_command(
             -enable-experimental-feature Embedded
             -enable-experimental-feature Extern
             -parse-as-library
+            -DSMK_TARGET_NRF52840
             -wmo
             -Xcc -mfloat-abi=soft
             -Xcc -mcpu=cortex-m4
