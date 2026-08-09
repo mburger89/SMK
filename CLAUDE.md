@@ -82,6 +82,24 @@ Each target provides its own `GPIORegisters.swift` with the **same** `outSet`/`o
 | ESP32-C6 | `Sources/smk/GPIORegisters.swift` | `0x60091000` |
 | RP2040 / RP2350 | `ports/rp2040/GPIORegisters.swift` | `0xD0000000` (SIO — identical register layout on both chips) |
 
+### Hardware-Independent Sources (`Sources/SMKCore/`) — compiled for ALL targets, host-testable
+
+Same flat-file-compilation treatment as `Sources/smk/` (added to `main/CMakeLists.txt`'s and `ports/rp2040/CMakeLists.txt`'s `swift_srcs` lists, no module boundary in the real build) — but these files have zero hardware/`@_extern` calls, so `Package.swift` also exposes them as a real `SMKCore` library target for host-side testing (`swift test`, no ESP-IDF/pico-sdk needed). See `docs/superpowers/specs/2026-08-09-host-unit-tests-design.md`.
+
+| File | Responsibility |
+|---|---|
+| `Modifier.swift` | Modifier-key bit-flag enum |
+| `Debounce.swift` | `DebouncedMatrix` — counter-based debounce (threshold=5) |
+| `ConnectionMode.swift` | wired/bluetooth toggle |
+| `HIDReport.swift` | HID report byte-building |
+| `Config.swift` | matrix-config JSON parsing |
+| `LayerEngine.swift` | keymap JSON loading, layer state, action resolution |
+| `LEDChainMapping.swift` | serpentine row/col -> RGB chain-position mapping |
+| `KeyEventProcessing.swift` | press/release edge detection, layer toggle/momentary add-remove, connection-toggle decision, HID report assembly — the scan loop calls this once per cycle |
+| `Logging.swift` | host-only `kb_log` no-op shim (not compiled into the embedded build) |
+
+Run the test suite: `SMK_HOST_TESTS_ONLY=1 swift test`.
+
 ### ESP32-C6-only Swift Sources (`Sources/smk/`)
 
 Compiled only into the ESP32-C6 build (`main/CMakeLists.txt`'s `swift_srcs`) — RP2040 backs the same function names with its own C, linked in via the `@_extern(c, ...)` declarations these files' `#if !SMK_TARGET_ESP32C6` guards leave in place in `KeyMatrix.swift`/`Main.swift`:
