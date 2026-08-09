@@ -28,6 +28,7 @@ DerivedData/
 # RP2040 build output
 build_rp2040_pico/
 build_rp2040_pico_w/
+build_rp2040_pico2/
 
 # CMakePresets.json files hardcode local toolchain paths (ESP-IDF, pico-sdk) —
 # personal machine config, not portable across contributors.

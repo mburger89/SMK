@@ -1,9 +1,12 @@
-// RP2040 GPIO register access via the SIO (Single-cycle IO) block.
+// RP2040 / RP2350 GPIO register access via the SIO (Single-cycle IO) block.
 //
-// This is the RP2040 counterpart to the ESP32 `Sources/smk/GPIORegisters.swift`.
+// This is the RP2040/RP2350 counterpart to the ESP32 `Sources/smk/GPIORegisters.swift`.
 // It deliberately exposes the SAME `outSet` / `outClear` / `input` API (with
 // bit position == GPIO number) so that the shared `KeyMatrix.scan()` compiles
 // and runs unchanged across both platforms.
+//
+// The SIO GPIO register block (base address and offsets below) is identical
+// between RP2040 and RP2350, so this one file covers both chips unchanged.
 //
 // SIO base address: 0xD000_0000
 //   0x004  GPIO_IN       (read)              -> word index 1

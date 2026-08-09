@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Build SMK firmware for Raspberry Pi Pico (RP2040) or Pico W.
+# Build SMK firmware for Raspberry Pi Pico/Pico 2 (RP2040/RP2350) or Pico W.
 # Usage:
 #   ./build_rp2040.sh             # plain Pico (USB HID only)
 #   ./build_rp2040.sh pico_w      # Pico W  (USB HID + BLE scaffolded)
+#   ./build_rp2040.sh pico2       # Pico 2  (RP2350, USB HID only)
+#   ./build_rp2040.sh pico2_w     # Pico 2 W (RP2350, USB HID + BLE scaffolded)
 #   PICO_BOARD=pico_w ./build_rp2040.sh
 
 set -euo pipefail

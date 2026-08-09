@@ -1,6 +1,25 @@
 cmake_minimum_required(VERSION 3.29)
 
 # ---------------------------------------------------------------------------
+# Early RP2350 detection — must happen before pico_sdk_import.cmake, since
+# PICO_NO_CMSE is consumed by pico-sdk's toolchain *preload* phase (which
+# runs before project()/pico_sdk_init(), i.e. before the canonical
+# SMK_TARGET_BOARD CACHE variable further down this file is set). Mirrors
+# that later block's PICO_BOARD fallback so a bare
+# `cmake -DPICO_BOARD=pico2 ...` (no explicit -DSMK_TARGET_BOARD) still
+# works.
+# ---------------------------------------------------------------------------
+if(NOT DEFINED SMK_TARGET_BOARD)
+    set(SMK_TARGET_BOARD "${PICO_BOARD}")
+endif()
+if(SMK_TARGET_BOARD STREQUAL "pico2" OR SMK_TARGET_BOARD STREQUAL "pico2_w")
+    # No TrustZone secure/non-secure partitioning in this project — disable
+    # CMSE codegen (-mcmse) rather than carry its untested interaction with
+    # Swift-emitted code for no benefit.
+    set(PICO_NO_CMSE 1)
+endif()
+
+# ---------------------------------------------------------------------------
 # pico-sdk bootstrap — must happen before project()
 # ---------------------------------------------------------------------------
 if(NOT DEFINED ENV{PICO_SDK_PATH} AND NOT PICO_SDK_PATH)
@@ -88,10 +107,14 @@ enable_language(Swift)
 # code paths via this separate variable. Set by build_rp2040.sh; defaults to
 # mirroring PICO_BOARD for plain `cmake ... -DPICO_BOARD=pico_w` invocations.
 set(SMK_TARGET_BOARD "${PICO_BOARD}" CACHE STRING
-    "SMK application board profile: pico | pico_w | smk_kbd_rp2040")
+    "SMK application board profile: pico | pico_w | pico2 | pico2_w | smk_kbd_rp2040")
 set(SMK_IS_KBD_RP2040 FALSE)
 if(SMK_TARGET_BOARD STREQUAL "smk_kbd_rp2040")
     set(SMK_IS_KBD_RP2040 TRUE)
+endif()
+set(SMK_IS_RP2350 FALSE)
+if(SMK_TARGET_BOARD STREQUAL "pico2" OR SMK_TARGET_BOARD STREQUAL "pico2_w")
+    set(SMK_IS_RP2350 TRUE)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -347,17 +370,38 @@ if(SMK_IS_KBD_RP2040)
     set(_smk_swift_defs "-DSMK_BOARD_KBD_RP2040 -DSMK_RGB_AVAILABLE")
 endif()
 
+# RP2350 (Cortex-M33, Armv8-M Mainline) needs a different Swift target
+# triple than RP2040 (Cortex-M0+, Armv6-M), plus matching -Xcc arch/float
+# flags. RP2350's Cortex-M33 has a real FPU and pico-sdk's own toolchain
+# preset (pico_arm_cortex_m33_gcc.cmake) builds its C sources / prebuilt
+# objects expecting `-march=armv8-m.main+fp+dsp -mfloat-abi=softfp` — so
+# Swift's Clang-importer flags mirror that instead of forcing soft-float
+# the way the RP2040/Armv6-M path does (Armv6-M has no FPU at all, so soft
+# float there is the only option).
+if(SMK_IS_RP2350)
+    set(_smk_swift_arch_flags
+        "-target armv8m.main-none-none-eabi
+        -Xcc -march=armv8-m.main+fp+dsp
+        -Xcc -mfloat-abi=softfp
+        -Xcc -mfpu=fpv5-sp-d16"
+    )
+else()
+    set(_smk_swift_arch_flags
+        "-target armv6m-none-none-eabi
+        -Xcc -mfloat-abi=soft"
+    )
+endif()
+
 # ---------------------------------------------------------------------------
 # Swift compiler flags
 # ---------------------------------------------------------------------------
 target_compile_options(smk_rp2040 PRIVATE
     "$<$<COMPILE_LANGUAGE:Swift>:SHELL:
-        -target armv6m-none-none-eabi
+        ${_smk_swift_arch_flags}
         -enable-experimental-feature Embedded
         -enable-experimental-feature Extern
         -parse-as-library
         -module-name smk_rp2040
-        -Xcc -mfloat-abi=soft
         -Xcc -fshort-enums
         -Xfrontend -function-sections
         -import-bridging-header ${CMAKE_CURRENT_SOURCE_DIR}/BridgingHeader.h
