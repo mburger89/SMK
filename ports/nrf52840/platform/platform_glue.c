@@ -34,6 +34,7 @@ extern void app_main_swift(void); // shared entry point (Sources/smk/Main.swift)
 extern void kb_usb_task(void);
 extern void mpsl_glue_init(void); // MPSL bring-up (Task 5, ports/nrf52840/MpslGlue.swift)
 extern void mpsl_glue_poll(void); // pumps MPSL's low-priority work queue (Task 5)
+extern void sdc_transport_poll(void); // drains SDC HCI events/data into BTstack (Task 7, platform/ble_hid_sdc.c)
 
 // --- Logging -----------------------------------------------------------
 // Placeholder: no-op until a real logging channel (RTT or UART) is wired
@@ -55,10 +56,14 @@ void kb_log(const char *msg) {
 // work queue promptly, per mpsl.rst's "call within a couple of ms of the
 // low_prio_irq firing" contract — see MpslGlue.swift's SWI0_EGU0_IRQHandler
 // comment for why this project polls unconditionally rather than gating on
-// that ISR.
+// that ISR. sdc_transport_poll() (Task 7) drains SDC's HCI event/data queue
+// into BTstack the same way — without this call, BTstack never sees
+// incoming HCI events and init_ble_hid() hangs or silently does nothing
+// past hci_power_control().
 void vTaskDelay(uint32_t ticks) {
     kb_usb_task();
     mpsl_glue_poll();
+    sdc_transport_poll();
     if (ticks == 0) ticks = 1;
     for (volatile uint32_t i = 0; i < ticks * 100000u; i++) {
         __asm__ volatile("nop");

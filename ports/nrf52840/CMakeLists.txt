@@ -290,6 +290,115 @@ target_link_libraries(smk_nrf52840 PRIVATE "${NRFXLIB_PATH}/mpsl/lib/nrf52/soft-
 target_include_directories(smk_nrf52840 PRIVATE "${NRFXLIB_PATH}/softdevice_controller/include")
 target_sources(smk_nrf52840 PRIVATE platform/sdc_hci_dispatch.c)
 
+# ---------------------------------------------------------------------------
+# Task 7: SDC init + hci_transport_t + BTstack HID-over-GATT — wires the
+# dispatcher above into a real init_ble_hid()/send_keyboard_report() pair.
+# See platform/ble_hid_sdc.c's header comment for the transport shape; this
+# is a near-verbatim adaptation of ports/rp2040/platform/ble_hid_kbd_uart.c
+# with the CYW43439/UART transport bring-up replaced by SDC bring-up.
+# ---------------------------------------------------------------------------
+
+# Generate smk_hid.h from smk_hid.gatt (same GATT profile as the RP2040 BLE
+# build — HID-over-GATT doesn't depend on transport). No pico-sdk here, so
+# this drives btstack's own tool/compile_gatt.py directly instead of
+# pico_btstack_make_gatt_header().
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(NRF52840_GATT_HEADER "${CMAKE_CURRENT_BINARY_DIR}/smk_hid.h")
+add_custom_command(
+    OUTPUT "${NRF52840_GATT_HEADER}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}"
+    COMMAND ${Python3_EXECUTABLE} "${BTSTACK_PATH}/tool/compile_gatt.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/platform/smk_hid.gatt"
+            "${NRF52840_GATT_HEADER}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/platform/smk_hid.gatt"
+    COMMENT "Generating smk_hid.h (nRF52840)..."
+    VERBATIM
+)
+add_custom_target(smk_nrf52840_gatt_header DEPENDS "${NRF52840_GATT_HEADER}")
+add_dependencies(smk_nrf52840 smk_nrf52840_gatt_header)
+
+target_include_directories(smk_nrf52840 PRIVATE
+    "${BTSTACK_PATH}/src"
+    "${BTSTACK_PATH}/platform/embedded"
+    "${BTSTACK_PATH}/3rd-party/rijndael"   # rijndael.h — btstack_crypto.c's AES128 backend
+    "${BTSTACK_PATH}/3rd-party/micro-ecc"  # uECC.h — btstack_crypto.c's ECC backend
+    "${NRFXLIB_PATH}/mpsl/include"       # mpsl.h, mpsl_hwres.h (sdc_soc.h's #include chain)
+    "${CMAKE_CURRENT_BINARY_DIR}"        # smk_hid.h lands here
+)
+
+# BTstack core (run loop, HCI/L2CAP/SM, generic memory pools) + the subset of
+# BLE/GATT sources this app actually pulls in (att_db/att_server, LE device
+# DB, SM, HID-over-GATT + battery + device-information GATT services).
+# Cross-checked against pico-sdk's own pico_btstack_base/pico_btstack_ble
+# library definitions (src/rp2_common/pico_btstack/CMakeLists.txt) — that
+# list additionally builds in a large set of files this app never calls
+# (classic-only pieces are irrelevant here since ENABLE_CLASSIC isn't set;
+# ad_parser.c, btstack_hid.c (the higher-level HID-host driver — distinct
+# from btstack_hid_parser.c below, which IS needed), gatt_client.c,
+# le_device_db_tlv.c, hids_client.c and the other *_client.c GATT services,
+# md5.c/yxml.c, TLV-on-flash persistence — all client-role, HID-host-role,
+# or persistent-storage machinery this peripheral-only/no-persistence build
+# doesn't use). Treated as a starting point, not gospel: any undefined
+# symbol at link time gets a source file added here, per Step 5's
+# instruction to resolve real gaps rather than stub around them — see
+# btstack_hid_parser.c and libmpsl_fem_common.a below, both found that way.
+target_sources(smk_nrf52840 PRIVATE
+    "${BTSTACK_PATH}/src/btstack_util.c"
+    "${BTSTACK_PATH}/src/btstack_linked_list.c"
+    "${BTSTACK_PATH}/src/btstack_memory.c"
+    "${BTSTACK_PATH}/src/btstack_memory_pool.c"
+    "${BTSTACK_PATH}/src/btstack_run_loop.c"
+    "${BTSTACK_PATH}/src/btstack_run_loop_base.c"
+    "${BTSTACK_PATH}/src/btstack_tlv.c"
+    "${BTSTACK_PATH}/src/btstack_tlv_none.c"
+    "${BTSTACK_PATH}/src/btstack_crypto.c"
+    "${BTSTACK_PATH}/src/hci.c"
+    "${BTSTACK_PATH}/src/hci_cmd.c"
+    "${BTSTACK_PATH}/src/hci_dump.c"
+    "${BTSTACK_PATH}/src/hci_event.c"
+    "${BTSTACK_PATH}/src/l2cap.c"
+    "${BTSTACK_PATH}/src/l2cap_signaling.c"
+    "${BTSTACK_PATH}/src/ble/att_db.c"
+    "${BTSTACK_PATH}/src/ble/att_dispatch.c"
+    "${BTSTACK_PATH}/src/ble/att_server.c"
+    "${BTSTACK_PATH}/src/ble/le_device_db_memory.c"
+    "${BTSTACK_PATH}/src/ble/sm.c"
+    "${BTSTACK_PATH}/src/ble/gatt-service/hids_device.c"
+    "${BTSTACK_PATH}/src/ble/gatt-service/battery_service_server.c"
+    "${BTSTACK_PATH}/src/ble/gatt-service/device_information_service_server.c"
+    "${BTSTACK_PATH}/platform/embedded/hci_dump_embedded_stdout.c"
+    "${BTSTACK_PATH}/3rd-party/rijndael/rijndael.c"     # AES (ENABLE_SOFTWARE_AES128)
+    "${BTSTACK_PATH}/3rd-party/micro-ecc/uECC.c"        # ECC (ENABLE_MICRO_ECC_FOR_LE_SECURE_CONNECTIONS)
+    # hids_device.c's variable-length-report path calls into the HID report
+    # descriptor parser for report sizing (btstack_hid_get_report_size_for_id)
+    # — found via a real undefined-symbol link error, not anticipated by the
+    # plan's Step 3 source list (which only listed hids_device.c itself).
+    "${BTSTACK_PATH}/src/btstack_hid_parser.c"
+    platform/ble_hid_sdc.c
+)
+target_link_libraries(smk_nrf52840 PRIVATE
+    "${NRFXLIB_PATH}/softdevice_controller/lib/nrf52/soft-float/libsoftdevice_controller_peripheral.a"
+    # SDC's peripheral-role library calls into the generic Front-End-Module
+    # (PA/LNA) runtime (mpsl_fem_enable/mpsl_fem_pa_configuration_set/etc.)
+    # unconditionally, even though the nrf52840dk board has no external FEM
+    # hardware wired up — found via undefined-symbol link errors, not
+    # anticipated by the plan (which didn't mention FEM at all). This is
+    # nrfxlib's own "no FEM" default implementation (as opposed to e.g.
+    # libmpsl_fem_nrf21540_gpio.a for boards with a real nRF21540 PA/LNA
+    # chip) — verified via nm against the prebuilt .a that it's the one
+    # providing every one of the undefined mpsl_fem_* symbols the linker
+    # reported.
+    "${NRFXLIB_PATH}/mpsl/fem/common/lib/nrf52/soft-float/libmpsl_fem_common.a"
+)
+# See platform_glue.c's SMK_HAS_REAL_BLE_HID_SDC guard: disables that file's
+# build-only init_ble_hid()/send_keyboard_report() stubs now that
+# ble_hid_sdc.c provides the real definitions — without this, both files
+# define the same C-linkage symbols and the link fails with a
+# multiple-definition error. This define applies to the whole smk_nrf52840
+# target (all its sources, including platform_glue.c), not just this
+# translation unit.
+target_compile_definitions(smk_nrf52840 PRIVATE SMK_HAS_REAL_BLE_HID_SDC)
+
 add_custom_command(TARGET smk_nrf52840 POST_BUILD
     COMMAND arm-none-eabi-objcopy -O ihex $<TARGET_FILE:smk_nrf52840> smk_nrf52840.hex
     COMMENT "Generating smk_nrf52840.hex"
