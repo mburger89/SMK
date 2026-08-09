@@ -56,7 +56,7 @@ if !hostTestsOnly {
             ],
             path: "Sources/smk",
             exclude: ["Bridging.h"],
-            sources: ["Main.swift", "LayerEngine.swift", "KeyMatrix.swift", "GPIORegisters.swift", "RGBLighting.swift", "GPIOInit.swift", "SmkConfig.swift"],
+            sources: ["Main.swift", "KeyMatrix.swift", "GPIORegisters.swift", "RGBLighting.swift", "GPIOInit.swift", "SmkConfig.swift"],
             swiftSettings: [
                 .enableExperimentalFeature("Embedded"),
                 .enableExperimentalFeature("Extern"),

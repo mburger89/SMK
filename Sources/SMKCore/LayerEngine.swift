@@ -1,3 +1,16 @@
+#if canImport(CJSON)
+import CJSON
+#endif
+
+// Host-only: strcmp/strncmp/atoi come from the bridging header (newlib) on
+// the embedded builds, but the host SMKCore build needs them imported
+// explicitly since cJSON.h only pulls in <stddef.h>, not <string.h>.
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
+
 // Keycodes based on HID standards
 enum KeyCode: UInt8 {
     case noKey
@@ -216,7 +229,7 @@ extension Modifier {
     }
 }
 
-enum KeyAction {
+enum KeyAction: Equatable {
     case none
     case key(KeyCode)
     case modifier(Modifier)
