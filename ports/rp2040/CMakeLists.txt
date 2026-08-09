@@ -231,8 +231,8 @@ target_link_libraries(smk_rp2040
 #             platform/cyw43439_patchram.c).
 #   - plain pico: no radio at all; ble_hid.c's stub branch is linked instead.
 # ---------------------------------------------------------------------------
-if(PICO_BOARD STREQUAL "pico_w" AND NOT SMK_IS_KBD_RP2040)
-    message(STATUS "Building for Pico W — enabling CYW43 + BTstack BLE HID")
+if((PICO_BOARD STREQUAL "pico_w" OR PICO_BOARD STREQUAL "pico2_w") AND NOT SMK_IS_KBD_RP2040)
+    message(STATUS "Building for ${PICO_BOARD} — enabling CYW43 + BTstack BLE HID")
 
     # Generate smk_hid.h from smk_hid.gatt in the build directory.
     pico_btstack_make_gatt_header(smk_rp2040 PRIVATE
