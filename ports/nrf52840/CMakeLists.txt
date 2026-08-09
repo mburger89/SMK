@@ -139,6 +139,7 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Config.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LayerEngine.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyEventProcessing.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/UsbHid.swift"
 )
 
 # cJSON (portable, no ESP-IDF dependency) — LayerEngine.swift/Config.swift
@@ -209,7 +210,13 @@ add_custom_command(
 set(c_srcs
     platform/platform_glue.c
     platform/smk_keymap_store.c
+    platform/usb_descriptors.c
     "${NRF52840_CJSON_DIR}/cJSON.c"
+    # Shared upload-packet dispatch (see Sources/componets/smk_keymap_protocol.c)
+    # — usb_descriptors.c's smk_keymap_usb_service() calls
+    # smk_keymap_dispatch_packet(), defined there; matches
+    # ports/rp2040/CMakeLists.txt's PLATFORM_C_SRCS list.
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/componets/smk_keymap_protocol.c"
 )
 
 add_executable(smk_nrf52840
@@ -220,6 +227,41 @@ add_executable(smk_nrf52840
 )
 target_include_directories(smk_nrf52840 PRIVATE "${NRF5_MDK}" "${NRF5_CMSIS_INCLUDE}" "${NRF52840_CJSON_DIR}")
 target_compile_definitions(smk_nrf52840 PRIVATE INITIALIZE_USER_MEMORY_AREA)
+
+# ---------------------------------------------------------------------------
+# TinyUSB (device stack, HID class, nRF5x device-controller driver) — the
+# "wired" USB HID transport, glued from Swift (UsbHid.swift above) per this
+# task's Swift-first preference; usb_descriptors.c stays C (macro-computed
+# descriptor byte tables — see that file's header comment).
+# ---------------------------------------------------------------------------
+target_include_directories(smk_nrf52840 PRIVATE
+    "${TINYUSB_PATH}/src"
+    platform
+    # dcd_nrf5x.c (the nRF5x device-controller driver) pulls in nrfx's clock
+    # driver headers directly (nrfx_clock.h, nrf_erratas.h — the latter
+    # already covered by NRF5_MDK above), which in turn need nrfx_config.h
+    # and nrfx_glue.h — nrfx expects the *integrating app*, not the SDK, to
+    # supply both. nrfx_config.h comes straight from the vendored SDK's own
+    # per-chip template (modules/nrfx/templates/nRF52840/nrfx_config.h) —
+    # TinyUSB's own hw/bsp/nrf/nrfx_config alternative targets a newer/
+    # refactored nrfx (single flat templates/nrfx_config_<chip>.h) than the
+    # one vendored in this nRF5 SDK release, so it 404s on that #include.
+    # nrfx_glue.h is this project's own (platform/nrfx_glue.h, added to
+    # PRIVATE include dirs above via "platform") — see that file's header
+    # comment for why neither of the SDK's own two candidates was usable
+    # as-is.
+    "${NRF5_SDK_PATH}/modules/nrfx"
+    "${NRF5_SDK_PATH}/modules/nrfx/drivers/include"
+    "${NRF5_SDK_PATH}/modules/nrfx/hal"
+    "${NRF5_SDK_PATH}/modules/nrfx/templates/nRF52840"
+)
+target_sources(smk_nrf52840 PRIVATE
+    "${TINYUSB_PATH}/src/tusb.c"
+    "${TINYUSB_PATH}/src/common/tusb_fifo.c"
+    "${TINYUSB_PATH}/src/device/usbd.c"
+    "${TINYUSB_PATH}/src/class/hid/hid_device.c"
+    "${TINYUSB_PATH}/src/portable/nordic/nrf5x/dcd_nrf5x.c"
+)
 
 add_custom_command(TARGET smk_nrf52840 POST_BUILD
     COMMAND arm-none-eabi-objcopy -O ihex $<TARGET_FILE:smk_nrf52840> smk_nrf52840.hex

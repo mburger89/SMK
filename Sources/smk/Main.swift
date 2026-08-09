@@ -7,11 +7,23 @@ func init_ble_hid()
 @_extern(c, "send_keyboard_report")
 func send_keyboard_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
 
+// Unlike init_keyboard_pins (Sources/smk/KeyMatrix.swift), which every board
+// except RP2040 now backs with a native Swift implementation, ESP32-C6
+// still backs this pair with C (Sources/componets/uart_init.c, unconditionally
+// compiled into the ESP32-C6 build) — so its declaration must stay active
+// there. Only NRF52840 backs these natively in Swift (ports/nrf52840/UsbHid.swift,
+// same-module resolution, no @_extern needed); RP2040 still backs them with C
+// (ports/rp2040/platform/usb_hid.c). Hence this guard excludes NRF52840 only,
+// not "#if !SMK_TARGET_ESP32C6 && !SMK_TARGET_NRF52840" (that broader form
+// would drop the extern for ESP32-C6 too and break its build, since nothing
+// there redefines these names as plain Swift functions).
+#if !SMK_TARGET_NRF52840
 @_extern(c, "init_wired_link")
 func init_wired_link()
 
 @_extern(c, "send_wired_report")
 func send_wired_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
+#endif
 
 @_extern(c, "vTaskDelay")
 func vTaskDelay(_ xTicksToDelay: UInt32)
