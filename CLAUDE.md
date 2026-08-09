@@ -69,9 +69,26 @@ The RP2040 build uses CMake's native Swift support (`enable_language(Swift)`) wi
 
 | File | Responsibility |
 |---|---|
-| `Main.swift` | Entry point, main scan loop, `Config` JSON parsing, `HIDReport` building, connection mode switching |
-| `LayerEngine.swift` | `KeyCode`/`Modifier`/`KeyAction` enums, `LayerEngine` struct (JSON keymap loading, layer state, action resolution) |
-| `KeyMatrix.swift` | `Modifier` enum, `KeyMatrix` (GPIO scan), `DebouncedMatrix` (counter-based debounce, threshold=5) |
+| `Main.swift` | Entry point, main scan loop, board config JSON literals, boot/keymap-store wiring, `app_main_swift` — calls into SMKCore for the actual scan-cycle logic |
+| `KeyMatrix.swift` | `KeyMatrix` (GPIO scan) |
+
+### Hardware-Independent Sources (`Sources/SMKCore/`) — compiled for ALL targets, host-testable
+
+Same flat-file-compilation treatment as `Sources/smk/` (added to `main/CMakeLists.txt`'s and `ports/rp2040/CMakeLists.txt`'s `swift_srcs` lists, no module boundary in the real build) — but these files have zero hardware/`@_extern` calls, so `Package.swift` also exposes them as a real `SMKCore` library target for host-side testing (`swift test`, no ESP-IDF/pico-sdk needed). See `docs/superpowers/specs/2026-08-09-host-unit-tests-design.md`.
+
+| File | Responsibility |
+|---|---|
+| `Modifier.swift` | Modifier-key bit-flag enum |
+| `Debounce.swift` | `DebouncedMatrix` — counter-based debounce (threshold=5) |
+| `ConnectionMode.swift` | wired/bluetooth toggle |
+| `HIDReport.swift` | HID report byte-building |
+| `Config.swift` | matrix-config JSON parsing |
+| `LayerEngine.swift` | keymap JSON loading, layer state, action resolution |
+| `LEDChainMapping.swift` | serpentine row/col -> RGB chain-position mapping |
+| `KeyEventProcessing.swift` | press/release edge detection, layer toggle/momentary add-remove, connection-toggle decision, HID report assembly — the scan loop calls this once per cycle |
+| `Logging.swift` | host-only `kb_log` no-op shim (not compiled into the embedded build) |
+
+Run the test suite: `SMK_HOST_TESTS_ONLY=1 swift test`. `Package.resolved` is intentionally untracked (`.gitignore`'d): with `SMK_HOST_TESTS_ONLY=1`, `swift-mmio` isn't a dependency at all (see `Package.swift`), so a host-only resolve pins nothing meaningful and would just churn the file on every run.
 
 ### Platform-specific GPIO (`GPIORegisters.swift`)
 

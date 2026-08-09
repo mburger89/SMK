@@ -162,8 +162,14 @@ endif()
 # ---------------------------------------------------------------------------
 set(SHARED_SWIFT_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/smk/Main.swift"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/smk/LayerEngine.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Modifier.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LayerEngine.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/smk/KeyMatrix.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Debounce.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/ConnectionMode.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/HIDReport.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Config.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyEventProcessing.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/GPIORegisters.swift"
 )
 
@@ -186,6 +192,7 @@ if(SMK_IS_KBD_RP2040)
     # SPI-wired one — see platform/ble_hid_kbd_uart.c.
     list(APPEND SHARED_SWIFT_SRCS
         "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/smk/RGBLighting.swift"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LEDChainMapping.swift"
     )
     list(APPEND PLATFORM_C_SRCS
         platform/led_strip_driver.c

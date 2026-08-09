@@ -59,76 +59,6 @@ func smk_rgb_gpio() -> Int32
 #endif
 #endif
 
-enum ConnectionMode {
-    case wired
-    case bluetooth
-
-    mutating func toggle() {
-        if self == .wired {
-            self = .bluetooth
-        } else {
-            self = .wired
-        }
-    }
-}
-
-struct HIDReport {
-    var modifier: UInt8 = 0
-    var keys: [UInt8] = [0, 0, 0, 0, 0, 0]
-
-    mutating func reset() {
-        modifier = 0
-        for i in 0..<keys.count { keys[i] = 0 }
-    }
-
-    mutating func addKey(_ keycode: UInt8) {
-        if keycode == 0 { return }
-        for i in 0..<keys.count {
-            if keys[i] == 0 {
-                keys[i] = keycode
-                return
-            }
-        }
-    }
-
-    mutating func addModifier(_ mod: Modifier) {
-        modifier |= mod.rawValue
-    }
-}
-
-struct Config {
-    var rowPins: [Int32] = []
-    var colPins: [Int32] = []
-    var colsAreDriven: Bool = false
-
-    static func fromJson(_ json: String) -> Config {
-        var cfg = Config()
-        guard let root = cJSON_Parse(json) else { return cfg }
-        defer { cJSON_Delete(root) }
-
-        if let matrix = cJSON_GetObjectItem(root, "matrix") {
-            if let rows = cJSON_GetObjectItem(matrix, "rows") {
-                for i in 0..<cJSON_GetArraySize(rows) {
-                    if let item = cJSON_GetArrayItem(rows, i) {
-                        cfg.rowPins.append(Int32(item.pointee.valuedouble))
-                    }
-                }
-            }
-            if let cols = cJSON_GetObjectItem(matrix, "cols") {
-                for i in 0..<cJSON_GetArraySize(cols) {
-                    if let item = cJSON_GetArrayItem(cols, i) {
-                        cfg.colPins.append(Int32(item.pointee.valuedouble))
-                    }
-                }
-            }
-            if let driven = cJSON_GetObjectItem(matrix, "colsAreDriven") {
-                cfg.colsAreDriven = driven.pointee.valuedouble != 0
-            }
-        }
-        return cfg
-    }
-}
-
 @_cdecl("app_main_swift")
 func app_main_swift() {
     kb_log("Initialising SMK Keyboard...")
@@ -340,71 +270,38 @@ func app_main_swift() {
         let rawScan = matrix.scan()
         let cleanScan = debouncer.update(rawScan: rawScan)
 
-        // 1. Process Edges (Press/Release)
-        for i in 0..<totalKeys {
-            let row = i / colCount
-            let col = i % colCount
+        let result = processKeyEvents(
+            cleanScan: cleanScan,
+            lastScan: lastScan,
+            colCount: colCount,
+            pressedActions: &pressedActions,
+            engine: &engine,
+            hasWiredBridge: hasWiredBridge,
+            currentMode: &currentMode
+        )
+        lastScan = cleanScan
+        report = result.report
 
-            if cleanScan[i] && !lastScan[i] {
-                // Key Pressed
-                let action = engine.getAction(row: row, col: col)
-                pressedActions[i] = action
-                #if SMK_RGB_AVAILABLE
-                rgb?.setKey(row: row, col: col, r: 255, g: 255, b: 255)
-                #endif
-
-                switch action {
-                case .toggleLayer(let l):
-                    engine.toggleLayer(l)
-                case .momentaryLayer(let l):
-                    engine.addMomentaryLayer(l)
-                case .toggleConnection:
-                    if hasWiredBridge {
-                        currentMode.toggle()
-                        kb_log(currentMode == .wired ? "Connection switched to: WIRED" : "Connection switched to: BLUETOOTH")
-                    } else {
-                        kb_log("toggle_conn ignored: this board has no wired HID bridge")
-                    }
-                default:
-                    break
-                }
-            } else if lastScan[i] && !cleanScan[i] { // Key Released
-                let action = pressedActions[i]
-                #if SMK_RGB_AVAILABLE
-                rgb?.setKey(row: row, col: col, r: 0, g: 0, b: 0)
-                #endif
-
-                switch action {
-                case .momentaryLayer(let l):
-                    engine.removeMomentaryLayer(l)
-                default:
-                    break
-                }
-                pressedActions[i] = .none
+        #if SMK_RGB_AVAILABLE
+        for t in result.transitions {
+            if t.pressed {
+                rgb?.setKey(row: t.position.row, col: t.position.col, r: 255, g: 255, b: 255)
+            } else {
+                rgb?.setKey(row: t.position.row, col: t.position.col, r: 0, g: 0, b: 0)
             }
         }
-        lastScan = cleanScan
-        #if SMK_RGB_AVAILABLE
         rgb?.refreshIfDirty()
         #endif
 
-        // 2. Build and Send HID Report
-        report.reset()
-        for i in 0..<totalKeys {
-            if cleanScan[i] {
-                let action = pressedActions[i]
-                switch action {
-                case .key(let code):
-                    report.addKey(code.rawValue)
-                case .modifier(let mod):
-                    report.addModifier(mod)
-                default:
-                    break
-                }
+        for event in result.connectionEvents {
+            switch event {
+            case .toggled(let mode):
+                kb_log(mode == .wired ? "Connection switched to: WIRED" : "Connection switched to: BLUETOOTH")
+            case .ignored:
+                kb_log("toggle_conn ignored: this board has no wired HID bridge")
             }
         }
 
-        // 3. Dispatch Reports based on active mode
         report.keys.withUnsafeBufferPointer { ptr in
             if let base = ptr.baseAddress {
                 if currentMode == .bluetooth {

@@ -1,27 +1,3 @@
-enum Modifier: UInt8 {
-    case leftCtrl
-    case leftShift
-    case leftAlt
-    case leftGUI
-    case rightCtrl
-    case rightShift
-    case rightAlt
-    case rightGUI
-
-    var rawValue: UInt8 {
-        switch self {
-        case .leftCtrl:   return 0b00000001
-        case .leftShift:  return 0b00000010
-        case .leftAlt:    return 0b00000100
-        case .leftGUI:    return 0b00001000
-        case .rightCtrl:  return 0b00010000
-        case .rightShift: return 0b00100000
-        case .rightAlt:   return 0b01000000
-        case .rightGUI:   return 0b10000000
-        }
-    }
-}
-
 // ESP32-C6 provides this as a plain Swift function (GPIOInit.swift, part
 // of this same module — see main/CMakeLists.txt's swift_srcs); RP2040
 // still provides it as a C function (ports/rp2040/platform/gpio_init.c),
@@ -115,32 +91,3 @@ struct KeyMatrix {
     }
 }
 
-struct DebouncedMatrix {
-    private let totalKeys: Int
-    private let debounceThreshold = 5
-
-    private var counters: [Int]
-    private var stableState: [Bool]
-
-    init(totalKeys: Int) {
-        self.totalKeys = totalKeys
-        self.counters = [Int](repeating: 0, count: totalKeys)
-        self.stableState = [Bool](repeating: false, count: totalKeys)
-    }
-
-    mutating func update(rawScan: [Bool]) -> [Bool] {
-        for i in 0..<totalKeys {
-            if i >= rawScan.count { break }
-            if rawScan[i] != stableState[i] {
-                counters[i] += 1
-                if counters[i] >= debounceThreshold {
-                    stableState[i] = rawScan[i]
-                    counters[i] = 0
-                }
-            } else {
-                counters[i] = 0
-            }
-        }
-        return stableState
-    }
-}
