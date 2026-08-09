@@ -6,7 +6,7 @@ menu "SMK Keyboard Configuration"
         help
             The wired HID path (Sources/componets/uart_init.c) talks to an
             external CH9350 UART-to-USB bridge chip. Boards built from the
-            gateron_lp_kbd PCB (BLE + battery, no bridge chip) do NOT have
+            smk_kbd PCB (BLE + battery, no bridge chip) do NOT have
             this — leave disabled. Enabling this on a board without the
             chip is unsafe: UART1's RX pin (GPIO20) is also wired to a
             matrix column on that board, so claiming it for UART would
@@ -32,7 +32,7 @@ menu "SMK Keyboard Configuration"
         bool "Board has a per-key RGB LED chain (SK6812MINI-E/WS2812)"
         default n
         help
-            The stock gateron_lp_kbd PCB has no addressable LED chain — only
+            The stock smk_kbd PCB has no addressable LED chain — only
             a single fixed charge-status LED — so this defaults off. Enable
             it only if you've wired one up yourself (e.g. to the spare pad
             at IO16) or are building a future board revision that has one.
@@ -45,7 +45,7 @@ menu "SMK Keyboard Configuration"
         depends on SMK_HAS_RGB_BACKLIGHT
         default 16
         help
-            Defaults to IO16 — the one pin the gateron_lp_kbd PCB's README
+            Defaults to IO16 — the one pin the smk_kbd PCB's README
             documents as spare/unconnected (broken out as "TXD0, spare/UART
             log"). Change this to match wherever you actually wired the
             chain's data line.

@@ -122,7 +122,55 @@ struct Config {
 func app_main_swift() {
     kb_log("Initialising SMK Keyboard...")
 
-    // gateron_lp_kbd board (ESP32-C6-MINI-1) — GPIO map per that PCB's
+    // Board pin maps. Exactly one of these is compiled in, selected by the
+    // build (SMK_TARGET_BOARD in ports/rp2040/CMakeLists.txt / the ESP32
+    // main/CMakeLists.txt always defines the ESP32 one). Both boards share
+    // the same COL2ROW matrix topology and keymap layout — only the GPIO
+    // numbers differ.
+#if SMK_BOARD_KBD_RP2040
+    // smk_kbd_rp2040 board (RP2040 QFN-56 chip-down) — GPIO map per
+    // generate_kbd_rp2040.py (source of truth for this board's pin
+    // assignments; see that file's header docstring for verification notes):
+    //   ROW0-4 = GPIO0-4 (sense inputs, pull-down)
+    //   COL0-11 = GPIO5-16 (strobe outputs)
+    //   RGB_GPIO = GPIO17 (SK6812MINI-E chain, via level shifter U7)
+    //   VBAT_SENSE = GPIO26/ADC0 — reserved, not used by the matrix
+    //   GPIO18-23 + GPIO28 are the CYW43439 BLE UART link (BT_REG_ON,
+    //   BT_DEV_WAKE, BT_UART_*, BT_HOST_WAKE) — see ble_hid_kbd_uart.c
+    // colsAreDriven:1 for the same reason as the ESP32 board below — this
+    // board's matrix is also COL2ROW (diode anode at the column/switch
+    // side) — see KeyMatrix.swift.
+    //
+    // Row 4 layout is irregular per the PCB: 5 keys (cols 0-4), one 2U key
+    // (col 5), no switch at col 6, then 5 more keys (cols 7-11) — 59
+    // physical keys total over the 5x12 = 60 matrix positions.
+    let configJson = """
+    {
+        "matrix": {
+            "rows": [0, 1, 2, 3, 4],
+            "cols": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            "colsAreDriven": 1
+        },
+        "layers": [
+            [
+                ["key:1", "key:2", "key:3", "key:4", "key:5", "key:6", "key:7", "key:8", "key:9", "key:0", "key:minus", "key:backspace"],
+                ["key:tab", "key:q", "key:w", "key:e", "key:r", "key:t", "key:y", "key:u", "key:i", "key:o", "key:p", "key:backslash"],
+                ["key:escape", "key:a", "key:s", "key:d", "key:f", "key:g", "key:h", "key:j", "key:k", "key:l", "key:semicolon", "key:enter"],
+                ["mod:leftShift", "key:z", "key:x", "key:c", "key:v", "key:b", "key:n", "key:m", "key:comma", "key:period", "key:slash", "mod:rightShift"],
+                ["mod:leftCtrl", "mod:leftGUI", "mod:leftAlt", "mo:1", "mod:leftShift", "key:space", "none", "mod:rightShift", "mo:1", "mod:rightAlt", "mod:rightGUI", "mod:rightCtrl"]
+            ],
+            [
+                ["toggle_conn", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "key:left", "key:down", "key:up", "key:right", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "none", "trans", "trans", "trans", "trans", "trans"]
+            ]
+        ]
+    }
+    """
+#else
+    // smk_kbd board (ESP32-C6-MINI-1) — GPIO map per that PCB's
     // README (source of truth for firmware pin assignments):
     //   ROW0-3 = IO0-IO3, ROW4 = IO5 (sense inputs, pull-down)
     //   COL0-11 = IO6, IO7, IO8, IO14, IO15, IO18, IO19, IO20, IO21, IO22,
@@ -138,7 +186,9 @@ func app_main_swift() {
     // physical keys total over the 5x12 = 60 matrix positions.
     //
     // This board has no per-key RGB chain and no CH9350 wired-HID bridge —
-    // see notes below on both.
+    // see notes below on both. Also the default for plain Pico/Pico W builds
+    // (SMK_TARGET_BOARD unset) — rewire your own dev board to match, or edit
+    // this JSON, per the RP2040 port README.
     let configJson = """
     {
         "matrix": {
@@ -164,6 +214,7 @@ func app_main_swift() {
         ]
     }
     """
+#endif
 
     let cfg = Config.fromJson(configJson)
     if cfg.rowPins.isEmpty || cfg.colPins.isEmpty {
@@ -177,7 +228,7 @@ func app_main_swift() {
     var engine = LayerEngine()
     var report = HIDReport()
 
-    // Per-key RGB backlight — opt-in, off by default. The stock gateron_lp_kbd
+    // Per-key RGB backlight — opt-in, off by default. The stock smk_kbd
     // PCB has no SK6812MINI-E chain (just a fixed charge-status LED), so
     // there's nothing to drive unless you've wired one up yourself. Enable
     // via `idf.py menuconfig` -> SMK Keyboard Configuration ->
@@ -203,7 +254,7 @@ func app_main_swift() {
 
     // Initialize Wired Link — only if this board actually has the CH9350
     // bridge (Kconfig SMK_HAS_WIRED_BRIDGE / RP2040 hardcoded true). The
-    // gateron_lp_kbd board doesn't: its UART1 RX pin (GPIO20) is also a
+    // smk_kbd board doesn't: its UART1 RX pin (GPIO20) is also a
     // matrix column, so claiming it for UART here would break scanning.
     let hasWiredBridge = smk_has_wired_bridge() != 0
     if hasWiredBridge {

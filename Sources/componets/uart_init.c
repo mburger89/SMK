@@ -3,9 +3,9 @@
 #include <string.h>
 
 #define UART_NUM UART_NUM_1
-#define TX_PIN 21
-#define RX_PIN 20
-#define BAUD_RATE 115200 // Default is 300000, but 115200 is often more reliable on breadboards
+#define TX_PIN 16 // WIRED_TX net -> CH9350L RXD (pin27). IO20/IO21 collide with COL7/COL8 on smk_kbd.
+#define RX_PIN UART_PIN_NO_CHANGE // TX-only: CH9350L TXD is left unconnected, nothing to receive
+#define BAUD_RATE 115200 // Matches CH9350L's default BAUD0/BAUD1 strapping (both floating = pulled up = 115200)
 
 static const char *TAG = "WIRED_HID";
 
@@ -23,7 +23,7 @@ void init_wired_link() {
     ESP_ERROR_CHECK(uart_set_pin(UART_NUM, TX_PIN, RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     ESP_ERROR_CHECK(uart_driver_install(UART_NUM, 256, 0, 0, NULL, 0));
 
-    ESP_LOGI(TAG, "Wired HID link initialized via UART1 (TX:%d, RX:%d)", TX_PIN, RX_PIN);
+    ESP_LOGI(TAG, "Wired HID link initialized via UART1 (TX:%d)", TX_PIN);
 }
 
 /**

@@ -31,6 +31,6 @@ int smk_rgb_gpio(void) {
 #if defined(CONFIG_SMK_RGB_GPIO)
     return CONFIG_SMK_RGB_GPIO;
 #else
-    return 16; // spare/unconnected pad on gateron_lp_kbd
+    return 16; // spare/unconnected pad on smk_kbd
 #endif
 }

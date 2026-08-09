@@ -1,7 +1,7 @@
 // Per-key RGB backlighting over an SK6812MINI-E chain (driven via RMT,
 // see led_strip_driver.c).
 //
-// Opt-in, off by default: the stock gateron_lp_kbd PCB has no addressable
+// Opt-in, off by default: the stock smk_kbd PCB has no addressable
 // LED chain — only a single fixed charge-status LED — so there's nothing to
 // drive unless you've wired one up yourself. Compiled in only for the
 // ESP32-C6 build (guarded by -DSMK_RGB_AVAILABLE in main/CMakeLists.txt;

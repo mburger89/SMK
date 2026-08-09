@@ -51,3 +51,19 @@ void smk_keymap_erase(void);
 int32_t smk_keymap_begin_write(uint16_t total_len);
 int32_t smk_keymap_write_chunk(uint16_t offset, const uint8_t *data, uint16_t len);
 int32_t smk_keymap_commit(uint32_t crc32);
+
+// RGB backlight (platform/led_strip_driver.c) — only declared when this
+// build compiles RGBLighting.swift in (SMK_TARGET_BOARD=smk_kbd_rp2040,
+// via SMK_RGB_AVAILABLE in ports/rp2040/CMakeLists.txt). Mirrors
+// Sources/smk/Bridging.h's ESP32 declarations; unlike ESP32 (Kconfig-driven,
+// off by default), this board always has the hardware, so both are hardcoded
+// — see led_strip_driver.c.
+#ifdef SMK_RGB_AVAILABLE
+int smk_has_rgb_backlight(void);
+int smk_rgb_gpio(void);
+
+void led_strip_driver_init(int32_t gpio_num, int32_t num_leds);
+void led_strip_set_pixel(int32_t index, uint8_t r, uint8_t g, uint8_t b);
+void led_strip_refresh(void);
+void led_strip_clear(void);
+#endif

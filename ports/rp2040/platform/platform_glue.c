@@ -13,6 +13,10 @@
 extern void app_main_swift(void); // shared entry point (Sources/smk/Main.swift)
 extern void kb_usb_task(void);     // usb_hid.c
 
+#ifdef SMK_BOARD_KBD_RP2040
+extern void ble_kbd_uart_poll(void); // ble_hid_kbd_uart.c
+#endif
+
 // --- Logging ---------------------------------------------------------------
 // Routed over the pico-sdk stdio (USB-CDC and/or UART, per CMake config).
 void kb_log(const char *msg) {
@@ -24,6 +28,9 @@ void kb_log(const char *msg) {
 // no RTOS by default, so we (a) keep USB serviced and (b) sleep ~ticks ms.
 void vTaskDelay(uint32_t ticks) {
     kb_usb_task();
+#ifdef SMK_BOARD_KBD_RP2040
+    ble_kbd_uart_poll();
+#endif
     if (ticks == 0) ticks = 1;
     sleep_ms(ticks);
 }
