@@ -1005,7 +1005,9 @@ git commit -m "Extract ledChainIndex into SMKCore, add tests"
 
 **Interfaces:**
 - Consumes: `LayerEngine`, `KeyAction` (Task 5); `HIDReport` (Task 3); `ConnectionMode` (Task 3).
-- Produces: `struct KeyPosition: Equatable { let row: Int; let col: Int }`; `struct KeyEventProcessingResult { var report: HIDReport; var pressedThisCycle: [KeyPosition]; var releasedThisCycle: [KeyPosition]; var connectionModeChanged: Bool; var connectionToggleIgnored: Bool }`; `func processKeyEvents(cleanScan: [Bool], lastScan: [Bool], colCount: Int, pressedActions: inout [KeyAction], engine: inout LayerEngine, hasWiredBridge: Bool, currentMode: inout ConnectionMode) -> KeyEventProcessingResult`.
+- Produces: `struct KeyPosition: Equatable { let row: Int; let col: Int }`; `struct KeyTransition: Equatable { let position: KeyPosition; let pressed: Bool }`; `struct KeyEventProcessingResult { var report: HIDReport; var transitions: [KeyTransition]; var connectionModeChanged: Bool; var connectionToggleIgnored: Bool }`; `func processKeyEvents(cleanScan: [Bool], lastScan: [Bool], colCount: Int, pressedActions: inout [KeyAction], engine: inout LayerEngine, hasWiredBridge: Bool, currentMode: inout ConnectionMode) -> KeyEventProcessingResult`.
+
+`transitions` is a single list in original scan-index order (not split into separate press/release arrays) specifically so the caller can replay press/release RGB calls in the *exact* order the original inline loop made them — see Global Constraints: this task's extraction must stay byte-identical in behavior, not just in outcome.
 
 This is genuinely new code (an extraction *and* restructuring, not a pure move), so it gets real TDD: tests first, verified to fail (function doesn't exist yet), then the implementation.
 
@@ -1036,8 +1038,7 @@ import Testing
     )
 
     #expect(result.report.keys == [KeyCode.a.rawValue, 0, 0, 0, 0, 0])
-    #expect(result.pressedThisCycle == [KeyPosition(row: 0, col: 0)])
-    #expect(result.releasedThisCycle == [])
+    #expect(result.transitions == [KeyTransition(position: KeyPosition(row: 0, col: 0), pressed: true)])
 }
 
 @Test func keyEventProcessingClearsActionOnRelease() {
@@ -1059,7 +1060,7 @@ import Testing
     )
 
     #expect(pressedActions == [.none])
-    #expect(result.releasedThisCycle == [KeyPosition(row: 0, col: 0)])
+    #expect(result.transitions == [KeyTransition(position: KeyPosition(row: 0, col: 0), pressed: false)])
     #expect(result.report.keys == [0, 0, 0, 0, 0, 0])
 }
 
@@ -1179,10 +1180,14 @@ struct KeyPosition: Equatable {
     let col: Int
 }
 
+struct KeyTransition: Equatable {
+    let position: KeyPosition
+    let pressed: Bool
+}
+
 struct KeyEventProcessingResult {
     var report = HIDReport()
-    var pressedThisCycle: [KeyPosition] = []
-    var releasedThisCycle: [KeyPosition] = []
+    var transitions: [KeyTransition] = []
     var connectionModeChanged = false
     var connectionToggleIgnored = false
 }
@@ -1193,8 +1198,8 @@ struct KeyEventProcessingResult {
 /// whether a `toggle_conn` press should flip `currentMode` (only when
 /// `hasWiredBridge`), and assembles the resulting HID report from
 /// currently-held keys. Pure data in/out — no hardware or logging calls;
-/// callers use the returned flags/positions to drive RGB and log
-/// messages.
+/// callers use `transitions` (in scan-index order, matching the original
+/// inline loop) to drive RGB, and the two flags to drive logging.
 func processKeyEvents(
     cleanScan: [Bool],
     lastScan: [Bool],
@@ -1213,7 +1218,7 @@ func processKeyEvents(
         if cleanScan[i] && !lastScan[i] {
             let action = engine.getAction(row: row, col: col)
             pressedActions[i] = action
-            result.pressedThisCycle.append(KeyPosition(row: row, col: col))
+            result.transitions.append(KeyTransition(position: KeyPosition(row: row, col: col), pressed: true))
 
             switch action {
             case .toggleLayer(let l):
@@ -1232,7 +1237,7 @@ func processKeyEvents(
             }
         } else if lastScan[i] && !cleanScan[i] {
             let action = pressedActions[i]
-            result.releasedThisCycle.append(KeyPosition(row: row, col: col))
+            result.transitions.append(KeyTransition(position: KeyPosition(row: row, col: col), pressed: false))
 
             switch action {
             case .momentaryLayer(let l):
@@ -1288,11 +1293,12 @@ In `Sources/smk/Main.swift`, replace the entire `while true { ... }` block (ever
         report = result.report
 
         #if SMK_RGB_AVAILABLE
-        for pos in result.pressedThisCycle {
-            rgb?.setKey(row: pos.row, col: pos.col, r: 255, g: 255, b: 255)
-        }
-        for pos in result.releasedThisCycle {
-            rgb?.setKey(row: pos.row, col: pos.col, r: 0, g: 0, b: 0)
+        for t in result.transitions {
+            if t.pressed {
+                rgb?.setKey(row: t.position.row, col: t.position.col, r: 255, g: 255, b: 255)
+            } else {
+                rgb?.setKey(row: t.position.row, col: t.position.col, r: 0, g: 0, b: 0)
+            }
         }
         rgb?.refreshIfDirty()
         #endif
@@ -1317,7 +1323,7 @@ In `Sources/smk/Main.swift`, replace the entire `while true { ... }` block (ever
     }
 ```
 
-Note the behavior is preserved exactly except for one harmless reordering: the original code interleaved each key's RGB press/release call with its edge-detection in strict index order; this version collects all presses and all releases during the single edge-detection pass, then issues RGB calls grouped by press/release. Since `RGBLighting.setKey` only marks a pixel dirty (the actual chain write happens once, in the unchanged `refreshIfDirty()` call after both loops), the final LED buffer state is identical regardless of per-call order — no key can be both pressed and released in the same cycle, so there's no possibility of the two groups fighting over the same pixel.
+This preserves the original call order exactly: `transitions` is appended to in the same single scan-index pass the original inline loop used, so replaying it in order reproduces the exact sequence of `rgb?.setKey(...)` calls the original code made — no reordering, matching the Global Constraints' byte-identical-behavior requirement.
 
 - [ ] **Step 6: Update CMake source lists**
 
@@ -1456,6 +1462,6 @@ git commit -m "Document SMKCore in CLAUDE.md"
 
 ## Self-Review Notes
 
-- **Spec coverage:** every `SMKCore` file the design lists has a task (Modifier/Debounce/ConnectionMode/HIDReport/Config/LayerEngine/LEDChainMapping/KeyEventProcessing all covered, Tasks 1-7); CI is Task 8; the six-target regression check and doc update are Task 9. The design's two open risks (cJSON SPM wiring, KeyEventProcessing behavioral fidelity) are addressed directly — Task 1 Step 3 spikes cJSON before anything depends on it, and Task 7 Step 5 documents exactly why the one behavioral reordering is safe.
+- **Spec coverage:** every `SMKCore` file the design lists has a task (Modifier/Debounce/ConnectionMode/HIDReport/Config/LayerEngine/LEDChainMapping/KeyEventProcessing all covered, Tasks 1-7); CI is Task 8; the six-target regression check and doc update are Task 9. The design's two open risks (cJSON SPM wiring, KeyEventProcessing behavioral fidelity) are addressed directly — Task 1 Step 3 spikes cJSON before anything depends on it, and Task 7's `KeyTransition` design (a single ordered list, not split press/release arrays) preserves the original scan loop's exact call order rather than needing a reordering exception.
 - **Type consistency:** `KeyAction`, `KeyCode`, `Modifier`, `ConnectionMode`, `HIDReport`, `LayerEngine`, `KeyPosition` are used with identical names/signatures everywhere they appear across tasks (cross-checked against Task 5/7's exact source).
 - **No placeholders:** every step has real, complete code — no TBD/TODO, no "write tests for the above" without the tests.
