@@ -8,11 +8,17 @@ struct KeyTransition: Equatable {
     let pressed: Bool
 }
 
+enum ConnectionToggleEvent: Equatable {
+    case toggled(ConnectionMode)
+    case ignored
+}
+
 struct KeyEventProcessingResult {
     var report = HIDReport()
     var transitions: [KeyTransition] = []
     var connectionModeChanged = false
     var connectionToggleIgnored = false
+    var connectionEvents: [ConnectionToggleEvent] = []
 }
 
 /// Processes one debounced scan cycle against the current layer/connection
@@ -22,7 +28,15 @@ struct KeyEventProcessingResult {
 /// `hasWiredBridge`), and assembles the resulting HID report from
 /// currently-held keys. Pure data in/out — no hardware or logging calls;
 /// callers use `transitions` (in scan-index order, matching the original
-/// inline loop) to drive RGB, and the two flags to drive logging.
+/// inline loop) to drive RGB, and `connectionEvents` (also in scan-index
+/// order, one entry per toggle_conn press-transition, each capturing
+/// `currentMode`'s value at that specific toggle instant) to drive
+/// logging — replaying it reproduces the exact log sequence the original
+/// inline-per-press logging produced, even if a future keymap binds
+/// toggle_conn to multiple keys that transition in the same cycle.
+/// `connectionModeChanged`/`connectionToggleIgnored` remain as
+/// simple last-write-wins summary flags for callers that only care
+/// whether *any* toggle/ignore happened this cycle.
 func processKeyEvents(
     cleanScan: [Bool],
     lastScan: [Bool],
@@ -52,8 +66,10 @@ func processKeyEvents(
                 if hasWiredBridge {
                     currentMode.toggle()
                     result.connectionModeChanged = true
+                    result.connectionEvents.append(.toggled(currentMode))
                 } else {
                     result.connectionToggleIgnored = true
+                    result.connectionEvents.append(.ignored)
                 }
             default:
                 break

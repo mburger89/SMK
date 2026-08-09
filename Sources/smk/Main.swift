@@ -293,10 +293,13 @@ func app_main_swift() {
         rgb?.refreshIfDirty()
         #endif
 
-        if result.connectionModeChanged {
-            kb_log(currentMode == .wired ? "Connection switched to: WIRED" : "Connection switched to: BLUETOOTH")
-        } else if result.connectionToggleIgnored {
-            kb_log("toggle_conn ignored: this board has no wired HID bridge")
+        for event in result.connectionEvents {
+            switch event {
+            case .toggled(let mode):
+                kb_log(mode == .wired ? "Connection switched to: WIRED" : "Connection switched to: BLUETOOTH")
+            case .ignored:
+                kb_log("toggle_conn ignored: this board has no wired HID bridge")
+            }
         }
 
         report.keys.withUnsafeBufferPointer { ptr in

@@ -145,3 +145,21 @@ import Testing
     #expect(result.report.modifier == Modifier.leftShift.rawValue)
     #expect(result.report.keys == [KeyCode.a.rawValue, 0, 0, 0, 0, 0])
 }
+
+@Test func keyEventProcessingCapturesModeAtEachToggleInstantWhenTwoKeysToggleInOneCycle() {
+    var engine = LayerEngine()
+    engine.loadKeymap(json: """
+    { "layers": [ [ ["toggle_conn", "toggle_conn"] ] ] }
+    """)
+    var pressedActions: [KeyAction] = [.none, .none]
+    var currentMode = ConnectionMode.bluetooth
+
+    let result = processKeyEvents(
+        cleanScan: [true, true], lastScan: [false, false], colCount: 2,
+        pressedActions: &pressedActions, engine: &engine,
+        hasWiredBridge: true, currentMode: &currentMode
+    )
+
+    #expect(result.connectionEvents == [.toggled(.wired), .toggled(.bluetooth)])
+    #expect(currentMode == .bluetooth)
+}
