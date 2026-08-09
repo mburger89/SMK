@@ -17,16 +17,11 @@ void send_wired_report(uint8_t modifier, uint8_t* keycodes);
 // Logging
 void kb_log(const char *msg);
 
-// GPIO Matrix — colsAreDriven selects which wiring convention to configure;
-// see the comment in Sources/smk/KeyMatrix.swift.
-void init_keyboard_pins(const int32_t* rows, int32_t row_count, const int32_t* cols, int32_t col_count, int32_t colsAreDriven);
-
-// Board/connection-mode config (Sources/componets/smk_config.c), backed by
-// Kconfig (main/Kconfig.projbuild) on this target.
-int smk_has_wired_bridge(void);      // 1 if this board has working wired HID hardware
-int smk_default_mode_is_wired(void); // 1 if firmware should boot into wired mode
-int smk_has_rgb_backlight(void);     // 1 if a per-key RGB LED chain is wired up (opt-in)
-int smk_rgb_gpio(void);              // GPIO driving that chain, if enabled
+// GPIO Matrix pin configuration (init_keyboard_pins) and board/
+// connection-mode config (smk_has_wired_bridge / smk_default_mode_is_wired
+// / smk_has_rgb_backlight / smk_rgb_gpio) are implemented directly in
+// Swift for this target — see GPIOInit.swift and SmkConfig.swift. No C
+// prototypes here: nothing outside the Swift module calls them.
 
 // RGB LED chain (SK6812MINI-E via RMT) — only referenced from Main.swift
 // when compiled with -DSMK_RGB_AVAILABLE (ESP32-C6 build only; RP2040

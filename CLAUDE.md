@@ -79,6 +79,15 @@ Each target provides its own `GPIORegisters.swift` with the **same** `outSet`/`o
 | ESP32-C6 | `Sources/smk/GPIORegisters.swift` | `0x60091000` |
 | RP2040 | `ports/rp2040/GPIORegisters.swift` | `0xD0000000` (SIO) |
 
+### ESP32-C6-only Swift Sources (`Sources/smk/`)
+
+Compiled only into the ESP32-C6 build (`main/CMakeLists.txt`'s `swift_srcs`) — RP2040 backs the same function names with its own C, linked in via the `@_extern(c, ...)` declarations these files' `#if !SMK_TARGET_ESP32C6` guards leave in place in `KeyMatrix.swift`/`Main.swift`:
+
+| File | Responsibility |
+|---|---|
+| `GPIOInit.swift` | `init_keyboard_pins()` — configures rows/columns as push-pull output vs. pull-up/pull-down input depending on the `colsAreDriven` flag, by calling straight into the ESP-IDF gpio driver (`gpio_reset_pin`/`gpio_set_direction`/etc. via `@_extern(c, ...)`) |
+| `SmkConfig.swift` | `smk_has_wired_bridge()` / `smk_default_mode_is_wired()` / `smk_has_rgb_backlight()` / `smk_rgb_gpio()`, backed by `main/Kconfig.projbuild` via Swift-level `#if SMK_HAS_WIRED_BRIDGE`/etc. flags that `main/CMakeLists.txt` derives from the matching `CONFIG_SMK_*` CMake variables — lets `idf.py menuconfig` pick the boot-default connection mode and whether wired HID/RGB hardware exists on the board |
+
 ### smk_kbd board (ESP32-C6-MINI-1)
 
 The active `configJson` in `Main.swift` targets this specific board (59-key, 5×12, BLE + Li-ion + USB-C charging, no wired-HID bridge, no per-key RGB). GPIO map, straight from the PCB project's README (source of truth for pin assignments):
@@ -100,9 +109,9 @@ Row 4 is irregular: 5 keys (cols 0–4), one 2U key (col 5), no switch at col 6,
 |---|---|
 | `ble_helper.c` | NimBLE/esp_hidd BLE HID init and `send_keyboard_report()` |
 | `uart_init.c` | UART1 init (TX:16, TX-only) and CH9350L wired HID bridge via `send_wired_report()` — only safe to enable via `SMK_HAS_WIRED_BRIDGE` (see below). IO16 is smk_kbd's one documented spare pad, so a wired-bridge revision and `SMK_HAS_RGB_BACKLIGHT` (which also defaults to IO16) are mutually exclusive unless RGB is moved to a different pin — Kconfig does not currently guard against enabling both. |
-| `gpio_init.c` | `init_keyboard_pins()` — configures rows/columns as push-pull output vs. pull-up/pull-down input depending on the `colsAreDriven` flag passed in from the JSON config (see Matrix scan loop below) |
 | `kb_main.c` | `app_main()` C entry point; Unicode linker stubs for Embedded Swift |
-| `smk_config.c` | `smk_has_wired_bridge()` / `smk_default_mode_is_wired()`, backed by `main/Kconfig.projbuild` — lets `idf.py menuconfig` pick the boot-default connection mode and whether wired HID hardware exists on the board |
+
+GPIO pin configuration and Kconfig-backed board config used to live here too (`gpio_init.c`, `smk_config.c`) but are now plain Swift — see "ESP32-C6-only Swift Sources" above.
 
 ### Board Configuration (Kconfig)
 

@@ -22,8 +22,14 @@ enum Modifier: UInt8 {
     }
 }
 
+// ESP32-C6 provides this as a plain Swift function (GPIOInit.swift, part
+// of this same module — see main/CMakeLists.txt's swift_srcs); RP2040
+// still provides it as a C function (ports/rp2040/platform/gpio_init.c),
+// so only that build declares it here as an extern symbol to link against.
+#if !SMK_TARGET_ESP32C6
 @_extern(c, "init_keyboard_pins")
 func init_keyboard_pins(_ rows: UnsafePointer<Int32>, _ rowCount: Int32, _ cols: UnsafePointer<Int32>, _ colCount: Int32, _ colsAreDriven: Int32)
+#endif
 
 // Two wiring conventions coexist across targets/boards:
 //   - colsAreDriven == false (legacy/RP2040): rows are push-pull outputs
