@@ -13,6 +13,8 @@ SMK (Swift Matrix Keyboard) is keyboard firmware written in **Embedded Swift** t
 | ESP32-C6 | RISC-V | ESP-IDF / idf.py | BLE (NimBLE) + Wired (CH9350 UART) |
 | Pico | RP2040 ARM | CMake / Ninja + pico-sdk | USB HID (TinyUSB) |
 | Pico W | RP2040 ARM | CMake / Ninja + pico-sdk | USB HID + BLE (BTstack, scaffolded) |
+| Pico 2 | RP2350 ARM (Cortex-M33) | CMake / Ninja + pico-sdk (`SMK_TARGET_BOARD=pico2`) | USB HID (TinyUSB); build-only, not yet hardware-verified |
+| Pico 2 W | RP2350 ARM (Cortex-M33) | CMake / Ninja + pico-sdk (`SMK_TARGET_BOARD=pico2_w`) | USB HID + BLE (BTstack, scaffolded); build-only, not yet hardware-verified |
 
 ## Prerequisites
 
@@ -76,7 +78,7 @@ Each target provides its own `GPIORegisters.swift` with the **same** `outSet`/`o
 | Target | File | Base address |
 |---|---|---|
 | ESP32-C6 | `Sources/smk/GPIORegisters.swift` | `0x60091000` |
-| RP2040 | `ports/rp2040/GPIORegisters.swift` | `0xD0000000` (SIO) |
+| RP2040 / RP2350 | `ports/rp2040/GPIORegisters.swift` | `0xD0000000` (SIO — identical register layout on both chips) |
 
 ### gateron_lp_kbd board (ESP32-C6-MINI-1)
 

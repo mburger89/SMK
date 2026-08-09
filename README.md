@@ -1,6 +1,6 @@
 # SMK (Swift Matrix Keyboard)
 
-A keyboard firmware written in **Embedded Swift**, targeting the **ESP32-C6** and **Raspberry Pi Pico / Pico W (RP2040)**. SMK provides a modern development experience for keyboard enthusiasts, featuring Bluetooth (BLE) and Wired (USB/UART) connectivity, and a flexible JSON-based keymap system.
+A keyboard firmware written in **Embedded Swift**, targeting the **ESP32-C6**, **Raspberry Pi Pico / Pico W (RP2040)**, and **Raspberry Pi Pico 2 / Pico 2 W (RP2350)**. SMK provides a modern development experience for keyboard enthusiasts, featuring Bluetooth (BLE) and Wired (USB/UART) connectivity, and a flexible JSON-based keymap system.
 
 ## Features
 - **Embedded Swift**: Leverages Swift's safety and modern syntax on bare-metal hardware.
@@ -88,11 +88,12 @@ idf.py flash monitor
 - `idf.py`: Standard ESP-IDF build script.
 - `IDF_PATH`: Should point to your local ESP-IDF installation (required by `CMakeLists.txt`).
 
-## RP2040 / Pico W Support
+## RP2040 / RP2350 (Pico / Pico W / Pico 2 / Pico 2 W) Support
 
-SMK also targets the **Raspberry Pi Pico** (USB HID) and **Pico W** (USB HID + BLE scaffolded).
-The keyboard logic (`Sources/smk/`) is shared single-source across both targets; only the hardware
-platform layer differs.
+SMK also targets the **Raspberry Pi Pico** (USB HID), **Pico W** (USB HID + BLE scaffolded), and
+their RP2350-based successors **Pico 2** / **Pico 2 W** (build-only for now — not yet verified on
+real hardware). The keyboard logic (`Sources/smk/`) is shared single-source across all of these
+targets; only the hardware platform layer differs.
 
 ### Prerequisites (RP2040)
 ```bash
@@ -107,12 +108,14 @@ brew tap osx-cross/arm && brew install osx-cross/arm/arm-gcc-bin@14
 brew install cmake ninja picotool
 ```
 
-### Build (RP2040)
+### Build (RP2040 / RP2350)
 ```bash
 export PICO_SDK_PATH=~/pico-sdk
 
-./build_rp2040.sh pico      # plain Pico — USB HID only
-./build_rp2040.sh pico_w    # Pico W   — USB HID + BLE
+./build_rp2040.sh pico      # plain Pico (RP2040)   — USB HID only
+./build_rp2040.sh pico_w    # Pico W (RP2040)       — USB HID + BLE
+./build_rp2040.sh pico2     # Pico 2 (RP2350)       — USB HID only
+./build_rp2040.sh pico2_w   # Pico 2 W (RP2350)     — USB HID + BLE
 ```
 
 Flash by holding **BOOTSEL**, connecting USB, then:
