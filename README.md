@@ -108,6 +108,12 @@ brew tap osx-cross/arm && brew install osx-cross/arm/arm-gcc-bin@14
 brew install cmake ninja picotool
 ```
 
+RP2350 (`pico2`/`pico2_w`) additionally requires a Swift development-snapshot toolchain (confirmed:
+`swift-DEVELOPMENT-SNAPSHOT-2026-05-27-a` or later) that ships a real Embedded-Swift stdlib for
+`armv8m.main-none-none-eabi` (RP2350's Cortex-M33 target). Released `swift-6.3.x` toolchains report
+support for that triple via `-print-target-info` but fail an actual compile — they don't ship the
+stdlib.
+
 ### Build (RP2040 / RP2350)
 ```bash
 export PICO_SDK_PATH=~/pico-sdk

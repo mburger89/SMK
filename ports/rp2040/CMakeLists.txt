@@ -31,7 +31,11 @@ include(${CMAKE_CURRENT_LIST_DIR}/pico_sdk_import.cmake)
 # ---------------------------------------------------------------------------
 # Swift toolchain discovery
 # Prefer SWIFTC env/CMake var, then scan ~/Library/Developer/Toolchains for a
-# toolchain that supports armv6m-none-none-eabi Embedded mode.
+# toolchain that both recognizes this board's Embedded target triple
+# (armv6m-none-none-eabi for pico/pico_w, armv8m.main-none-none-eabi for
+# pico2/pico2_w) AND actually ships a usable stdlib for it — verified by
+# typechecking a trivial probe source, not just by -print-target-info (which
+# can return success even when the stdlib itself is missing).
 # ---------------------------------------------------------------------------
 if(NOT SWIFTC_PATH OR NOT EXISTS "${SWIFTC_PATH}")
     if(DEFINED ENV{SWIFTC_PATH} AND EXISTS "$ENV{SWIFTC_PATH}")
@@ -93,10 +97,11 @@ endif()
 
 if(NOT SWIFTC_PATH OR NOT EXISTS "${SWIFTC_PATH}")
     message(FATAL_ERROR
-        "Swift compiler (swiftc) supporting armv6m Embedded not found.\n"
+        "Swift compiler (swiftc) supporting ${_probe_target} Embedded (with a "
+        "real stdlib for it) not found.\n"
         "Set SWIFTC_PATH to the path of a compatible swiftc, e.g.:\n"
         "  cmake -DSWIFTC_PATH=~/Library/Developer/Toolchains/"
-        "swift-6.3.2-RELEASE.xctoolchain/usr/bin/swiftc ...")
+        "<toolchain>.xctoolchain/usr/bin/swiftc ...")
 endif()
 message(STATUS "Using Swift compiler: ${SWIFTC_PATH}")
 
@@ -138,6 +143,18 @@ endif()
 set(SMK_IS_RP2350 FALSE)
 if(SMK_TARGET_BOARD STREQUAL "pico2" OR SMK_TARGET_BOARD STREQUAL "pico2_w")
     set(SMK_IS_RP2350 TRUE)
+endif()
+
+# SMK_IS_RP2350 (Swift arch) and PICO_PLATFORM (C/ASM arch, resolved by
+# pico-sdk from PICO_BOARD above) must agree — build_rp2040.sh always keeps
+# PICO_BOARD/SMK_TARGET_BOARD in sync, but a direct `cmake -DPICO_BOARD=...
+# -DSMK_TARGET_BOARD=...` invocation with mismatched values would otherwise
+# silently compile C for one ISA and Swift for another with no diagnostic.
+if(PICO_PLATFORM MATCHES "^rp2350" AND NOT SMK_IS_RP2350)
+    message(FATAL_ERROR "PICO_PLATFORM=${PICO_PLATFORM} (from PICO_BOARD=${PICO_BOARD}) but SMK_TARGET_BOARD=${SMK_TARGET_BOARD} selects the Armv6-M Swift path — these must both target the same board.")
+endif()
+if(NOT PICO_PLATFORM MATCHES "^rp2350" AND SMK_IS_RP2350)
+    message(FATAL_ERROR "PICO_PLATFORM=${PICO_PLATFORM} (from PICO_BOARD=${PICO_BOARD}) but SMK_TARGET_BOARD=${SMK_TARGET_BOARD} selects the Armv8-M Swift path — these must both target the same board.")
 endif()
 
 # ---------------------------------------------------------------------------

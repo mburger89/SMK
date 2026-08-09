@@ -1,6 +1,6 @@
-# SMK — RP2040 / Pico W Port
+# SMK — RP2040 / RP2350 (Pico / Pico W / Pico 2 / Pico 2 W) Port
 
-Embedded-Swift keyboard firmware targeting the **Raspberry Pi Pico** (RP2040) and **Raspberry Pi Pico W** (RP2040 + CYW43439).
+Embedded-Swift keyboard firmware targeting the **Raspberry Pi Pico** (RP2040), **Raspberry Pi Pico W** (RP2040 + CYW43439), and their RP2350-based successors **Pico 2** / **Pico 2 W** (build-only for now — not yet verified on real hardware).
 
 ## How it fits the repo
 
@@ -24,17 +24,29 @@ The shared Swift sources (`Sources/smk/`) are reused unchanged. This port provid
 | cmake ≥ 3.29, ninja | `brew install cmake ninja` |
 | picotool (optional) | `brew install picotool` |
 
+RP2350 (`pico2`/`pico2_w`) additionally requires a Swift development-snapshot toolchain (confirmed:
+`swift-DEVELOPMENT-SNAPSHOT-2026-05-27-a` or later) that ships a real Embedded-Swift stdlib for
+`armv8m.main-none-none-eabi` (RP2350's Cortex-M33 target). Released `swift-6.3.x` toolchains report
+support for that triple via `-print-target-info` but fail an actual compile — they don't ship the
+stdlib.
+
 ## Build
 
 ```bash
 # From the repo root:
 export PICO_SDK_PATH=~/pico-sdk
 
-# Plain Pico (USB HID only)
+# Plain Pico (RP2040) — USB HID only
 ./build_rp2040.sh pico
 
-# Pico W (USB HID + BLE scaffolded)
+# Pico W (RP2040) — USB HID + BLE scaffolded
 ./build_rp2040.sh pico_w
+
+# Pico 2 (RP2350) — USB HID only
+./build_rp2040.sh pico2
+
+# Pico 2 W (RP2350) — USB HID + BLE scaffolded
+./build_rp2040.sh pico2_w
 ```
 
 Or invoke CMake directly:
@@ -73,10 +85,14 @@ Pin numbers in the keymap JSON map directly to GP (GPIO) numbers on the Pico pin
 
 ## Differences from the ESP32 build
 
-| | ESP32-C6 | RP2040 |
+RP2350 (Pico 2 / Pico 2 W) shares this entire platform layer with RP2040 — same register layout,
+same platform C sources, same Swift↔C contract. The only difference is the Swift compile target
+(Armv6-M vs. Armv8-M/Cortex-M33) and toolchain requirement noted above.
+
+| | ESP32-C6 | RP2040 / RP2350 |
 |---|---|---|
 | Build system | ESP-IDF / `idf.py` | CMake / Ninja |
-| HID transport | BLE (NimBLE) + wired (CH9350 UART) | USB HID (TinyUSB) + BLE (BTstack, Pico W only) |
+| HID transport | BLE (NimBLE) + wired (CH9350 UART) | USB HID (TinyUSB) + BLE (BTstack, `_w` boards only) |
 | GPIO registers | `0x60091000` | SIO `0xD0000000` |
 | RTOS | FreeRTOS | none (cooperative) |
 | Entry point | `app_main()` → `app_main_swift()` | `main()` → `app_main_swift()` |
