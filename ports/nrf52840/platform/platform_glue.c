@@ -24,6 +24,16 @@
 #include <stdint.h>
 
 extern void app_main_swift(void); // shared entry point (Sources/smk/Main.swift)
+// kb_usb_task (Task 4, ports/nrf52840/UsbHid.swift) pumps TinyUSB. Task 4's
+// own UsbHid.swift header comment already claimed vTaskDelay calls this
+// "via its own extern void kb_usb_task(void) declaration" — that turned out
+// not to actually be true in this file (no declaration, no call site
+// existed), so this pass adds both, fixing what would otherwise be a
+// silent gap (USB HID reports never getting pumped) discovered while
+// wiring in Task 5's mpsl_glue_poll() below it.
+extern void kb_usb_task(void);
+extern void mpsl_glue_init(void); // MPSL bring-up (Task 5, ports/nrf52840/MpslGlue.swift)
+extern void mpsl_glue_poll(void); // pumps MPSL's low-priority work queue (Task 5)
 
 // --- Logging -----------------------------------------------------------
 // Placeholder: no-op until a real logging channel (RTT or UART) is wired
@@ -38,7 +48,17 @@ void kb_log(const char *msg) {
 // busy-loop only (no RTOS, no calibrated timer yet) — real timing should
 // use NRF_RTC once Task 5's MPSL init claims the relevant peripherals.
 // Loop count is an uncalibrated guess, NOT a real millisecond delay.
+//
+// kb_usb_task() pumps TinyUSB (see extern declaration above for why it's
+// added here, alongside mpsl_glue_poll()). mpsl_glue_poll() is called
+// every tick (same cooperative-poll pattern) to pump MPSL's low-priority
+// work queue promptly, per mpsl.rst's "call within a couple of ms of the
+// low_prio_irq firing" contract — see MpslGlue.swift's SWI0_EGU0_IRQHandler
+// comment for why this project polls unconditionally rather than gating on
+// that ISR.
 void vTaskDelay(uint32_t ticks) {
+    kb_usb_task();
+    mpsl_glue_poll();
     if (ticks == 0) ticks = 1;
     for (volatile uint32_t i = 0; i < ticks * 100000u; i++) {
         __asm__ volatile("nop");
@@ -94,6 +114,7 @@ void send_keyboard_report(uint8_t modifier, uint8_t *keycodes) {
 
 // --- Entry point -----------------------------------------------------------
 int main(void) {
+    mpsl_glue_init(); // bring up MPSL before the scan loop starts (Task 5)
     app_main_swift(); // never returns (infinite scan loop)
     return 0;
 }

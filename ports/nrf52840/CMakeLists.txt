@@ -140,6 +140,7 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LayerEngine.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyEventProcessing.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/UsbHid.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/MpslGlue.swift"
 )
 
 # cJSON (portable, no ESP-IDF dependency) — LayerEngine.swift/Config.swift
@@ -262,6 +263,20 @@ target_sources(smk_nrf52840 PRIVATE
     "${TINYUSB_PATH}/src/class/hid/hid_device.c"
     "${TINYUSB_PATH}/src/portable/nordic/nrf5x/dcd_nrf5x.c"
 )
+
+
+# ---------------------------------------------------------------------------
+# MPSL (Multiprotocol Service Layer) — required by the SoftDevice Controller
+# (Task 7); bring-up/interrupt wiring done from Swift (MpslGlue.swift above)
+# per this task's Swift-first preference. Prebuilt static lib, no headers
+# needed at the C/Swift compile step (MpslGlue.swift declares the ABI it
+# needs directly via @_extern(c, ...), same as UsbHid.swift does for
+# TinyUSB, rather than importing mpsl.h through BridgingHeader.h).
+# soft-float matches this project's armv7em-none-none-eabi Swift triple and
+# -mfloat-abi=soft C/ASM flags (set above) — verified this exact path
+# exists on disk under ${NRFXLIB_PATH}/mpsl/lib/nrf52/soft-float/libmpsl.a.
+# ---------------------------------------------------------------------------
+target_link_libraries(smk_nrf52840 PRIVATE "${NRFXLIB_PATH}/mpsl/lib/nrf52/soft-float/libmpsl.a")
 
 add_custom_command(TARGET smk_nrf52840 POST_BUILD
     COMMAND arm-none-eabi-objcopy -O ihex $<TARGET_FILE:smk_nrf52840> smk_nrf52840.hex
