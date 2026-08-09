@@ -30,6 +30,7 @@ build_rp2040_pico/
 build_rp2040_pico_w/
 build_rp2040_pico2/
 build_rp2040_pico2_w/
+build_rp2040_smk_kbd_rp2040/
 
 # CMakePresets.json files hardcode local toolchain paths (ESP-IDF, pico-sdk) —
 # personal machine config, not portable across contributors.
