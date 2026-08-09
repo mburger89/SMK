@@ -270,71 +270,35 @@ func app_main_swift() {
         let rawScan = matrix.scan()
         let cleanScan = debouncer.update(rawScan: rawScan)
 
-        // 1. Process Edges (Press/Release)
-        for i in 0..<totalKeys {
-            let row = i / colCount
-            let col = i % colCount
+        let result = processKeyEvents(
+            cleanScan: cleanScan,
+            lastScan: lastScan,
+            colCount: colCount,
+            pressedActions: &pressedActions,
+            engine: &engine,
+            hasWiredBridge: hasWiredBridge,
+            currentMode: &currentMode
+        )
+        lastScan = cleanScan
+        report = result.report
 
-            if cleanScan[i] && !lastScan[i] {
-                // Key Pressed
-                let action = engine.getAction(row: row, col: col)
-                pressedActions[i] = action
-                #if SMK_RGB_AVAILABLE
-                rgb?.setKey(row: row, col: col, r: 255, g: 255, b: 255)
-                #endif
-
-                switch action {
-                case .toggleLayer(let l):
-                    engine.toggleLayer(l)
-                case .momentaryLayer(let l):
-                    engine.addMomentaryLayer(l)
-                case .toggleConnection:
-                    if hasWiredBridge {
-                        currentMode.toggle()
-                        kb_log(currentMode == .wired ? "Connection switched to: WIRED" : "Connection switched to: BLUETOOTH")
-                    } else {
-                        kb_log("toggle_conn ignored: this board has no wired HID bridge")
-                    }
-                default:
-                    break
-                }
-            } else if lastScan[i] && !cleanScan[i] { // Key Released
-                let action = pressedActions[i]
-                #if SMK_RGB_AVAILABLE
-                rgb?.setKey(row: row, col: col, r: 0, g: 0, b: 0)
-                #endif
-
-                switch action {
-                case .momentaryLayer(let l):
-                    engine.removeMomentaryLayer(l)
-                default:
-                    break
-                }
-                pressedActions[i] = .none
+        #if SMK_RGB_AVAILABLE
+        for t in result.transitions {
+            if t.pressed {
+                rgb?.setKey(row: t.position.row, col: t.position.col, r: 255, g: 255, b: 255)
+            } else {
+                rgb?.setKey(row: t.position.row, col: t.position.col, r: 0, g: 0, b: 0)
             }
         }
-        lastScan = cleanScan
-        #if SMK_RGB_AVAILABLE
         rgb?.refreshIfDirty()
         #endif
 
-        // 2. Build and Send HID Report
-        report.reset()
-        for i in 0..<totalKeys {
-            if cleanScan[i] {
-                let action = pressedActions[i]
-                switch action {
-                case .key(let code):
-                    report.addKey(code.rawValue)
-                case .modifier(let mod):
-                    report.addModifier(mod)
-                default:
-                    break
-                }
-            }
+        if result.connectionModeChanged {
+            kb_log(currentMode == .wired ? "Connection switched to: WIRED" : "Connection switched to: BLUETOOTH")
+        } else if result.connectionToggleIgnored {
+            kb_log("toggle_conn ignored: this board has no wired HID bridge")
         }
 
-        // 3. Dispatch Reports based on active mode
         report.keys.withUnsafeBufferPointer { ptr in
             if let base = ptr.baseAddress {
                 if currentMode == .bluetooth {

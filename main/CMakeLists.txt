@@ -8,6 +8,7 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/SMKCore/HIDReport.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/SMKCore/Config.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/SMKCore/LEDChainMapping.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/SMKCore/KeyEventProcessing.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/GPIORegisters.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/RGBLighting.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/GPIOInit.swift"
