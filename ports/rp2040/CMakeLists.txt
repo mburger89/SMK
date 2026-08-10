@@ -176,13 +176,14 @@ set(SHARED_SWIFT_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/GPIOInit.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/UsbHid.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/PlatformConfig.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/KeymapStoreFlash.swift"
 )
 
 set(PLATFORM_C_SRCS
     platform/gpio_init_wrappers.c
+    platform/flash_irq_wrappers.c
     platform/usb_descriptors.c
     platform/platform_glue.c
-    platform/smk_keymap_store.c
     # Portable cJSON (no ESP-IDF dependency)
     "${CMAKE_CURRENT_SOURCE_DIR}/../../managed_components/espressif__cjson/cJSON/cJSON.c"
 )

@@ -15,15 +15,16 @@ let smkKeymapOpErase: UInt8 = 0x04
 let smkKeymapStatusOk: UInt8 = 0x00
 let smkKeymapStatusErr: UInt8 = 0x01
 
-// Real storage backends — still C-backed on RP2040/nRF52840 until Task
-// 6/7 land (each port's NVS/flash storage layer moves to Swift then, at
-// which point these become same-module calls and this whole `#if` block
-// plus the `@_extern` declarations go away). ESP32-C6 already moved
-// (Task 5, Sources/smk/KeymapStoreNVS.swift, same module as this file —
-// flat-compiled together, no `@_extern` needed there anymore), so it's
-// excluded here; declaring `@_extern(c, "smk_keymap_begin_write")` here
-// AND a real Swift definition in KeymapStoreNVS.swift would be a
-// same-module redeclaration conflict.
+// Real storage backends — still C-backed on nRF52840 until Task 7 lands
+// (that port's flash storage layer moves to Swift then, at which point
+// these become same-module calls and this whole `#if` block plus the
+// `@_extern` declarations go away). ESP32-C6 (Task 5,
+// Sources/smk/KeymapStoreNVS.swift) and RP2040 (Task 6,
+// ports/rp2040/KeymapStoreFlash.swift) already moved — both same module as
+// this file, flat-compiled together, no `@_extern` needed there anymore —
+// so both are excluded here; declaring `@_extern(c, "smk_keymap_begin_write")`
+// here AND a real Swift definition in KeymapStoreNVS.swift/
+// KeymapStoreFlash.swift would be a same-module redeclaration conflict.
 //
 // Guarded to embedded targets only: these symbols don't exist in the
 // host test environment, so linking them unconditionally into the
@@ -34,13 +35,13 @@ let smkKeymapStatusErr: UInt8 = 0x01
 // stubs, and Logging.swift's host-vs-embedded split for kb_log.
 //
 // smk_keymap_erase is declared/defined separately in
-// Sources/smk/Main.swift (ESP32-C6: real Swift func now via
-// KeymapStoreNVS.swift; RP2040/nRF52840: still `@_extern`) — used there
-// for the factory-reset-on-boot path. Every embedded target flat-compiles
-// Main.swift and this file into one swiftc invocation with no real module
-// boundary, so redeclaring it here would be a same-module conflict. This
-// file just reuses that declaration/definition.
-#if SMK_TARGET_RP2040 || SMK_TARGET_NRF52840
+// Sources/smk/Main.swift (ESP32-C6/RP2040: real Swift func now via
+// KeymapStoreNVS.swift/KeymapStoreFlash.swift; nRF52840: still `@_extern`)
+// — used there for the factory-reset-on-boot path. Every embedded target
+// flat-compiles Main.swift and this file into one swiftc invocation with
+// no real module boundary, so redeclaring it here would be a same-module
+// conflict. This file just reuses that declaration/definition.
+#if SMK_TARGET_NRF52840
 
 @_extern(c, "smk_keymap_begin_write")
 func smk_keymap_begin_write(_ totalLen: UInt16) -> Int32

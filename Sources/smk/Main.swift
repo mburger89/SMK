@@ -56,12 +56,13 @@ func smk_has_wired_bridge() -> Int32
 func smk_default_mode_is_wired() -> Int32
 #endif
 
-// Runtime keymap store — ESP32-C6 now backs these natively in Swift
-// (Sources/smk/KeymapStoreNVS.swift, same module as this file, no
-// @_extern needed). RP2040 (ports/rp2040/platform/smk_keymap_store.c) and
-// nRF52840 (ports/nrf52840/platform/smk_keymap_store.c) still back them
-// with C until Tasks 6/7 land, so they still need the extern declaration.
-#if !SMK_TARGET_ESP32C6
+// Runtime keymap store — ESP32-C6 (Sources/smk/KeymapStoreNVS.swift, Task 5)
+// and RP2040 (ports/rp2040/KeymapStoreFlash.swift, Task 6) now both back
+// these natively in Swift, same module as this file, no @_extern needed.
+// nRF52840 (ports/nrf52840/platform/smk_keymap_store.c) still backs them
+// with C until Task 7 lands, so only that build still needs the extern
+// declaration.
+#if !SMK_TARGET_ESP32C6 && !SMK_TARGET_RP2040
 @_extern(c, "smk_keymap_load")
 func smk_keymap_load(_ buf: UnsafeMutablePointer<Int8>, _ bufSize: UInt32) -> Int32
 

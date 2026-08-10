@@ -32,13 +32,16 @@ void send_keyboard_report(uint8_t modifier, uint8_t *keycodes);
 // now plain Swift — see ports/rp2040/PlatformConfig.swift. No C prototypes
 // needed here (same-module Swift-to-Swift calls from Main.swift).
 
-// Runtime keymap store (platform/smk_keymap_store.c, flash-backed). See
-// docs/superpowers/specs/2026-07-31-runtime-keymap-updates-design.md.
-int32_t smk_keymap_load(char *buf, uint32_t buf_size);
-void smk_keymap_erase(void);
-int32_t smk_keymap_begin_write(uint16_t total_len);
-int32_t smk_keymap_write_chunk(uint16_t offset, const uint8_t *data, uint16_t len);
-int32_t smk_keymap_commit(uint32_t crc32);
+// Runtime keymap store (ports/rp2040/KeymapStoreFlash.swift, flash-backed)
+// and its BLE/USB dispatch (Sources/SMKCore/KeymapProtocol.swift) are
+// implemented directly in Swift for this target. No C prototypes here for
+// smk_keymap_load/erase/begin_write/write_chunk/commit/dispatch_packet:
+// these are Swift-owned (dispatch_packet via `@_cdecl`), called from C
+// (usb_descriptors.c's smk_keymap_usb_service), not the other way around.
+// usb_descriptors.c declares its own local prototype for the one it calls.
+// See docs/superpowers/specs/2026-07-31-runtime-keymap-updates-design.md
+// for the protocol this implements. Mirrors Sources/smk/Bridging.h's
+// ESP32-C6 precedent (Task 5).
 
 // RGB backlight (platform/led_strip_driver.c) — only declared when this
 // build compiles RGBLighting.swift in (SMK_TARGET_BOARD=smk_kbd_rp2040,
