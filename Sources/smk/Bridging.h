@@ -18,9 +18,12 @@ void smk_ble_set_battery_level(uint8_t level);
 int smk_battery_adc_init(void);
 int smk_battery_adc_read_raw(void);
 
-// Wired HID Functions
-void init_wired_link(void);
-void send_wired_report(uint8_t modifier, uint8_t* keycodes);
+// Wired HID (UART1 -> CH9350L bridge, smk_kbd board) is implemented
+// directly in Swift for this target — see WiredHidUart.swift. No C
+// prototypes here for init_wired_link/send_wired_report: nothing outside
+// the Swift module calls them, and a stale prototype here would silently
+// shadow the real same-module Swift definition (Swift's own top-level
+// function takes precedence with no build error) rather than fail loudly.
 
 // Logging
 void kb_log(const char *msg);
