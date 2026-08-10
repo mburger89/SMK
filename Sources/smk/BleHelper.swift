@@ -67,21 +67,15 @@ func kb_log(_ msg: UnsafePointer<CChar>) {
     _ = printf("[SMK] %s\n", msg)
 }
 
-@_extern(c, "esp_hidd_dev_connected")
-func esp_hidd_dev_connected(_ dev: UnsafeMutableRawPointer?) -> Bool
-
-// esp_hidd_dev_input_set's real signature (esp_hid/include/esp_hidd.h):
-//   esp_err_t esp_hidd_dev_input_set(esp_hidd_dev_t *dev, size_t map_index,
-//                                     size_t report_id, uint8_t *data,
-//                                     size_t length);
-// size_t on this 32-bit RISC-V target is 4 bytes, matching Swift's `UInt`
-// (word-sized) here — not Int32, which the brief's draft used as a
-// placeholder.
-@_extern(c, "esp_hidd_dev_input_set")
-func esp_hidd_dev_input_set(_ dev: UnsafeMutableRawPointer?, _ mapIndex: UInt, _ reportID: UInt, _ data: UnsafePointer<UInt8>, _ length: UInt) -> Int32
-
-@_extern(c, "esp_hidd_dev_battery_set")
-func esp_hidd_dev_battery_set(_ dev: UnsafeMutableRawPointer?, _ level: UInt8) -> Int32
+// esp_hidd_dev_connected/esp_hidd_dev_input_set/esp_hidd_dev_battery_set:
+// no @_extern redeclarations here — Bridging.h already `#include`s
+// esp_hidd.h, so these are called via their real, ClangImporter-imported
+// declarations instead. A hand-copied @_extern redeclaration would shadow
+// those (same hazard Bridging.h itself already calls out for
+// init_wired_link/send_wired_report elsewhere) and could silently drift
+// out of sync with the real signature on a future ESP-IDF upgrade. The
+// opaque `esp_hidd_dev_t *` C type imports as `OpaquePointer` — see
+// `hidDev` below — and `size_t` params import as `Int`.
 
 // start_advertising() stays defined in ble_helper.c — see file header
 // comment above (ble_hs_adv_fields' bitfields).
@@ -105,31 +99,41 @@ func nimble_port_freertos_deinit()
 // Single source of truth for the HID device handle — see file header
 // comment. Populated exactly once by smk_ble_set_hid_dev(), called from
 // ble_helper.c's init_ble_hid() right after esp_hidd_dev_init() succeeds.
-private var hidDev: UnsafeMutableRawPointer? = nil
+// Typed OpaquePointer (not UnsafeMutableRawPointer) to match how
+// ClangImporter imports `esp_hidd_dev_t *` (an opaque, forward-declared C
+// struct) — see esp_hidd_dev_connected/input_set/battery_set's real
+// imported signatures, called directly below with no @_extern
+// redeclaration.
+private var hidDev: OpaquePointer? = nil
 
+// smk_ble_set_hid_dev's own param stays a raw pointer (matching
+// ble_helper.c's `extern void smk_ble_set_hid_dev(void *dev);` forward
+// declaration byte-for-byte at the ABI level); converted to OpaquePointer
+// once here, on the way into the single source of truth above.
 @_cdecl("smk_ble_set_hid_dev")
 func smk_ble_set_hid_dev(_ dev: UnsafeMutableRawPointer?) {
-    hidDev = dev
+    hidDev = dev.map { OpaquePointer($0) }
 }
 
-// esp_hidd_event_t real values — verified against
-// ~/.espressif/v6.0.1/esp-idf/components/esp_hid/include/esp_hidd.h,
-// NOT the brief's placeholder values (which happened to get START/CONNECT/
-// DISCONNECT right but guessed OUTPUT as 2 — it's actually 4, since
-// PROTOCOL_MODE_EVENT and CONTROL_EVENT sit between CONNECT and OUTPUT in
-// the real enum):
-//   ESP_HIDD_START_EVENT          = 0
-//   ESP_HIDD_CONNECT_EVENT        = 1
-//   ESP_HIDD_PROTOCOL_MODE_EVENT  = 2
-//   ESP_HIDD_CONTROL_EVENT        = 3
-//   ESP_HIDD_OUTPUT_EVENT         = 4
-//   ESP_HIDD_FEATURE_EVENT        = 5
-//   ESP_HIDD_DISCONNECT_EVENT     = 6
-//   ESP_HIDD_STOP_EVENT           = 7
-let espHiddStartEvent: Int32 = 0
-let espHiddConnectEvent: Int32 = 1
-let espHiddOutputEvent: Int32 = 4
-let espHiddDisconnectEvent: Int32 = 6
+// esp_hidd_event_t values — pulled directly from the real,
+// ClangImporter-imported enum (Bridging.h already `#include`s esp_hidd.h,
+// so esp_hidd.h's declarations are visible to Swift as real types/values,
+// not just C prototypes) rather than hand-copied integer literals. This
+// gets header-derived values for free: if a future ESP-IDF upgrade
+// reorders esp_hidd_event_t's cases, this recompiles to the new values
+// automatically instead of silently keeping stale ones.
+//
+// (For the record, verified once against
+// ~/.espressif/v6.0.1/esp-idf/components/esp_hid/include/esp_hidd.h
+// during this task: START=0, CONNECT=1, PROTOCOL_MODE=2, CONTROL=3,
+// OUTPUT=4, FEATURE=5, DISCONNECT=6, STOP=7 — notably NOT the task
+// brief's draft placeholders of OUTPUT=2/DISCONNECT=3, which would have
+// silently broken keymap-upload detection and the reconnect-advertising
+// path had they gone unverified.)
+let espHiddStartEvent = ESP_HIDD_START_EVENT.rawValue
+let espHiddConnectEvent = ESP_HIDD_CONNECT_EVENT.rawValue
+let espHiddOutputEvent = ESP_HIDD_OUTPUT_EVENT.rawValue
+let espHiddDisconnectEvent = ESP_HIDD_DISCONNECT_EVENT.rawValue
 
 @_cdecl("ble_hidd_event_callback")
 func ble_hidd_event_callback(_ handlerArgs: UnsafeMutableRawPointer?, _ base: UnsafeRawPointer?, _ id: Int32, _ eventData: UnsafeMutableRawPointer?) {
@@ -140,36 +144,19 @@ func ble_hidd_event_callback(_ handlerArgs: UnsafeMutableRawPointer?, _ base: Un
     case espHiddConnectEvent:
         kb_log("BLE HID Connected")
     case espHiddOutputEvent:
-        // esp_hidd_event_data_t's `output` variant (esp_hidd.h), the
-        // single highest-risk read in this task:
-        //   struct {
-        //       esp_hidd_dev_t *dev;      // offset 0,  4 bytes (32-bit ptr)
-        //       esp_hid_usage_t usage;    // offset 4,  4 bytes (plain C enum -> int)
-        //       uint16_t report_id;       // offset 8,  2 bytes
-        //       uint16_t length;          // offset 10, 2 bytes
-        //       uint8_t *data;            // offset 12, 4 bytes (already 4-aligned)
-        //       uint8_t map_index;        // offset 16, 1 byte
-        //   } output;                     // struct padded to 20 bytes (align 4)
-        // Grepped esp_hidd.h/esp_hid_common.h for `pragma pack`/`packed`:
-        // none found, so standard alignment rules apply deterministically
-        // (each field aligned to its own size, no reordering) — this
-        // doesn't depend on a scratch-compile the way a struct with
-        // ambiguous packing would.
-        //
-        // Read via raw byte-offset loads on the raw event_data pointer
-        // rather than a hand-rolled Swift struct mirroring the C layout:
-        // this sidesteps any question of whether Swift's stored-property
-        // layout would preserve declaration order for this specific
-        // struct (this project's WiredHidUart.swift precedent verified
-        // that Swift *does* preserve it for a pointer-free struct, but
-        // this struct has two pointers whose size is architecture-
-        // dependent — offset-based loads avoid relying on that at all).
+        // esp_hidd_event_data_t is a real C union (esp_hidd.h), imported
+        // by ClangImporter (Bridging.h already `#include`s esp_hidd.h) as
+        // a Swift type with a computed `.output` property backed by the
+        // same underlying storage — reading `.report_id`/`.length`/`.data`
+        // through it uses the header-derived field offsets directly,
+        // rather than hand-copied byte offsets that would silently go
+        // stale if a future ESP-IDF upgrade reordered `output`'s fields.
+        // rebind via assumingMemoryBound since event_data arrives as an
+        // untyped `void *` from the C callback signature.
         guard let eventData = eventData else { break }
-        let reportID = eventData.load(fromByteOffset: 8, as: UInt16.self)
-        let length = eventData.load(fromByteOffset: 10, as: UInt16.self)
-        if reportID == 2 && length >= 32 {
-            let dataPtr = eventData.load(fromByteOffset: 12, as: UnsafeMutablePointer<UInt8>?.self)
-            if let dataPtr = dataPtr, let dev = hidDev {
+        let output = eventData.assumingMemoryBound(to: esp_hidd_event_data_t.self).pointee.output
+        if output.report_id == 2 && output.length >= 32 {
+            if let dataPtr = output.data, let dev = hidDev {
                 var response = [UInt8](repeating: 0, count: 32)
                 response.withUnsafeMutableBufferPointer { respBuf in
                     smk_keymap_dispatch_packet(dataPtr, respBuf.baseAddress!)
@@ -194,8 +181,9 @@ func send_keyboard_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>) {
     // report[1] stays 0 (Reserved byte).
     for i in 0..<6 { report[2 + i] = keycodes[i] }
     // Map index 0, Report ID 1 (matches the descriptor in ble_helper.c's
-    // hid_report_map).
-    _ = report.withUnsafeBufferPointer { esp_hidd_dev_input_set(dev, 0, 1, $0.baseAddress!, 8) }
+    // hid_report_map). Mutable buffer pointer: esp_hidd_dev_input_set's
+    // real imported signature takes non-const `uint8_t *data`.
+    _ = report.withUnsafeMutableBufferPointer { esp_hidd_dev_input_set(dev, 0, 1, $0.baseAddress!, 8) }
 }
 
 // Reports a 0-100 battery level via the standard BLE Battery Service —
