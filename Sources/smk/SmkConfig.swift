@@ -1,6 +1,6 @@
 // ESP32-C6 board/connection-mode config, backed by Kconfig
 // (main/Kconfig.projbuild) — Swift port of the former
-// Sources/componets/smk_config.c. Only compiled into the ESP32-C6 build
+// Sources/components/smk_config.c. Only compiled into the ESP32-C6 build
 // (main/CMakeLists.txt), so these are plain module-internal Swift
 // functions, not `@_extern`/`@_cdecl` — nothing outside this Swift module
 // calls them. RP2040 backs the same `@_extern(c, ...)` declarations in

@@ -1,6 +1,6 @@
 // SK6812MINI-E chain driver (PIO-based), smk_kbd_rp2040 board only.
 //
-// Counterpart to Sources/componets/led_strip_driver.c (ESP32, RMT-based).
+// Counterpart to Sources/components/led_strip_driver.c (ESP32, RMT-based).
 // RP2040 has no RMT peripheral; PIO is the equivalent hardware-timed engine
 // here — one state machine bit-bangs the single-wire NRZ protocol at the
 // cycle-accurate timing ws2812.pio encodes, immune to the same scheduling
@@ -94,7 +94,7 @@ void led_strip_clear(void) {
 
 // --- RGB backlight config ---------------------------------------------------
 // Unlike the ESP32 build (Kconfig-driven, off by default — see
-// Sources/componets/smk_config.c), this board has real SK6812MINI-E hardware
+// Sources/components/smk_config.c), this board has real SK6812MINI-E hardware
 // on a fixed pin, so RGB is simply always-on here. GPIO17 = RGB_GPIO per
 // generate_kbd_rp2040.py's GPIO map.
 int smk_has_rgb_backlight(void) { return 1; }

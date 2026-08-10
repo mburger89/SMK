@@ -1,5 +1,5 @@
 // ESP32-C6 matrix pin configuration — Swift port of the former
-// Sources/componets/gpio_init.c. Only compiled into the ESP32-C6 build
+// Sources/components/gpio_init.c. Only compiled into the ESP32-C6 build
 // (main/CMakeLists.txt), so this is a plain module-internal Swift
 // function, not `@_extern`/`@_cdecl` — nothing outside this Swift module
 // calls it. RP2040 keeps its own C implementation

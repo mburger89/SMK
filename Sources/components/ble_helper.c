@@ -172,3 +172,15 @@ void send_keyboard_report(uint8_t modifier, uint8_t keycodes[6]) {
         esp_hidd_dev_input_set(s_hid_dev, 0, 1, report, 8);
     }
 }
+
+// Reports a 0-100 battery level via the standard BLE Battery Service —
+// esp_hidd_dev_init() already creates this GATT service internally as
+// part of the HID-over-GATT profile, so this is the one call needed to
+// feed it real data. Called from BatteryMonitor.swift, which owns the
+// ADC-to-percentage math (see battery_adc.c / BatteryMonitor.swift for
+// why the ADC driver setup itself stays in C).
+void smk_ble_set_battery_level(uint8_t level) {
+    if (s_hid_dev) {
+        esp_hidd_dev_battery_set(s_hid_dev, level);
+    }
+}

@@ -2,9 +2,26 @@
 import PackageDescription
 import Foundation
 
-let home = ProcessInfo.processInfo.environment["HOME"] ?? "/Users/maxburger"
-let idfPath = "\(home)/.espressif/v6.0.1/esp-idf"
-let toolchainInclude = "\(home)/.espressif/tools/riscv32-esp-elf/esp-15.2.0_20251204/riscv32-esp-elf/riscv32-esp-elf/include"
+let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
+// Repo root, derived from this file's own location rather than assuming
+// ~/esp/smk — makes the LSP-only `smk` target below work from any clone
+// path, not just this machine's.
+let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
+
+// IDF_PATH matches the env var ESP-IDF's own export.sh sets (and that
+// CMakeLists.txt already relies on — see README's "Scripts & Environment
+// Variables"), so a normal `. $HOME/export-esp-idf.sh` is enough to pick
+// this up; the hardcoded path below is only a fallback for whoever hasn't
+// sourced it yet.
+let idfPath = ProcessInfo.processInfo.environment["IDF_PATH"] ?? "\(home)/.espressif/v6.0.1/esp-idf"
+// The ESP RISC-V GCC toolchain's own newlib headers (bundled by ESP-IDF's
+// tool installer, not the Swift toolchain) — version-pinned by ESP-IDF
+// itself, so this can't be derived from IDF_PATH alone. Override via
+// SMK_ESP_TOOLCHAIN_INCLUDE if your installed tool version differs from
+// the fallback below (check `~/.espressif/tools/riscv32-esp-elf/` for the
+// exact directory name installed on your machine).
+let toolchainInclude = ProcessInfo.processInfo.environment["SMK_ESP_TOOLCHAIN_INCLUDE"]
+    ?? "\(home)/.espressif/tools/riscv32-esp-elf/esp-15.2.0_20251204/riscv32-esp-elf/riscv32-esp-elf/include"
 
 // CI (and anyone who only wants the host-side SMKCore test suite) sets
 // this so `swift build`/`swift test` never touch the `smk` executable
@@ -56,7 +73,7 @@ if !hostTestsOnly {
             ],
             path: "Sources/smk",
             exclude: ["Bridging.h"],
-            sources: ["Main.swift", "KeyMatrix.swift", "GPIORegisters.swift", "RGBLighting.swift", "GPIOInit.swift", "SmkConfig.swift"],
+            sources: ["Main.swift", "KeyMatrix.swift", "GPIORegisters.swift", "RGBLighting.swift", "GPIOInit.swift", "SmkConfig.swift", "BatteryMonitor.swift"],
             swiftSettings: [
                 .enableExperimentalFeature("Embedded"),
                 .enableExperimentalFeature("Extern"),
@@ -102,8 +119,8 @@ if !hostTestsOnly {
                     "-Xcc", "-I\(idfPath)/components/bt/host/nimble/nimble/porting/nimble/include",
                     "-Xcc", "-I\(idfPath)/components/bt/host/nimble/nimble/nimble/host/include",
                     "-Xcc", "-I\(idfPath)/components/bt/host/nimble/nimble/nimble/include",
-                    "-Xcc", "-I\(home)/esp/smk/managed_components/espressif__cjson/cJSON",
-                    "-Xcc", "-I\(home)/esp/smk/build/config"
+                    "-Xcc", "-I\(repoRoot)/managed_components/espressif__cjson/cJSON",
+                    "-Xcc", "-I\(repoRoot)/build/config"
                 ])
             ]
         )

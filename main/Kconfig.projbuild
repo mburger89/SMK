@@ -4,7 +4,7 @@ menu "SMK Keyboard Configuration"
         bool "Board has a CH9350 UART-to-USB HID bridge chip"
         default n
         help
-            The wired HID path (Sources/componets/uart_init.c) talks to an
+            The wired HID path (Sources/components/uart_init.c) talks to an
             external CH9350 UART-to-USB bridge chip. Boards built from the
             smk_kbd PCB (BLE + battery, no bridge chip) do NOT have
             this — leave disabled. Enabling this on a board without the

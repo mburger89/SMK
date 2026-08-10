@@ -1,6 +1,6 @@
 // USB HID glue for RP2040 — implements the "wired" link of the SMK contract
 // using native USB (TinyUSB), replacing the ESP32 CH9350 UART bridge
-// (Sources/componets/uart_init.c).
+// (Sources/components/uart_init.c).
 //
 //   init_wired_link()              -> bring up the TinyUSB device stack
 //   send_wired_report(mod, keys)   -> send a boot-keyboard report

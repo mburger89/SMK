@@ -9,6 +9,14 @@
 // BLE HID Functions
 void init_ble_hid(void);
 void send_keyboard_report(uint8_t modifier, uint8_t keycodes[6]);
+void smk_ble_set_battery_level(uint8_t level);
+
+// VBAT battery ADC (Sources/components/battery_adc.c, ESP32-C6/smk_kbd
+// board only — IO4/ADC1_CH4, see CLAUDE.md's GPIO map). Returns 0/negative
+// esp_err_t and a raw 0-4095 reading respectively; see BatteryMonitor.swift
+// for the mV/percentage conversion.
+int smk_battery_adc_init(void);
+int smk_battery_adc_read_raw(void);
 
 // Wired HID Functions
 void init_wired_link(void);
@@ -33,7 +41,7 @@ void led_strip_set_pixel(int32_t index, uint8_t r, uint8_t g, uint8_t b);
 void led_strip_refresh(void);
 void led_strip_clear(void);
 
-// Runtime keymap store (Sources/componets/smk_keymap_store.c, NVS-backed).
+// Runtime keymap store (Sources/components/smk_keymap_store.c, NVS-backed).
 // See docs/superpowers/specs/2026-07-31-runtime-keymap-updates-design.md.
 int32_t smk_keymap_load(char *buf, uint32_t buf_size);
 void smk_keymap_erase(void);

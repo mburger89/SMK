@@ -1,5 +1,5 @@
 // Runtime keymap store (RP2040, flash-backed). Counterpart to
-// Sources/componets/smk_keymap_store.c (ESP32-C6, NVS-backed) — same framed
+// Sources/components/smk_keymap_store.c (ESP32-C6, NVS-backed) — same framed
 // blob layout and function contract (declared in BridgingHeader.h). Reserves
 // the last flash sector (4KB, this chip's minimum erase granularity) for
 // the stored keymap.

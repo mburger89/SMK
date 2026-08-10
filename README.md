@@ -1,15 +1,16 @@
 # SMK (Swift Matrix Keyboard)
 
-A keyboard firmware written in **Embedded Swift**, targeting the **ESP32-C6**, **Raspberry Pi Pico / Pico W (RP2040)**, and **Raspberry Pi Pico 2 / Pico 2 W (RP2350)**. SMK provides a modern development experience for keyboard enthusiasts, featuring Bluetooth (BLE) and Wired (USB/UART) connectivity, and a flexible JSON-based keymap system.
+A keyboard firmware written in **Embedded Swift**, targeting the **ESP32-C6**, **Raspberry Pi Pico / Pico W (RP2040)**, **Raspberry Pi Pico 2 / Pico 2 W (RP2350)**, and **Nordic nRF52840**. SMK provides a modern development experience for keyboard enthusiasts, featuring Bluetooth (BLE) and Wired (USB/UART) connectivity, and a flexible JSON-based keymap system.
 
 ## Features
 - **Embedded Swift**: Leverages Swift's safety and modern syntax on bare-metal hardware.
-- **Multi-target**: Supports ESP32-C6 (RISC-V via ESP-IDF) and RP2040 (ARM via pico-sdk).
+- **Multi-target**: Supports ESP32-C6 (RISC-V via ESP-IDF), RP2040/RP2350 (ARM via pico-sdk), and nRF52840 (ARM via a vendored nRF5 SDK + CMake). See [`CLAUDE.md`'s Supported Targets table](CLAUDE.md#supported-targets) for the full matrix of what's working vs. build-only-so-far per target.
 - **Dual Mode**: Switch between Bluetooth and Wired (USB HID / CH9350 bridge) modes.
 - **Dynamic Matrix**: Configurable GPIO pins for rows and columns.
 - **Layer Engine**: Supports momentary layers, toggled layers, and transparent keys (similar to QMK).
 - **JSON Configuration**: Keymaps and hardware settings defined via JSON.
 - **Per-Key RGB (opt-in)**: SK6812MINI-E/WS2812 backlight driver (ESP32-C6 only), off by default.
+- **Battery-Level Reporting (ESP32-C6/smk_kbd only)**: reads the board's VBAT divider and reports an estimated percentage via the BLE HID Battery Service — approximate (uncalibrated ADC + linear voltage curve), not yet checked against real hardware.
 - **Kconfig Board Options**: `idf.py menuconfig` toggles wired-bridge presence, default connection mode, and RGB backlight per board without touching source.
 
 ## Prerequisites
@@ -25,9 +26,10 @@ Before building, ensure you have the following installed:
 ## Getting Started
 
 ### 1. Configure the Environment
-Ensure your ESP-IDF environment is sourced:
+Ensure your ESP-IDF environment is sourced. The standard installer puts the real export script at
+`~/.espressif/v6.0.1/esp-idf/export.sh` (adjust the version if you installed a different one):
 ```bash
-. $HOME/export-esp-idf.sh  # Path may vary based on your installation
+. ~/.espressif/v6.0.1/esp-idf/export.sh  # or your own export-esp-idf.sh alias, if you have one
 ```
 
 ### 2. Configure Hardware & Keymap
@@ -77,7 +79,7 @@ idf.py flash monitor
   - `LayerEngine.swift`: Logic for handling layers and key actions.
   - `KeyMatrix.swift`: Hardware scanning and debouncing logic.
   - `GPIORegisters.swift`: Low-level Swift-friendly GPIO access.
-- `Sources/componets/`: C helper files for Bluetooth, UART, and hardware initialization (Note: Typo in folder name exists in source).
+- `Sources/components/`: C helper files for Bluetooth, UART, and hardware initialization.
 - `main/`: ESP-IDF component configuration and bridging.
   - `CMakeLists.txt`: Orchestrates the Swift and C compilation.
   - `Bridging.h`: C-to-Swift bridging header.
@@ -92,8 +94,10 @@ idf.py flash monitor
 
 SMK also targets the **Raspberry Pi Pico** (USB HID), **Pico W** (USB HID + BLE scaffolded), and
 their RP2350-based successors **Pico 2** / **Pico 2 W** (build-only for now — not yet verified on
-real hardware). The keyboard logic (`Sources/smk/`) is shared single-source across all of these
-targets; only the hardware platform layer differs.
+real hardware), plus a dedicated chip-down board, **smk_kbd_rp2040** (RP2040 QFN-56 + CYW43439,
+`SMK_TARGET_BOARD=smk_kbd_rp2040` — USB HID + per-key RGB, working; BLE over a dedicated UART to the
+CYW43439, not yet hardware-confirmed). The keyboard logic (`Sources/smk/`) is shared single-source
+across all of these targets; only the hardware platform layer differs.
 
 ### Prerequisites (RP2040)
 ```bash
@@ -131,13 +135,49 @@ picotool load -f build_rp2040_pico/smk_rp2040.uf2
 
 See [`ports/rp2040/README.md`](ports/rp2040/README.md) for full details.
 
+## nRF52840 Support
+
+SMK also targets the **Nordic nRF52840** (Arm Cortex-M4F) — USB HID (TinyUSB) + BLE HID (Nordic's
+SoftDevice Controller over BTstack), build-only for now, not yet verified on real hardware. As with
+RP2040/RP2350, the keyboard logic (`Sources/smk/`) is shared single-source; only the hardware
+platform layer (`ports/nrf52840/`) differs.
+
+```bash
+export NRF5_SDK_PATH=~/nRF5_SDK
+export NRFXLIB_PATH=~/sdk-nrfxlib
+export TINYUSB_PATH=~/tinyusb
+export BTSTACK_PATH=~/btstack
+
+./build_nrf52840.sh
+```
+
+See [`CLAUDE.md`'s nRF52840 Prerequisites subsection](CLAUDE.md#nrf52840) for how to obtain and
+place the four vendored dependencies these env vars point at.
+
 ## Tests
-*TODO: Add unit tests for key scanning and layer logic.*
+
+The hardware-independent logic (`Sources/SMKCore/`: layer resolution, key-event/debounce
+processing, HID report building, JSON config/keymap parsing, LED chain mapping) has a host-side
+Swift Testing suite that runs without any embedded toolchain — no ESP-IDF, pico-sdk, or nRF5 SDK
+required:
+
+```bash
+SMK_HOST_TESTS_ONLY=1 swift test
+```
+
+`SMK_HOST_TESTS_ONLY=1` drops `Package.swift`'s hardware-only dependencies (e.g. `swift-mmio`)
+entirely, so this resolves and runs on a plain host Swift toolchain. Runs automatically on every
+push/PR to `main` via [`.github/workflows/host-tests.yml`](.github/workflows/host-tests.yml).
+
+Everything outside `Sources/SMKCore/` — GPIO register pokes, USB/BLE stack glue, vendor SDK calls —
+is hardware-dependent by nature and isn't unit-testable; it's verified by a clean build/link per
+target (see each target's build command above) plus code review against the real vendored source,
+not by an automated test suite. None of the four targets have been exercised on real hardware in
+this repo's CI.
 
 ## Known Issues / TODOs
-- **Hardcoded Paths**: `Package.swift` contains hardcoded paths to your local ESP-IDF installation and toolchains. These should be parameterized using environment variables.
-- **Typo**: `Sources/componets/` contains a typo in the directory name.
-- **No battery-level reporting yet**: the smk_kbd board has a VBAT divider on IO4 for fuel gauging, but firmware doesn't read it yet.
+- **Battery-level reporting is unverified on real hardware**: the smk_kbd board's VBAT divider (IO4/ADC1_CH4) is now read and reported via the BLE HID Battery Service, but the voltage-to-percentage curve is a rough linear approximation, not a calibrated discharge curve, and the ADC reading itself isn't calibrated either — treat the reported percentage as approximate until checked against a real board with a multimeter. See `CLAUDE.md`'s smk_kbd board section for details.
+- **nRF52840 port is build-only**: no hardware verification yet, and the board's GPIO pin map in `Sources/smk/Main.swift` is an explicit placeholder that must be replaced before flashing a real board. See [`CLAUDE.md`'s nRF52840 section](CLAUDE.md#nrf52840) (Prerequisites through the "read before flashing real hardware" caveat) for the full list of known gaps (no LE bonding persistence, keymap upload accepted but not yet persisted, uncalibrated software timers).
 
 ## IDE Support
 To enable code completion and syntax highlighting in VS Code or Xcode:

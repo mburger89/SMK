@@ -7,11 +7,23 @@ func init_ble_hid()
 @_extern(c, "send_keyboard_report")
 func send_keyboard_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
 
+// Unlike init_keyboard_pins (Sources/smk/KeyMatrix.swift), which every board
+// except RP2040 now backs with a native Swift implementation, ESP32-C6
+// still backs this pair with C (Sources/components/uart_init.c, unconditionally
+// compiled into the ESP32-C6 build) — so its declaration must stay active
+// there. Only NRF52840 backs these natively in Swift (ports/nrf52840/UsbHid.swift,
+// same-module resolution, no @_extern needed); RP2040 still backs them with C
+// (ports/rp2040/platform/usb_hid.c). Hence this guard excludes NRF52840 only,
+// not "#if !SMK_TARGET_ESP32C6 && !SMK_TARGET_NRF52840" (that broader form
+// would drop the extern for ESP32-C6 too and break its build, since nothing
+// there redefines these names as plain Swift functions).
+#if !SMK_TARGET_NRF52840
 @_extern(c, "init_wired_link")
 func init_wired_link()
 
 @_extern(c, "send_wired_report")
 func send_wired_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
+#endif
 
 @_extern(c, "vTaskDelay")
 func vTaskDelay(_ xTicksToDelay: UInt32)
@@ -33,7 +45,7 @@ func smk_has_wired_bridge() -> Int32
 func smk_default_mode_is_wired() -> Int32
 #endif
 
-// Runtime keymap store — see Sources/componets/smk_keymap_store.c (ESP32)
+// Runtime keymap store — see Sources/components/smk_keymap_store.c (ESP32)
 // and ports/rp2040/platform/smk_keymap_store.c (RP2040).
 @_extern(c, "smk_keymap_load")
 func smk_keymap_load(_ buf: UnsafeMutablePointer<Int8>, _ bufSize: UInt32) -> Int32
@@ -64,11 +76,47 @@ func app_main_swift() {
     kb_log("Initialising SMK Keyboard...")
 
     // Board pin maps. Exactly one of these is compiled in, selected by the
-    // build (SMK_TARGET_BOARD in ports/rp2040/CMakeLists.txt / the ESP32
-    // main/CMakeLists.txt always defines the ESP32 one). Both boards share
-    // the same COL2ROW matrix topology and keymap layout — only the GPIO
-    // numbers differ.
-#if SMK_BOARD_KBD_RP2040
+    // build (SMK_BOARD_NRF52840DK / SMK_BOARD_KBD_RP2040 in
+    // ports/nrf52840/CMakeLists.txt / ports/rp2040/CMakeLists.txt
+    // respectively; the ESP32 main/CMakeLists.txt always defines neither,
+    // falling into the #else branch below). All three boards share the same
+    // keymap layout, but NOT the same matrix topology: smk_kbd_rp2040 and
+    // the ESP32-C6 smk_kbd board are both COL2ROW (`colsAreDriven: true` —
+    // diode anode at the column/switch side), while the nRF52840DK board
+    // below is the opposite (`colsAreDriven: false`) — see KeyMatrix.swift
+    // for what that flag actually changes about the scan direction.
+#if SMK_BOARD_NRF52840DK
+    // nrf52840dk board (Nordic PCA10056) — GPIO map deferred to hardware
+    // bring-up (no board schematic consulted in this pass, per
+    // docs/superpowers/specs/2026-08-09-nrf52840-support-design.md's
+    // build-only scope). Placeholder pin numbers below MUST be replaced
+    // before this board is ever flashed.
+    let configJson = """
+    {
+        "matrix": {
+            "rows": [0, 1, 2, 3, 4],
+            "cols": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            "colsAreDriven": 0
+        },
+        "layers": [
+            [
+                ["key:1", "key:2", "key:3", "key:4", "key:5", "key:6", "key:7", "key:8", "key:9", "key:0", "key:minus", "key:backspace"],
+                ["key:tab", "key:q", "key:w", "key:e", "key:r", "key:t", "key:y", "key:u", "key:i", "key:o", "key:p", "key:backslash"],
+                ["key:escape", "key:a", "key:s", "key:d", "key:f", "key:g", "key:h", "key:j", "key:k", "key:l", "key:semicolon", "key:enter"],
+                ["mod:leftShift", "key:z", "key:x", "key:c", "key:v", "key:b", "key:n", "key:m", "key:comma", "key:period", "key:slash", "mod:rightShift"],
+                ["mod:leftCtrl", "mod:leftGUI", "mod:leftAlt", "mo:1", "mod:leftShift", "key:space", "none", "mod:rightShift", "mo:1", "mod:rightAlt", "mod:rightGUI", "mod:rightCtrl"]
+            ],
+            [
+                ["toggle_conn", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "key:left", "key:down", "key:up", "key:right", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans", "trans", "none", "trans", "trans", "trans", "trans", "trans"]
+            ]
+        ]
+    }
+    """
+#elseif SMK_BOARD_KBD_RP2040
     // smk_kbd_rp2040 board (RP2040 QFN-56 chip-down) — GPIO map per
     // generate_kbd_rp2040.py (source of truth for this board's pin
     // assignments; see that file's header docstring for verification notes):
@@ -193,6 +241,14 @@ func app_main_swift() {
     // Initialize BLE Link
     init_ble_hid()
 
+    // Battery-level reporting (smk_kbd board / ESP32-C6 only — see
+    // BatteryMonitor.swift). RP2040/nRF52840 have no VBAT ADC divider
+    // wired to this firmware and no esp_hidd Battery Service, so this is
+    // a no-op there rather than a stub function that would need externing.
+    #if SMK_TARGET_ESP32C6
+    initBatteryMonitor()
+    #endif
+
     // Initialize Wired Link — only if this board actually has the CH9350
     // bridge (Kconfig SMK_HAS_WIRED_BRIDGE / RP2040 hardcoded true). The
     // smk_kbd board doesn't: its UART1 RX pin (GPIO20) is also a
@@ -266,6 +322,17 @@ func app_main_swift() {
     var lastScan = [Bool](repeating: false, count: totalKeys)
     var pressedActions: [KeyAction] = [KeyAction](repeating: .none, count: totalKeys)
 
+    #if SMK_TARGET_ESP32C6
+    // Battery voltage changes slowly, so polling it every scan tick would
+    // just waste ADC conversion time for no benefit. vTaskDelay(1) below is
+    // one real FreeRTOS tick (10ms at this project's default
+    // CONFIG_FREERTOS_HZ=100), so 2000 scan iterations is roughly 20
+    // seconds between reads — approximate, not calibrated against a
+    // stopwatch on real hardware.
+    let batteryPollIntervalScans = 2000
+    var scansSinceLastBatteryPoll = 0
+    #endif
+
     while true {
         let rawScan = matrix.scan()
         let cleanScan = debouncer.update(rawScan: rawScan)
@@ -311,6 +378,14 @@ func app_main_swift() {
                 }
             }
         }
+
+        #if SMK_TARGET_ESP32C6
+        scansSinceLastBatteryPoll += 1
+        if scansSinceLastBatteryPoll >= batteryPollIntervalScans {
+            scansSinceLastBatteryPoll = 0
+            pollBatteryLevel()
+        }
+        #endif
 
         vTaskDelay(1)
     }

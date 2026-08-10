@@ -4,7 +4,7 @@
 // default. See docs/superpowers/specs/2026-07-31-runtime-keymap-updates-
 // design.md for the frame layout and protocol.
 //
-// NVS is already initialized by init_ble_hid() (Sources/componets/
+// NVS is already initialized by init_ble_hid() (Sources/components/
 // ble_helper.c) before Main.swift reaches the keymap-load call site, so no
 // separate init is needed here.
 

@@ -13,22 +13,24 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/RGBLighting.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/GPIOInit.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/SmkConfig.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/BatteryMonitor.swift"
 )
 
 set(c_srcs
-    "../Sources/componets/ble_helper.c"
-    "../Sources/componets/uart_init.c"
-    "../Sources/componets/kb_main.c"
-    "../Sources/componets/smk_keymap_store.c"
-    "../Sources/componets/smk_keymap_protocol.c"
-    "../Sources/componets/led_strip_encoder.c"
-    "../Sources/componets/led_strip_driver.c"
+    "../Sources/components/ble_helper.c"
+    "../Sources/components/uart_init.c"
+    "../Sources/components/kb_main.c"
+    "../Sources/components/smk_keymap_store.c"
+    "../Sources/components/smk_keymap_protocol.c"
+    "../Sources/components/led_strip_encoder.c"
+    "../Sources/components/led_strip_driver.c"
+    "../Sources/components/battery_adc.c"
 )
 
 # Register C sources and linker fragment
 idf_component_register(SRCS ${c_srcs}
-                       INCLUDE_DIRS "../Sources/smk" "../Sources/componets"
-                       REQUIRES esp_hid nvs_flash bt cjson driver esp_event esp_driver_uart esp_driver_gpio esp_driver_rmt
+                       INCLUDE_DIRS "../Sources/smk" "../Sources/components"
+                       REQUIRES esp_hid nvs_flash bt cjson driver esp_event esp_driver_uart esp_driver_gpio esp_driver_rmt esp_adc
                        LDFRAGMENTS "linker.lf")
 
 # --- Swift Compilation Step ---
@@ -122,7 +124,7 @@ set(include_dirs
     "${RISCV_TOOLCHAIN_INCLUDE}"
     "${CMAKE_BINARY_DIR}/config"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/componets"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/components"
     "${idf_p}/components/esp_libc/platform_include"
     "${idf_p}/components/freertos/FreeRTOS-Kernel/include"
     "${idf_p}/components/freertos/FreeRTOS-Kernel/include/freertos"
@@ -196,7 +198,7 @@ set(swift_obj "${CMAKE_CURRENT_BINARY_DIR}/smk_swift.o")
 #
 # SMK_HAS_WIRED_BRIDGE / SMK_DEFAULT_MODE_WIRED / SMK_HAS_RGB_BACKLIGHT feed
 # SmkConfig.swift's `#if` checks — the Swift-level equivalent of the
-# `#if defined(CONFIG_SMK_...)` checks the old Sources/componets/smk_config.c
+# `#if defined(CONFIG_SMK_...)` checks the old Sources/components/smk_config.c
 # did in C. CONFIG_SMK_* are ordinary CMake variables here because ESP-IDF
 # loads sdkconfig.cmake project-wide; a Kconfig bool that's off is simply
 # unset (falsy), not defined-as-0, which is why this can't just forward

@@ -6,7 +6,7 @@ CONFIG_BT_NIMBLE_SVC_GAP_APPEARANCE=0x03C1
 CONFIG_BT_NIMBLE_HID_SERVICE=y
 
 # Required for macOS (and other hosts) to bond and auto-reconnect instead of
-# re-pairing every time. See Sources/componets/ble_helper.c for the matching
+# re-pairing every time. See Sources/components/ble_helper.c for the matching
 # ble_hs_cfg security setup.
 CONFIG_BT_NIMBLE_SM_LVL=1
 CONFIG_BT_NIMBLE_NVS_PERSIST=y
