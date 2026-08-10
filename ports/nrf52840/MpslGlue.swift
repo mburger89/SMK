@@ -102,6 +102,85 @@ func smk_mpsl_assert_handler(_ file: UnsafePointer<CChar>?, _ line: UInt32) {
     while true {}
 }
 
+// --- USB VBUS power event forwarding (Task 8 Step 1) -------------------
+//
+// Task 5's note above (on POWER_CLOCK_IRQHandler) said TinyUSB's
+// dcd_nrf5x.c "also needs POWER_CLOCK events." Verified for real against
+// ~/tinyusb/src/portable/nordic/nrf5x/dcd_nrf5x.c: it does NOT register
+// its own POWER_CLOCK handler and has no `tusb_int_handler`-style entry
+// point for the raw IRQ. Instead it exposes
+// `void tusb_hal_nrf_power_event(uint32_t event)` (event = 0 DETECTED /
+// 1 REMOVED / 2 READY, "chosen to be as same as NRFX_POWER_USB_EVT_* in
+// nrfx_power.h" per its own header comment) and documents that *the
+// application* must call it, sourced either from Nordic's nrfx_power
+// driver (non-SoftDevice apps) or from classic-SoftDevice SOC events
+// (SOFTDEVICE_PRESENT apps) — see ~/tinyusb/hw/bsp/nrf/family.c's
+// board_init()/power_event_handler()/proc_soc() for both reference
+// shapes. Neither applies verbatim here: this build doesn't compile
+// nrfx_power.c (no CMake wiring for it, and pulling it in would also
+// require nrfx_config.h's NRFX_POWER_ENABLED/NRFX_CLOCK_ENABLED knobs,
+// which ports/nrf52840/platform/nrfx_glue.h + CMakeLists.txt's nrfx
+// include-dir comment don't currently turn on), and it doesn't use the
+// classic monolithic SoftDevice at all (Task 6/7 use nrfxlib's
+// SoftDevice *Controller*, a header-only-linked component with no SOC-
+// event mechanism). So instead of vendoring nrfx_power.c, this reads/
+// clears the 3 relevant NRF_POWER event registers directly — same raw-
+// MMIO style as the NVIC access above, and as NRF_RNG access in
+// ble_hid_sdc.c's sdc_rand_poll() (Task 7) — verified against
+// nrf52840.h's POWER_Type layout (base 0x40000000):
+//   EVENTS_USBDETECTED @ 0x11C, EVENTS_USBREMOVED @ 0x120,
+//   EVENTS_USBPWRRDY @ 0x124, INTENSET @ 0x304, USBREGSTATUS @ 0x438
+//   (VBUSDETECT = bit 0, OUTPUTRDY = bit 1); INTENSET bit positions for
+//   USBDETECTED/USBREMOVED/USBPWRRDY are 7/8/9 (nrf52840_bitfields.h).
+//
+// NOTE: POWER and CLOCK are the same physical peripheral/IRQ sharing one
+// register block (NRF_POWER_BASE == NRF_CLOCK_BASE == 0x40000000, and
+// both structs place INTENSET at the same 0x304 offset) — MPSL's
+// mpsl_init() already sets its own CLOCK-side INTENSET bits (HFCLKSTARTED
+// etc.) on this same register. INTENSET on nRF52 is write-1-to-set /
+// write-0-is-no-op (never a plain read-modify-write), so ORing in just
+// the USB bits below cannot clobber MPSL's bits regardless of init order.
+private let powerBase = UnsafeMutablePointer<UInt32>(bitPattern: UInt(0x4000_0000 as UInt32))!
+private let powerEventsUSBDetected = powerBase.advanced(by: 0x11C / 4)
+private let powerEventsUSBRemoved = powerBase.advanced(by: 0x120 / 4)
+private let powerEventsUSBPwrRdy = powerBase.advanced(by: 0x124 / 4)
+private let powerIntenSet = powerBase.advanced(by: 0x304 / 4)
+private let powerUSBRegStatus = powerBase.advanced(by: 0x438 / 4)
+
+private let powerIntenUSBDetectedMsk: UInt32 = 1 << 7
+private let powerIntenUSBRemovedMsk: UInt32 = 1 << 8
+private let powerIntenUSBPwrRdyMsk: UInt32 = 1 << 9
+private let powerUSBRegVbusDetectMsk: UInt32 = 1 << 0
+private let powerUSBRegOutputRdyMsk: UInt32 = 1 << 1
+
+// dcd_nrf5x.c's tusb_hal_nrf_power_event event codes (see comment above).
+private let usbEvtDetected: UInt32 = 0
+private let usbEvtRemoved: UInt32 = 1
+private let usbEvtReady: UInt32 = 2
+
+@_extern(c, "tusb_hal_nrf_power_event")
+func tusb_hal_nrf_power_event(_ event: UInt32)
+
+// Enables the USB power interrupt sources and seeds TinyUSB's state
+// machine from whatever VBUS/regulator state already exists at boot
+// (mirrors family.c's board_init(): "USB power may already be ready at
+// this time -> no event generated, we need to invoke the handler based
+// on the status initially"). Called from mpsl_glue_init() below, which
+// platform_glue.c's main() runs before app_main_swift() (and therefore
+// before UsbHid.swift's init_wired_link() / tusb_rhport_init()) — same
+// ordering as family.c's board_init() running before tusb_init().
+private func smkUsbPowerInit() {
+    powerIntenSet.pointee = powerIntenUSBDetectedMsk | powerIntenUSBRemovedMsk | powerIntenUSBPwrRdyMsk
+
+    let status = powerUSBRegStatus.pointee
+    if status & powerUSBRegVbusDetectMsk != 0 {
+        tusb_hal_nrf_power_event(usbEvtDetected)
+    }
+    if status & powerUSBRegOutputRdyMsk != 0 {
+        tusb_hal_nrf_power_event(usbEvtReady)
+    }
+}
+
 @_cdecl("mpsl_glue_init")
 func mpsl_glue_init() {
     // nil clock config = default RC low-frequency clock source (per
@@ -118,6 +197,14 @@ func mpsl_glue_init() {
 
     nvicSetPriority(mpslLowPrioIRQn, 5) // lower priority (higher number) than RADIO, per mpsl.rst
     nvicEnableIRQ(mpslLowPrioIRQn)
+
+    // POWER_CLOCK_IRQn itself needs no explicit nvicEnableIRQ call here:
+    // per mpsl.rst, "MPSL enables interrupts for the reserved instances,
+    // as well as for POWER_CLOCK and low_prio_irq" — mpsl_init() above
+    // already did it, same as RADIO/RTC0/TIMER0's "reserved instances"
+    // auto-enable. Only the USB-specific event *source* bits (INTENSET)
+    // need enabling here, since MPSL only cares about CLOCK's own bits.
+    smkUsbPowerInit()
 }
 
 // RADIO/RTC0/TIMER0 are "reserved instances" MPSL claims and auto-enables
@@ -146,14 +233,40 @@ func TIMER0_IRQHandler() {
     MPSL_IRQ_TIMER0_Handler()
 }
 
-// POWER_CLOCK is NOT auto-enabled by mpsl_init and also needs an explicit
-// application-provided handler forwarding to MPSL.
+// POWER_CLOCK's NVIC line *is* auto-enabled by mpsl_init (per mpsl.rst,
+// "MPSL enables interrupts for the reserved instances, as well as for
+// POWER_CLOCK and low_prio_irq" — same as RADIO/RTC0/TIMER0 above; this
+// corrects an earlier, inaccurate version of this comment from Task 5
+// that claimed the opposite). Like those three, it still needs an
+// explicit application-provided vector-table handler: mpsl.rst says "it
+// is up to the application to forward any clock-related events to
+// MPSL_IRQ_CLOCK_Handler... the application is free to forward all
+// events for the POWER_CLOCK interrupt" (i.e. unconditionally, no need
+// to filter by which event fired) — MPSL_IRQ_CLOCK_Handler() ignores
+// events it doesn't care about.
+//
+// This interrupt line is shared with the POWER peripheral's USB VBUS
+// events (see smkUsbPowerInit()/tusb_hal_nrf_power_event() above —
+// Task 8 Step 1, resolving the note this comment used to end with).
+// Order doesn't matter: MPSL's handler only touches CLOCK-side event
+// registers, this only touches POWER-side ones (EVENTS_USBDETECTED/
+// _USBREMOVED/_USBPWRRDY), so the two forwards are independent.
 @_cdecl("POWER_CLOCK_IRQHandler")
 func POWER_CLOCK_IRQHandler() {
     MPSL_IRQ_CLOCK_Handler()
-    // Task 8 note: TinyUSB's dcd_nrf5x.c also needs POWER_CLOCK events
-    // (VBUS detect) — this handler will need to also call TinyUSB's power
-    // event forwarding once that wiring is finalized in Task 8.
+
+    if powerEventsUSBDetected.pointee != 0 {
+        powerEventsUSBDetected.pointee = 0 // write 0 clears an EVENTS_ register on nRF52
+        tusb_hal_nrf_power_event(usbEvtDetected)
+    }
+    if powerEventsUSBRemoved.pointee != 0 {
+        powerEventsUSBRemoved.pointee = 0
+        tusb_hal_nrf_power_event(usbEvtRemoved)
+    }
+    if powerEventsUSBPwrRdy.pointee != 0 {
+        powerEventsUSBPwrRdy.pointee = 0
+        tusb_hal_nrf_power_event(usbEvtReady)
+    }
 }
 
 // Application must call this promptly (per mpsl.rst, "within a couple of

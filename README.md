@@ -131,6 +131,25 @@ picotool load -f build_rp2040_pico/smk_rp2040.uf2
 
 See [`ports/rp2040/README.md`](ports/rp2040/README.md) for full details.
 
+## nRF52840 Support
+
+SMK also targets the **Nordic nRF52840** (Arm Cortex-M4F) — USB HID (TinyUSB) + BLE HID (Nordic's
+SoftDevice Controller over BTstack), build-only for now, not yet verified on real hardware. As with
+RP2040/RP2350, the keyboard logic (`Sources/smk/`) is shared single-source; only the hardware
+platform layer (`ports/nrf52840/`) differs.
+
+```bash
+export NRF5_SDK_PATH=~/nRF5_SDK
+export NRFXLIB_PATH=~/sdk-nrfxlib
+export TINYUSB_PATH=~/tinyusb
+export BTSTACK_PATH=~/btstack
+
+./build_nrf52840.sh
+```
+
+See [`CLAUDE.md`'s nRF52840 Prerequisites subsection](CLAUDE.md#nrf52840) for how to obtain and
+place the four vendored dependencies these env vars point at.
+
 ## Tests
 *TODO: Add unit tests for key scanning and layer logic.*
 
