@@ -7,24 +7,12 @@ func init_ble_hid()
 @_extern(c, "send_keyboard_report")
 func send_keyboard_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
 
-// Unlike init_keyboard_pins (Sources/smk/KeyMatrix.swift), which every board
-// except RP2040 now backs with a native Swift implementation, ESP32-C6
-// still backs this pair with C (Sources/components/uart_init.c, unconditionally
-// compiled into the ESP32-C6 build) — so its declaration must stay active
-// there. Both NRF52840 (ports/nrf52840/UsbHid.swift) and RP2040
-// (ports/rp2040/UsbHid.swift) now back these natively in Swift, same-module
-// resolution, no @_extern needed — so this guard excludes both. Not
-// "#if !SMK_TARGET_ESP32C6" alone (that broader form is equivalent today
-// since ESP32-C6 is the only remaining board here, but is worded
-// board-by-board rather than as a blanket condition so a future board that
-// still backs these with C doesn't silently lose its extern declaration).
-#if !SMK_TARGET_NRF52840 && !SMK_TARGET_RP2040
-@_extern(c, "init_wired_link")
-func init_wired_link()
-
-@_extern(c, "send_wired_report")
-func send_wired_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
-#endif
+// init_wired_link/send_wired_report: every board now backs these natively
+// in Swift, same-module resolution, no @_extern needed — ESP32-C6 via
+// WiredHidUart.swift (this task), RP2040 via ports/rp2040/UsbHid.swift, and
+// nRF52840 via ports/nrf52840/UsbHid.swift. So unlike init_keyboard_pins
+// (Sources/smk/KeyMatrix.swift), which still needs a guarded @_extern for
+// one remaining board, this pair needs no declaration at all anymore.
 
 // vTaskDelay/kb_log — ESP32-C6 backs both with C (real FreeRTOS vTaskDelay;
 // kb_log via Sources/components/ble_helper.c); nRF52840 backs both with C
