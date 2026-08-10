@@ -1,12 +1,12 @@
-// Per-key RGB backlighting over an SK6812MINI-E chain (driven via RMT,
-// see led_strip_driver.c).
+// Per-key RGB backlighting over an SK6812MINI-E chain.
 //
-// Opt-in, off by default: the stock smk_kbd PCB has no addressable
-// LED chain — only a single fixed charge-status LED — so there's nothing to
-// drive unless you've wired one up yourself. Compiled in only for the
-// ESP32-C6 build (guarded by -DSMK_RGB_AVAILABLE in main/CMakeLists.txt;
-// RP2040 doesn't include this file at all) and instantiated at runtime only
-// if `idf.py menuconfig` -> SMK_HAS_RGB_BACKLIGHT is enabled — see Main.swift.
+// Opt-in on ESP32-C6 (stock smk_kbd PCB has no addressable LED chain — only
+// a single fixed charge-status LED — so there's nothing to drive unless
+// you've wired one up yourself; guarded by -DSMK_RGB_AVAILABLE in
+// main/CMakeLists.txt, instantiated at runtime only if `idf.py menuconfig`
+// -> SMK_HAS_RGB_BACKLIGHT is enabled, see Main.swift). Compiled in
+// unconditionally (hardware always present) for the smk_kbd_rp2040 board —
+// see ports/rp2040/CMakeLists.txt. nRF52840 doesn't include this file.
 //
 // If you wire one up: the chain is assumed wired serpentine/boustrophedon,
 // not raster — ledChainIndex below must mirror however you actually wired
@@ -15,6 +15,25 @@
 // stay physically adjacent. Getting this wrong doesn't break compilation or
 // scanning — it just lights the wrong LED under the wrong key, silently.
 
+// led_strip_driver_init/led_strip_set_pixel/led_strip_refresh/led_strip_clear:
+// on ESP32-C6 these are same-module Swift definitions in
+// LedStripDriverRMT.swift (RMT-based driver, formerly
+// Sources/components/led_strip_driver.c) — no @_extern declaration is
+// needed or permitted there; a same-module Swift function definition can't
+// coexist with an @_extern(c, ...) forward declaration of the same name
+// ("invalid redeclaration"), same class of stale-prototype pitfall Task 8
+// hit with Bridging.h, just caught at compile time instead of silently
+// shadowed since both sides are Swift here. On RP2040 (smk_kbd_rp2040
+// board only) these stay real external C symbols
+// (ports/rp2040/platform/led_strip_driver.c, PIO-based) reached via
+// @_extern below — RP2040's own BridgingHeader.h also declares C
+// prototypes for them, but only inside `#ifdef SMK_RGB_AVAILABLE`, which
+// never fires there: SMK_RGB_AVAILABLE is passed as a bare swiftc `-D`
+// (Swift-level conditional compilation flag), never as `-Xcc -D`, so it's
+// not visible to the C preprocessor that parses a bridging header. That
+// bridging-header guard has therefore always been dead code; @_extern below
+// is what has actually been supplying these symbols to RP2040 Swift code.
+#if !SMK_TARGET_ESP32C6
 @_extern(c, "led_strip_driver_init")
 func led_strip_driver_init(_ gpioNum: Int32, _ numLeds: Int32)
 
@@ -26,6 +45,7 @@ func led_strip_refresh()
 
 @_extern(c, "led_strip_clear")
 func led_strip_clear()
+#endif
 
 struct RGBLighting {
     let rowCount: Int
