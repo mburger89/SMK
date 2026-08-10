@@ -29,12 +29,13 @@
 
 // --- Platform glue implemented in ports/nrf52840/platform/*.c ---
 
-// USB HID — the "wired" path on nRF52840 (Task 4; no-op stub until then)
-void init_wired_link(void);
-void send_wired_report(uint8_t modifier, uint8_t *keycodes);
+// USB HID (init_wired_link/send_wired_report) is deliberately NOT declared
+// here, for the same reason init_keyboard_pins above isn't: it's backed
+// directly in Swift (ports/nrf52840/UsbHid.swift, same-module resolution),
+// so a C declaration here would be redundant with — and could shadow —
+// the real one.
 
-// BLE HID — real once Tasks 5-7 land (MPSL/SDC + BTstack GATT HID);
-// no-op stub until then.
+// BLE HID (MPSL/SDC + BTstack GATT HID, ports/nrf52840/platform/ble_hid_sdc.c).
 void init_ble_hid(void);
 void send_keyboard_report(uint8_t modifier, uint8_t *keycodes);
 

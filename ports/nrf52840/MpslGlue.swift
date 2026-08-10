@@ -1,5 +1,7 @@
 // MPSL (Multiprotocol Service Layer) bring-up — required by the
-// SoftDevice Controller (see BleHidSdc.swift/ble_hid_sdc.c, Task 7).
+// SoftDevice Controller (see platform/ble_hid_sdc.c, Task 7 — that task
+// stayed in C rather than adding a BleHidSdc.swift, per its own documented
+// exception).
 // Vendored API from ${NRFXLIB_PATH}/mpsl/include/mpsl.h. This project has
 // no other radio protocol running (no Timeslot API use, no coexistence),
 // so MPSL's role here is purely "provide RADIO/RTC0/timer scheduling for
@@ -13,7 +15,6 @@
 // ~/nRF5_SDK/modules/nrfx/mdk/nrf52840.h during this task (POWER_CLOCK_IRQn
 // = 0, RADIO_IRQn = 1, SWI0_EGU0_IRQn = 20 — all match the plan's claimed
 // values exactly).
-private let powerClockIRQn: Int32 = 0
 private let radioIRQn: Int32 = 1
 // An otherwise-unused peripheral IRQ, per MPSL's "low_prio_irq" contract
 // (nrfxlib/mpsl/doc/mpsl.rst): any IRQ not already claimed by a real

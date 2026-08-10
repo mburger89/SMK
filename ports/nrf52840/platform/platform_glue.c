@@ -85,31 +85,18 @@ void vTaskDelay(uint32_t ticks) {
 int smk_has_wired_bridge(void) { return 1; }
 int smk_default_mode_is_wired(void) { return 1; }
 
-// --- HID transport stubs ----------------------------------------------------
-// Placeholders only: Sources/smk/Main.swift's scan loop calls these
-// unconditionally (init_ble_hid()/init_wired_link() at startup,
-// send_keyboard_report()/send_wired_report() per tick), so they must
-// resolve at link time even though no real transport exists yet on this
-// build-only pass. No dedicated usb_hid.c/ble_hid.c exists for this board
-// yet (unlike RP2040's), so the no-op stubs live here temporarily.
-// init_wired_link/send_wired_report: Task 4 (TinyUSB) implements these for
-// real in Swift (ports/nrf52840/UsbHid.swift, no @_cdecl — reached via
-// ordinary same-module Swift symbol resolution). These C stubs are NOT
-// removed by Task 4; they become harmless dead code after it lands (Swift's
-// version uses a different, mangled symbol name, so there's no link
-// conflict) but could be deleted as cleanup.
-//
-// init_ble_hid/send_keyboard_report: Task 7 (SDC + BTstack GATT HID) adds
-// ports/nrf52840/platform/ble_hid_sdc.c with real C-linkage definitions of
-// the same names. Unlike the wired pair, THESE stubs must be disabled (see
-// SMK_HAS_REAL_BLE_HID_SDC guard below) or the build will fail with a
-// duplicate-symbol linker error once ble_hid_sdc.c is added.
-void init_wired_link(void) {}
-void send_wired_report(uint8_t modifier, uint8_t *keycodes) {
-    (void)modifier;
-    (void)keycodes;
-}
-
+// --- BLE HID stub (disabled once the real implementation is linked in) -----
+// init_ble_hid()/send_keyboard_report() are declared in
+// ports/nrf52840/BridgingHeader.h and called unconditionally from
+// Sources/smk/Main.swift's scan loop. The wired pair (init_wired_link/
+// send_wired_report) is backed directly in Swift instead
+// (ports/nrf52840/UsbHid.swift, same-module resolution — see
+// BridgingHeader.h's comment for why no C declaration/stub exists for
+// those here). ports/nrf52840/platform/ble_hid_sdc.c provides the real
+// C-linkage definitions of init_ble_hid/send_keyboard_report (MPSL/SDC +
+// BTstack GATT HID); these stubs must stay disabled (see
+// SMK_HAS_REAL_BLE_HID_SDC guard below) whenever ble_hid_sdc.c is linked
+// in, or the build fails with a duplicate-symbol linker error.
 #ifndef SMK_HAS_REAL_BLE_HID_SDC
 void init_ble_hid(void) {
     // Stub — Task 7 (ble_hid_sdc.c) provides the real implementation.

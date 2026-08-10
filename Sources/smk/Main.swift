@@ -76,10 +76,15 @@ func app_main_swift() {
     kb_log("Initialising SMK Keyboard...")
 
     // Board pin maps. Exactly one of these is compiled in, selected by the
-    // build (SMK_TARGET_BOARD in ports/rp2040/CMakeLists.txt / the ESP32
-    // main/CMakeLists.txt always defines the ESP32 one). Both boards share
-    // the same COL2ROW matrix topology and keymap layout — only the GPIO
-    // numbers differ.
+    // build (SMK_BOARD_NRF52840DK / SMK_BOARD_KBD_RP2040 in
+    // ports/nrf52840/CMakeLists.txt / ports/rp2040/CMakeLists.txt
+    // respectively; the ESP32 main/CMakeLists.txt always defines neither,
+    // falling into the #else branch below). All three boards share the same
+    // keymap layout, but NOT the same matrix topology: smk_kbd_rp2040 and
+    // the ESP32-C6 smk_kbd board are both COL2ROW (`colsAreDriven: true` —
+    // diode anode at the column/switch side), while the nRF52840DK board
+    // below is the opposite (`colsAreDriven: false`) — see KeyMatrix.swift
+    // for what that flag actually changes about the scan direction.
 #if SMK_BOARD_NRF52840DK
     // nrf52840dk board (Nordic PCA10056) — GPIO map deferred to hardware
     // bring-up (no board schematic consulted in this pass, per

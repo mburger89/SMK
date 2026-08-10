@@ -40,6 +40,32 @@ func tud_hid_n_keyboard_report(_ instance: UInt8, _ reportID: UInt8, _ modifier:
 @_extern(c, "smk_keymap_usb_service")
 func smk_keymap_usb_service()
 
+// USBD interrupt forwarding (final review fix round, Critical #1). Without
+// this, USBD_IRQHandler in the vector table (gcc_startup_nrf52840.S) falls
+// through to the weak Default_Handler (`b .`, an infinite loop) — and
+// dcd_int_enable() (~/tinyusb/src/portable/nordic/nrf5x/dcd_nrf5x.c),
+// called from tusb_rhport_init() below via dcd_init(), unconditionally
+// arms NVIC_EnableIRQ(USBD_IRQn) at boot. So the very first USBD event
+// (VBUS/bus reset/endpoint activity) after init_wired_link() runs would
+// vector straight into that infinite loop, hanging the whole firmware
+// (scan loop, USB, and BLE together, since they all run from the same
+// cooperative main loop). `tusb_int_handler` is TinyUSB's real exported
+// ISR body (~/tinyusb/src/tusb.c) — signature `void tusb_int_handler(uint8_t
+// rhport, bool in_isr)` verified directly against tusb.h/tusb.c during this
+// fix — it's what feeds the event queue tud_task_ext() drains, so without
+// this forward USB could never enumerate correctly even setting the hang
+// aside. Same shape as MpslGlue.swift's RADIO_IRQHandler/RTC0_IRQHandler/
+// TIMER0_IRQHandler forwarders (Task 5 fix round, same class of bug) and
+// TinyUSB's own reference nRF BSP (~/tinyusb/hw/bsp/nrf/family.c's
+// `void USBD_IRQHandler(void) { tusb_int_handler(0, true); }`).
+@_extern(c, "tusb_int_handler")
+func tusb_int_handler(_ rhport: UInt8, _ inIsr: Bool)
+
+@_cdecl("USBD_IRQHandler")
+func USBD_IRQHandler() {
+    tusb_int_handler(0, true)
+}
+
 func init_wired_link() {
     // rhport 0, nil rh_init: same "backward compatible tusb_init(void)" path
     // the tusb_init() macro takes, defaulting to device role/full-speed per

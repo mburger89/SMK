@@ -83,7 +83,7 @@ The RP2040 build uses CMake's native Swift support (`enable_language(Swift)`) wi
 
 ### Hardware-Independent Sources (`Sources/SMKCore/`) — compiled for ALL targets, host-testable
 
-Same flat-file-compilation treatment as `Sources/smk/` (added to `main/CMakeLists.txt`'s and `ports/rp2040/CMakeLists.txt`'s `swift_srcs` lists, no module boundary in the real build) — but these files have zero hardware/`@_extern` calls, so `Package.swift` also exposes them as a real `SMKCore` library target for host-side testing (`swift test`, no ESP-IDF/pico-sdk needed). See `docs/superpowers/specs/2026-08-09-host-unit-tests-design.md`.
+Same flat-file-compilation treatment as `Sources/smk/` (added to `main/CMakeLists.txt`'s, `ports/rp2040/CMakeLists.txt`'s, and `ports/nrf52840/CMakeLists.txt`'s `swift_srcs` lists, no module boundary in the real build) — but these files have zero hardware/`@_extern` calls, so `Package.swift` also exposes them as a real `SMKCore` library target for host-side testing (`swift test`, no ESP-IDF/pico-sdk needed). See `docs/superpowers/specs/2026-08-09-host-unit-tests-design.md`.
 
 | File | Responsibility |
 |---|---|
@@ -107,6 +107,7 @@ Each target provides its own `GPIORegisters.swift` with the **same** `outSet`/`o
 |---|---|---|
 | ESP32-C6 | `Sources/smk/GPIORegisters.swift` | `0x60091000` |
 | RP2040 / RP2350 | `ports/rp2040/GPIORegisters.swift` | `0xD0000000` (SIO — identical register layout on both chips) |
+| nRF52840 | `ports/nrf52840/GPIORegisters.swift` | `0x50000000` (P0 GPIO port only — pins 0–31; P1/pins 32–47 unused, this board's matrix fits within P0) |
 
 ### ESP32-C6-only Swift Sources (`Sources/smk/`)
 
@@ -177,6 +178,15 @@ The `DebouncedMatrix` wraps raw scans and requires 5 consecutive agreeing sample
 | `platform/ble_hid.c` | Pico W: CYW43 + BTstack HID-over-GATT; plain Pico: no-op stubs |
 | `platform/btstack_config.h` | BTstack config (Pico W only) |
 | `platform/smk_hid.gatt` | GATT database for BLE HID (compiled to `smk_hid.h` at build time) |
+
+### nRF52840 board (nrf52840dk / PCA10056) — read before flashing real hardware
+
+**The GPIO pin map for this board (the `SMK_BOARD_NRF52840DK` branch of `Sources/smk/Main.swift`'s `configJson`) is a placeholder, not a verified pin assignment.** No board schematic was consulted when choosing it — see that branch's own comment ("GPIO map deferred to hardware bring-up... Placeholder pin numbers below MUST be replaced before this board is ever flashed"). It MUST be replaced with real, schematic-verified pin assignments before this board is ever flashed to physical hardware — using the placeholder numbers as-is risks driving pins that aren't wired the way the firmware assumes.
+
+Other known gaps on this port, briefly (this is a build-only pass — see `docs/superpowers/specs/2026-08-09-nrf52840-support-design.md`):
+- **Runtime keymap store is a no-op stub** (`ports/nrf52840/platform/smk_keymap_store.c`) — a keymap upload over USB HID is accepted and dispatched, but every write silently fails; nothing persists across reboots yet.
+- **LE bonding does not survive a reboot** (Task 7's known gap — no persistent bonding-info storage wired up yet).
+- **No real clock**: `hal_time_ms()` (`ports/nrf52840/platform/ble_hid_sdc.c`), `tusb_time_millis_api()` (`ports/nrf52840/UsbHid.swift`), and the `vTaskDelay` busy-loop (`ports/nrf52840/platform/platform_glue.c`) are all uncalibrated per-call/per-loop counters, not real millisecond clocks, until a real hardware timer (`NRF_RTC`, once MPSL claims it) is wired up.
 
 ### Keymap Configuration
 

@@ -1,7 +1,9 @@
 // BTstack configuration for the SMK nRF52840 BLE HID keyboard (LE peripheral
-// only). Identical content to ports/rp2040/platform/btstack_config.h — none
-// of this is transport-specific, and the RP2040 BLE build (Pico W /
-// smk_kbd_rp2040) is the proven reference for these values.
+// only). Modeled on ports/rp2040/platform/btstack_config.h — most of this is
+// not transport-specific, and the RP2040 BLE build (Pico W / smk_kbd_rp2040)
+// is the proven reference for these values, but this file deliberately
+// diverges later on (LE device DB handling), a documented, correct
+// difference from Task 7 — see that section below.
 
 #pragma once
 
