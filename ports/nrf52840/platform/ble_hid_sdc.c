@@ -19,7 +19,10 @@
 #include <mpsl.h>
 #include <nrf.h> // NRF_RNG — see sdc_rand_poll() below
 
-#include "btstack.h"
+#include "btstack.h"           // pulls in btstack_run_loop.h transitively
+#include "btstack_run_loop_embedded.h"
+#include "hal_time_ms.h"       // hal_time_ms() — implemented below, see that comment
+#include "hal_cpu.h"           // hal_cpu_disable_irqs/enable_irqs/enable_irqs_and_sleep — implemented below
 #include "hci_transport.h"
 #include "ble/gatt-service/hids_device.h"
 #include "ble/gatt-service/battery_service_server.h"
@@ -84,6 +87,83 @@ static const sdc_rand_source_t sdc_rand_source = {
     .rand_poll = sdc_rand_poll,
 };
 
+// --- BTstack run loop HAL (Critical #2 review finding) -------------------
+// hci.c registers timers/data-source callbacks against whatever
+// btstack_run_loop_init() configured (see RP2040's
+// ble_hid_kbd_uart.c:313-320 for the same requirement on that port,
+// pico-sdk's async_context-based run loop there). This port had no run
+// loop wired up at all in the first pass: btstack_run_loop_set_timer()
+// dereferences a NULL `the_run_loop` (btstack_assert is a silent no-op
+// here — HAVE_ASSERT/ENABLE_BTSTACK_ASSERT aren't defined in
+// btstack_config.h — so the guard compiles out and this HardFaults),
+// and even if it didn't, nothing pumped the run loop's timers/callbacks
+// afterward. Fixed by using BTstack's own generic "embedded" run loop
+// (platform/embedded/btstack_run_loop_embedded.c, added to
+// ports/nrf52840/CMakeLists.txt), driven from btstack_run_loop_embedded_
+// execute_once() in platform_glue.c's vTaskDelay — same cooperative-poll
+// pattern as sdc_transport_poll()/mpsl_glue_poll()/kb_usb_task().
+//
+// That run loop implementation needs two small hardware abstraction
+// layers the application is expected to provide (hal_time_ms.h/hal_cpu.h
+// are declarations-only headers in btstack/platform/embedded — every
+// embedded btstack port implements these itself):
+//
+//   hal_time_ms(): btstack_config.h sets HAVE_EMBEDDED_TIME_MS (not
+//   HAVE_EMBEDDED_TICK), so btstack_run_loop_embedded.c calls this
+//   directly for "now" and for computing timer deadlines. This port has
+//   no calibrated hardware millisecond timer wired up yet (same
+//   unresolved state as platform_glue.c's vTaskDelay busy-loop, and
+//   UsbHid.swift's tusb_time_millis_api() — see that function's own
+//   comment for the identical caveat) — Task 5's MPSL/RTC init claims
+//   the relevant peripheral but nothing reads a real elapsed-time value
+//   from it yet. Implemented the same way as tusb_time_millis_api(): a
+//   monotonic per-call counter, NOT a real millisecond clock. This is
+//   sufficient for btstack_run_loop_embedded.c's own correctness
+//   requirement (monotonically increasing, used only for ordering timer
+//   deadlines) but means BTstack's timeouts elapse in "N calls" rather
+//   than "N milliseconds" until a real RTC-backed clock replaces this —
+//   a known, deliberate limitation of this build-only pass, not a bug to
+//   silently "fix" by guessing a scale factor.
+//
+//   hal_cpu_disable_irqs/enable_irqs: real, correct CMSIS Cortex-M4
+//   primitives (__disable_irq()/__enable_irq(), reachable via the
+//   <nrf.h> include above -> nrf52840.h -> core_cm4.h -> cmsis_gcc.h) —
+//   these matter for real (protecting btstack_run_loop_embedded.c's
+//   internal trigger_event_received flag against races with an ISR),
+//   unlike hal_time_ms() above.
+//
+//   hal_cpu_enable_irqs_and_sleep: deliberately does NOT call __WFE()/
+//   __WFI() to actually sleep, unlike a typical embedded btstack port.
+//   This project has no guaranteed periodic interrupt source configured
+//   yet to wake such a sleep (no RTOS tick, no confirmed-firing RTC
+//   tick independent of MPSL's own scheduling) — using a real WFE here
+//   risked trading today's proven hang (Critical #2 itself) for a new,
+//   harder-to-diagnose one if no interrupt happens to be pending when
+//   this runs. Just re-enabling IRQs and returning immediately is
+//   functionally safe (this project's entire main loop is cooperative
+//   busy-polling already — see vTaskDelay's own busy-loop, not a real
+//   sleep, for the same reason) at the cost of not actually saving
+//   power — acceptable for a build-only pass with no hardware in hand to
+//   confirm a real low-power sleep wakes up correctly.
+static uint32_t s_hal_time_ms_counter = 0;
+
+uint32_t hal_time_ms(void) {
+    s_hal_time_ms_counter++;
+    return s_hal_time_ms_counter;
+}
+
+void hal_cpu_disable_irqs(void) {
+    __disable_irq();
+}
+
+void hal_cpu_enable_irqs(void) {
+    __enable_irq();
+}
+
+void hal_cpu_enable_irqs_and_sleep(void) {
+    __enable_irq(); // see header comment above: no real WFE/WFI sleep yet
+}
+
 // hci_transport_t implementation — feeds BTstack's HCI host through the
 // Task 6 dispatcher into SDC, instead of a UART H4 byte stream. Exact
 // struct field list verified against btstack/src/hci_transport.h while
@@ -102,11 +182,6 @@ static void sdc_transport_register_packet_handler(void (*handler)(uint8_t packet
     s_packet_handler = handler;
 }
 
-static int sdc_transport_can_send_packet_now(uint8_t packet_type) {
-    (void)packet_type;
-    return 1; // SDC's sdc_hci_data_put/hci_internal_cmd_put are synchronous from this call site
-}
-
 static int sdc_transport_send_packet(uint8_t packet_type, uint8_t *packet, int size) {
     (void)size;
     int32_t err;
@@ -123,13 +198,30 @@ static int sdc_transport_send_packet(uint8_t packet_type, uint8_t *packet, int s
     return (err == 0) ? 0 : -1;
 }
 
+// can_send_packet_now is deliberately NULL — Critical #4 review finding.
+// BTstack decides sync-vs-async transport behavior purely by whether this
+// field is NULL (hci.c: "assumption: synchronous implementations don't
+// provide can_send_packet_now as they don't keep the buffer after the
+// call" — hci_transport_synchronous() at hci.c ~line 885). The first pass
+// supplied a non-NULL implementation that unconditionally returned 1,
+// which told BTstack this transport is *asynchronous* — meaning BTstack
+// would wait for an HCI_EVENT_TRANSPORT_PACKET_SENT event (delivered via
+// the registered packet handler, the pattern hci_transport_h4.c uses)
+// before releasing its packet buffer and moving on. This transport never
+// sent that event, so hci_stack->hci_packet_buffer_reserved latches true
+// after the very first packet and nothing after it can be sent — exactly
+// one HID report would ever go out. sdc_transport_send_packet() below
+// really is synchronous from this call site (hci_internal_cmd_put()/
+// sdc_hci_data_put() both return before this function returns), so NULL
+// here is not just the simpler fix, it's the correct one — no
+// HCI_EVENT_TRANSPORT_PACKET_SENT synthesis needed.
 static const hci_transport_t sdc_transport = {
     .name = "sdc",
     .init = &sdc_transport_init,
     .open = &sdc_transport_open,
     .close = &sdc_transport_close,
     .register_packet_handler = &sdc_transport_register_packet_handler,
-    .can_send_packet_now = &sdc_transport_can_send_packet_now,
+    .can_send_packet_now = NULL,
     .send_packet = &sdc_transport_send_packet,
     .set_baudrate = NULL,
     .reset_link = NULL,
@@ -141,19 +233,57 @@ static const hci_transport_t sdc_transport = {
 // Called every scan tick from platform_glue.c's vTaskDelay, same
 // cooperative-polling style as mpsl_glue_poll()/kb_usb_task().
 //
-// Uses sdc_hci_get() (sdc_hci.h) directly rather than Task 6's
-// hci_internal_msg_get() — the two are not interchangeable: sdc_hci_get()
-// is SDC's own raw event/data retrieval API (uint8_t * msg_type_out, the
-// signature this function is written against), while
-// hci_internal_msg_get() (sdc_hci_dispatch.h) additionally consults the
-// dispatcher's own user-command-handler bookkeeping and expects a
-// sdc_hci_msg_type_t * out-param, a different type. Verified both
-// signatures against their real vendored headers while implementing this
-// file.
+// Critical #1 review finding, fixed here: this used to call sdc_hci_get()
+// (sdc_hci.h) directly. That's wrong. hci_internal_cmd_put() (Task 6's
+// dispatcher, called from sdc_transport_send_packet() above) doesn't just
+// forward raw HCI commands to SDC — for most opcodes it decodes the
+// command, calls the matching sdc_hci_cmd_*() API itself, then
+// *synthesizes* a Command Complete/Status event into its own static
+// buffer and latches cmd_complete_or_status.occurred = true (see
+// sdc_hci_dispatch.c's hci_internal_cmd_put(), ~line 1975-1990). That
+// synthesized event is only ever delivered by hci_internal_msg_get()
+// (sdc_hci_dispatch.c ~line 2026), which drains the latch (clearing
+// occurred back to false) before falling through to a raw sdc_hci_get()
+// call for anything else pending. Bare sdc_hci_get() knows nothing about
+// this latch: it would return -NRF_EAGAIN forever for every command
+// response (BTstack's init state machine stalls waiting for a Command
+// Complete that never arrives via this path), and worse,
+// cmd_complete_or_status.occurred never gets cleared, so
+// hci_internal_cmd_put() then returns -NRF_EPERM on every subsequent
+// command — permanently wedged after the very first one
+// (hci_power_control(HCI_POWER_ON) sends HCI Reset first, so this fired
+// immediately). Fixed by calling hci_internal_msg_get() instead, matching
+// the signature Task 6 actually declared in sdc_hci_dispatch.h.
+//
+// Important #5 review finding: the review raised a concern that this
+// build doesn't pass -fshort-enums, so sdc_hci_msg_type_t might compile
+// to a 4-byte enum while hci_internal_msg_get()/sdc_hci_get() only write
+// 1 byte into *msg_type_out (the real vendored sdc_hci_get() takes a
+// plain `uint8_t *`, not an enum pointer at all — the enum typing only
+// exists at hci_internal_msg_get()'s wrapper level, which casts to
+// uint8_t* before calling in) — leaving 3 uninitialized garbage bytes
+// that could make the switch below take an unpredictable branch.
+// Checked empirically rather than trusting either claim: compiled a
+// `sizeof(sdc_hci_msg_type_t)` probe with this exact toolchain/flags
+// (arm-none-eabi-gcc 14.3.1, no -fshort-enums passed) and it's 1 byte,
+// not 4 — the "Arm GNU Toolchain" distribution (as opposed to older
+// Linaro/CodeSourcery builds) defaults bare-metal arm-none-eabi targets
+// to short/variable-size enums already, matching what Nordic's prebuilt
+// library was built expecting. So this specific field was never actually
+// at risk of the garbage-bytes bug in this build. The
+// "-fshort-enums ... output is to use 32-bit enums" linker warnings seen
+// throughout this build are real (a Tag_ABI_enum_size mismatch exists
+// somewhere in the link — most likely between this project's objects and
+// one or more prebuilt archives) but don't appear to be this bug; not
+// investigated further here as it's outside this fix round's scope.
+// Kept the zero-initialization below anyway: it's free, and it's cheap
+// insurance against this toolchain's enum-sizing default ever changing
+// (a compiler upgrade, or someone adding -fshort-enums=0 later) turning
+// a currently-theoretical risk into a real one.
 void sdc_transport_poll(void) {
     static uint8_t msg_buf[HCI_MSG_BUFFER_MAX_SIZE];
-    uint8_t msg_type;
-    while (sdc_hci_get(msg_buf, &msg_type) == 0) {
+    sdc_hci_msg_type_t msg_type = SDC_HCI_MSG_TYPE_NONE; // see enum-width comment above — must be zero-initialized
+    while (hci_internal_msg_get(msg_buf, &msg_type) == 0) {
         if (!s_packet_handler) continue;
         switch (msg_type) {
             case SDC_HCI_MSG_TYPE_EVT:
@@ -230,6 +360,26 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 }
 
 void init_ble_hid(void) {
+    // Critical #3 review finding: BTstack's memory pools (btstack_memory.c)
+    // stay NULL forever unless this is called — e.g.
+    // btstack_memory_hci_connection_get() would return NULL and no BLE
+    // connection could ever be tracked. RP2040 gets this for free because
+    // pico-sdk's own btstack integration calls it internally; this
+    // from-scratch transport has no such wrapper, so it must be called
+    // explicitly, first, before anything else below touches BTstack.
+    btstack_memory_init();
+
+    // Critical #2 review finding: hci.c registers timers/data sources
+    // against whatever run loop btstack_run_loop_init() configured — must
+    // happen before hci_init() below (see hci_power_control()'s later call
+    // into btstack_run_loop_set_timer(), which dereferences a NULL
+    // `the_run_loop` otherwise). See the hal_time_ms()/hal_cpu_* comment
+    // above for the HAL this run loop needs and why each is implemented
+    // the way it is. btstack_run_loop_embedded_execute_once() (which
+    // actually pumps this run loop's timers/callbacks) is called every
+    // tick from platform_glue.c's vTaskDelay, alongside sdc_transport_poll().
+    btstack_run_loop_init(btstack_run_loop_embedded_get_instance());
+
     int32_t err = sdc_init(sdc_fault_handler);
     if (err != 0) { while (1) { } }
 

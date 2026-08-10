@@ -367,6 +367,14 @@ target_sources(smk_nrf52840 PRIVATE
     "${BTSTACK_PATH}/src/ble/gatt-service/battery_service_server.c"
     "${BTSTACK_PATH}/src/ble/gatt-service/device_information_service_server.c"
     "${BTSTACK_PATH}/platform/embedded/hci_dump_embedded_stdout.c"
+    # Critical #2 fix-round finding: hci.c requires a real run loop
+    # (btstack_run_loop_init()) before hci_init(), and something has to
+    # pump it every tick — this is BTstack's own generic "embedded" run
+    # loop, driven from platform_glue.c's vTaskDelay via
+    # btstack_run_loop_embedded_execute_once(). See ble_hid_sdc.c's own
+    # comment (next to its hal_time_ms()/hal_cpu_* implementations, which
+    # this file requires) for the full story.
+    "${BTSTACK_PATH}/platform/embedded/btstack_run_loop_embedded.c"
     "${BTSTACK_PATH}/3rd-party/rijndael/rijndael.c"     # AES (ENABLE_SOFTWARE_AES128)
     "${BTSTACK_PATH}/3rd-party/micro-ecc/uECC.c"        # ECC (ENABLE_MICRO_ECC_FOR_LE_SECURE_CONNECTIONS)
     # hids_device.c's variable-length-report path calls into the HID report

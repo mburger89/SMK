@@ -35,6 +35,7 @@ extern void kb_usb_task(void);
 extern void mpsl_glue_init(void); // MPSL bring-up (Task 5, ports/nrf52840/MpslGlue.swift)
 extern void mpsl_glue_poll(void); // pumps MPSL's low-priority work queue (Task 5)
 extern void sdc_transport_poll(void); // drains SDC HCI events/data into BTstack (Task 7, platform/ble_hid_sdc.c)
+extern void btstack_run_loop_embedded_execute_once(void); // pumps BTstack's timers/callbacks (Task 7 fix round, Critical #2)
 
 // --- Logging -----------------------------------------------------------
 // Placeholder: no-op until a real logging channel (RTT or UART) is wired
@@ -59,11 +60,18 @@ void kb_log(const char *msg) {
 // that ISR. sdc_transport_poll() (Task 7) drains SDC's HCI event/data queue
 // into BTstack the same way — without this call, BTstack never sees
 // incoming HCI events and init_ble_hid() hangs or silently does nothing
-// past hci_power_control().
+// past hci_power_control(). btstack_run_loop_embedded_execute_once() (Task
+// 7 fix round, Critical #2) is BTstack's own run loop pump — separate from
+// sdc_transport_poll() above, which only forwards raw HCI packets; this
+// call is what actually processes those packets into state transitions,
+// fires timers, and runs deferred callbacks (see ble_hid_sdc.c's
+// init_ble_hid() for where this run loop gets installed via
+// btstack_run_loop_init()).
 void vTaskDelay(uint32_t ticks) {
     kb_usb_task();
     mpsl_glue_poll();
     sdc_transport_poll();
+    btstack_run_loop_embedded_execute_once();
     if (ticks == 0) ticks = 1;
     for (volatile uint32_t i = 0; i < ticks * 100000u; i++) {
         __asm__ volatile("nop");
