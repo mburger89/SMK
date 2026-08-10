@@ -50,13 +50,17 @@ int smk_default_mode_is_wired(void);
 void kb_log(const char *msg);
 void vTaskDelay(uint32_t ticks); // shim: pumps USB then delays ~ticks ms
 
-// Runtime keymap store (platform/smk_keymap_store.c). Build-only stub for
-// this task — always reports "no stored keymap" / fails writes; see that
-// file's header comment. Needs a real flash-backed implementation once
-// hardware exists, matching ports/rp2040/platform/smk_keymap_store.c. See
-// docs/superpowers/specs/2026-07-31-runtime-keymap-updates-design.md.
-int32_t smk_keymap_load(char *buf, uint32_t buf_size);
-void smk_keymap_erase(void);
-int32_t smk_keymap_begin_write(uint16_t total_len);
-int32_t smk_keymap_write_chunk(uint16_t offset, const uint8_t *data, uint16_t len);
-int32_t smk_keymap_commit(uint32_t crc32);
+// Runtime keymap store (ports/nrf52840/KeymapStoreStub.swift, build-only
+// no-op stub — see that file's header comment) and its BLE/USB dispatch
+// (Sources/SMKCore/KeymapProtocol.swift) are implemented directly in Swift
+// for this target. No C prototypes here for smk_keymap_load/erase/
+// begin_write/write_chunk/commit/dispatch_packet: these are Swift-owned
+// (dispatch_packet via `@_cdecl`), called from C
+// (usb_descriptors.c's smk_keymap_usb_service), not the other way around —
+// a stale C prototype here would be redundant with, and could shadow, the
+// real Swift definitions, same reasoning as init_keyboard_pins/
+// init_wired_link above. usb_descriptors.c declares its own local
+// prototype for the one it calls.
+// See docs/superpowers/specs/2026-07-31-runtime-keymap-updates-design.md
+// for the protocol this implements. Mirrors Sources/smk/Bridging.h's
+// ESP32-C6 precedent (Task 5) and ports/rp2040/BridgingHeader.h's (Task 6).
