@@ -172,11 +172,11 @@ set(SHARED_SWIFT_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyEventProcessing.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/GPIORegisters.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/GPIOInit.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/UsbHid.swift"
 )
 
 set(PLATFORM_C_SRCS
     platform/gpio_init_wrappers.c
-    platform/usb_hid.c
     platform/usb_descriptors.c
     platform/platform_glue.c
     platform/smk_keymap_store.c
