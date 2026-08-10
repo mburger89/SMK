@@ -1,5 +1,7 @@
-// Misc platform glue for the RP2040 build: logging, the cooperative delay
-// shim, the C entry point, and the Embedded-Swift linker stubs.
+// Misc platform glue for the RP2040 build: the C entry point and the
+// Embedded-Swift linker stubs. Logging, the cooperative delay shim, and
+// connection-mode config were ported to Swift — see
+// ports/rp2040/PlatformConfig.swift.
 //
 // Counterpart to the relevant bits of Sources/components/kb_main.c (ESP32).
 
@@ -11,36 +13,6 @@
 #include <errno.h>
 
 extern void app_main_swift(void); // shared entry point (Sources/smk/Main.swift)
-extern void kb_usb_task(void);     // usb_hid.c
-
-#ifdef SMK_BOARD_KBD_RP2040
-extern void ble_kbd_uart_poll(void); // ble_hid_kbd_uart.c
-#endif
-
-// --- Logging ---------------------------------------------------------------
-// Routed over the pico-sdk stdio (USB-CDC and/or UART, per CMake config).
-void kb_log(const char *msg) {
-    printf("[SMK] %s\n", msg);
-}
-
-// --- Cooperative delay shim ------------------------------------------------
-// The shared scan loop calls vTaskDelay(1) once per tick. On RP2040 there is
-// no RTOS by default, so we (a) keep USB serviced and (b) sleep ~ticks ms.
-void vTaskDelay(uint32_t ticks) {
-    kb_usb_task();
-#ifdef SMK_BOARD_KBD_RP2040
-    ble_kbd_uart_poll();
-#endif
-    if (ticks == 0) ticks = 1;
-    sleep_ms(ticks);
-}
-
-// --- Connection-mode config --------------------------------------------------
-// RP2040 always has real native-USB wired HID (usb_hid.c/TinyUSB), so it's
-// always available and stays the boot default, unchanged from before this
-// option existed. See ports/rp2040/BridgingHeader.h.
-int smk_has_wired_bridge(void) { return 1; }
-int smk_default_mode_is_wired(void) { return 1; }
 
 // --- Entry point -----------------------------------------------------------
 int main(void) {

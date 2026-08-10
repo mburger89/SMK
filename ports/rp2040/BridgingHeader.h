@@ -28,15 +28,9 @@ void send_wired_report(uint8_t modifier, uint8_t *keycodes);
 void init_ble_hid(void);
 void send_keyboard_report(uint8_t modifier, uint8_t *keycodes);
 
-// Board/connection-mode config (platform_glue.c). RP2040 always has real
-// native-USB wired HID, so this is hardcoded true/wired-default here rather
-// than driven by a Kconfig-style option (no menuconfig on this build).
-int smk_has_wired_bridge(void);
-int smk_default_mode_is_wired(void);
-
-// Logging + cooperative delay (platform_glue.c)
-void kb_log(const char *msg);
-void vTaskDelay(uint32_t ticks); // shim: pumps USB then sleeps ~ticks ms
+// Board/connection-mode config, logging, and the cooperative delay shim are
+// now plain Swift — see ports/rp2040/PlatformConfig.swift. No C prototypes
+// needed here (same-module Swift-to-Swift calls from Main.swift).
 
 // Runtime keymap store (platform/smk_keymap_store.c, flash-backed). See
 // docs/superpowers/specs/2026-07-31-runtime-keymap-updates-design.md.

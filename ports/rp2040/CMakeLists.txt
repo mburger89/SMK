@@ -173,6 +173,7 @@ set(SHARED_SWIFT_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/GPIORegisters.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/GPIOInit.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/UsbHid.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/PlatformConfig.swift"
 )
 
 set(PLATFORM_C_SRCS

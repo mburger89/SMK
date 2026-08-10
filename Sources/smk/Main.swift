@@ -26,19 +26,29 @@ func init_wired_link()
 func send_wired_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
 #endif
 
+// vTaskDelay/kb_log — ESP32-C6 backs both with C (real FreeRTOS vTaskDelay;
+// kb_log via Sources/components/ble_helper.c); nRF52840 backs both with C
+// placeholders (ports/nrf52840/platform/platform_glue.c). RP2040 now
+// provides both as plain Swift (ports/rp2040/PlatformConfig.swift,
+// vTaskDelay via @_cdecl since the shared scan loop calls it), same-module
+// with this file — so RP2040 must NOT also declare these as @_extern, or
+// it's a same-module redeclaration conflict.
+#if !SMK_TARGET_RP2040
 @_extern(c, "vTaskDelay")
 func vTaskDelay(_ xTicksToDelay: UInt32)
 
 @_extern(c, "kb_log")
 func kb_log(_ msg: UnsafePointer<Int8>)
+#endif
 
 // Board/connection-mode config — ESP32-C6 provides these as plain Swift
 // functions (SmkConfig.swift, part of this same module, backed by
-// Kconfig); RP2040 provides them as hardcoded C functions
-// (ports/rp2040/platform/platform_glue.c, since that build always has real
-// native-USB wired HID), so only that build declares them here as extern
-// symbols to link against.
-#if !SMK_TARGET_ESP32C6
+// Kconfig); RP2040 now also provides these as plain Swift functions
+// (ports/rp2040/PlatformConfig.swift, since that build always has real
+// native-USB wired HID); nRF52840 still backs them with hardcoded C
+// (ports/nrf52840/platform/platform_glue.c), so only that build declares
+// them here as extern symbols to link against.
+#if !SMK_TARGET_ESP32C6 && !SMK_TARGET_RP2040
 @_extern(c, "smk_has_wired_bridge")
 func smk_has_wired_bridge() -> Int32
 
