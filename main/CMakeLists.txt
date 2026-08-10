@@ -16,13 +16,13 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/GPIOInit.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/SmkConfig.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/BatteryMonitor.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/KeymapStoreNVS.swift"
 )
 
 set(c_srcs
     "../Sources/components/ble_helper.c"
     "../Sources/components/uart_init.c"
     "../Sources/components/kb_main.c"
-    "../Sources/components/smk_keymap_store.c"
     "../Sources/components/led_strip_encoder.c"
     "../Sources/components/led_strip_driver.c"
     "../Sources/components/battery_adc.c"

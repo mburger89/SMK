@@ -41,10 +41,12 @@ void led_strip_set_pixel(int32_t index, uint8_t r, uint8_t g, uint8_t b);
 void led_strip_refresh(void);
 void led_strip_clear(void);
 
-// Runtime keymap store (Sources/components/smk_keymap_store.c, NVS-backed).
+// Runtime keymap store (Sources/smk/KeymapStoreNVS.swift, NVS-backed) and
+// its BLE/USB dispatch (Sources/SMKCore/KeymapProtocol.swift) are
+// implemented directly in Swift for this target. No C prototypes here for
+// smk_keymap_load/erase/begin_write/write_chunk/commit/dispatch_packet:
+// these are Swift-owned (dispatch_packet via `@_cdecl`), called from C
+// (ble_helper.c), not the other way around — same direction as
+// app_main_swift, which isn't in this header either. ble_helper.c
+// declares its own local `extern`-style prototype for the one it calls.
 // See docs/superpowers/specs/2026-07-31-runtime-keymap-updates-design.md.
-int32_t smk_keymap_load(char *buf, uint32_t buf_size);
-void smk_keymap_erase(void);
-int32_t smk_keymap_begin_write(uint16_t total_len);
-int32_t smk_keymap_write_chunk(uint16_t offset, const uint8_t *data, uint16_t len);
-int32_t smk_keymap_commit(uint32_t crc32);
