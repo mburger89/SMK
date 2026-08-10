@@ -1,22 +1,34 @@
 // The Swift Programming Language
 // https://docs.swift.org/swift-book
 
-// init_ble_hid stays C-backed (Sources/components/ble_helper.c, trimmed
-// remainder — see Sources/smk/BleHelper.swift's header comment for why:
-// it mutates NimBLE's bitfield-heavy struct ble_hs_cfg and owns the
-// esp_hid_device_config_t construction).
+// init_ble_hid — ESP32-C6 stays C-backed (Sources/components/ble_helper.c,
+// trimmed remainder — see Sources/smk/BleHelper.swift's header comment for
+// why: it mutates NimBLE's bitfield-heavy struct ble_hs_cfg and owns the
+// esp_hid_device_config_t construction). nRF52840 also still backs this
+// with C (ports/nrf52840/platform/ble_hid_sdc.c). RP2040's plain
+// Pico/Pico W/Pico 2/Pico 2 W boards now back it natively in Swift
+// (ports/rp2040/BleHidPicoW.swift, same module as this file — no @_extern
+// permitted there, that would be a same-module redeclaration conflict);
+// smk_kbd_rp2040 is the one RP2040 board that still backs it with C
+// (ports/rp2040/platform/ble_hid_kbd_uart.c, its own CYW43439-over-UART
+// transport), hence the `|| SMK_BOARD_KBD_RP2040` rather than a flat
+// `!SMK_TARGET_RP2040`.
+#if !SMK_TARGET_RP2040 || SMK_BOARD_KBD_RP2040
 @_extern(c, "init_ble_hid")
 func init_ble_hid()
+#endif
 
 // send_keyboard_report — ESP32-C6 now backs this natively in Swift
-// (BleHelper.swift, this task, same module as this file — no @_extern
-// permitted here anymore, that would be a same-module redeclaration
-// conflict). RP2040 and nRF52840 still back it with C
-// (ports/rp2040/platform/ble_hid.c / ble_hid_kbd_uart.c,
-// ports/nrf52840/platform/ble_hid_sdc.c / platform_glue.c — NOT
-// UsbHid.swift, which only covers send_wired_report/init_wired_link for
-// those boards), so they still need this declared as an extern symbol.
-#if !SMK_TARGET_ESP32C6
+// (BleHelper.swift, same module as this file — no @_extern permitted
+// here anymore, that would be a same-module redeclaration conflict).
+// RP2040's plain Pico/Pico W/Pico 2/Pico 2 W boards now back it natively
+// in Swift too (ports/rp2040/BleHidPicoW.swift, same reasoning); its
+// smk_kbd_rp2040 board and nRF52840 still back it with C
+// (ports/rp2040/platform/ble_hid_kbd_uart.c,
+// ports/nrf52840/platform/ble_hid_sdc.c — NOT UsbHid.swift, which only
+// covers send_wired_report/init_wired_link for those boards), so they
+// still need this declared as an extern symbol.
+#if !SMK_TARGET_ESP32C6 && (!SMK_TARGET_RP2040 || SMK_BOARD_KBD_RP2040)
 @_extern(c, "send_keyboard_report")
 func send_keyboard_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
 #endif

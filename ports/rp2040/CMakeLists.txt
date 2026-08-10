@@ -204,8 +204,12 @@ if(SMK_IS_KBD_RP2040)
         platform/cyw43439_patchram.c
     )
 else()
-    # Plain Pico / Pico W: unchanged behavior from before this board existed.
-    list(APPEND PLATFORM_C_SRCS platform/ble_hid.c)
+    # Plain Pico / Pico W / Pico 2 / Pico 2 W: BLE HID glue is now Swift
+    # (BleHidPicoW.swift) — always compiled in for these boards, exactly
+    # like the deleted ble_hid.c was, with its own internal
+    # #if SMK_ENABLE_BLE / #else split providing the plain-Pico no-op
+    # stubs (see SMK_ENABLE_BLE swiftc -D below).
+    list(APPEND SHARED_SWIFT_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/BleHidPicoW.swift")
 endif()
 
 # ---------------------------------------------------------------------------
@@ -257,7 +261,8 @@ target_link_libraries(smk_rp2040
 #             platform/ble_hid_kbd_uart.c for what's implemented vs. the one
 #             remaining gap (the actual PatchRAM firmware bytes — see
 #             platform/cyw43439_patchram.c).
-#   - plain pico: no radio at all; ble_hid.c's stub branch is linked instead.
+#   - plain pico: no radio at all; BleHidPicoW.swift's #else stub branch
+#             is compiled instead (see SHARED_SWIFT_SRCS above).
 # ---------------------------------------------------------------------------
 if((PICO_BOARD STREQUAL "pico_w" OR PICO_BOARD STREQUAL "pico2_w") AND NOT SMK_IS_KBD_RP2040)
     message(STATUS "Building for ${PICO_BOARD} — enabling CYW43 + BTstack BLE HID")
@@ -267,13 +272,21 @@ if((PICO_BOARD STREQUAL "pico_w" OR PICO_BOARD STREQUAL "pico2_w") AND NOT SMK_I
         "${CMAKE_CURRENT_SOURCE_DIR}/platform/smk_hid.gatt"
     )
 
+    # smk_hid.h only *declares* the profile_data[] GATT literal as C
+    # source text; something must #include it into a real translation
+    # unit for the array to exist as a linkable symbol
+    # (BleHidPicoW.swift's `@_extern(c, "profile_data")` only binds to an
+    # existing one). The deleted ble_hid.c used to do this implicitly.
+    target_sources(smk_rp2040 PRIVATE platform/smk_hid_gatt_data.c)
+
     target_link_libraries(smk_rp2040
         pico_cyw43_arch_none      # CYW43 driver (no lwIP/network)
         pico_btstack_base
         pico_btstack_ble
     )
 
-    # Expose the generated smk_hid.h to ble_hid.c, plus btstack_config.h.
+    # Expose the generated smk_hid.h to BleHidPicoW.swift's
+    # profile_data extern (via smk_hid_gatt_data.c) and btstack_config.h.
     target_include_directories(smk_rp2040 PRIVATE
         "${CMAKE_CURRENT_BINARY_DIR}"    # smk_hid.h lands here
         "${CMAKE_CURRENT_SOURCE_DIR}/platform"
@@ -419,6 +432,14 @@ endforeach()
 set(_smk_swift_defs "-DSMK_TARGET_RP2040")
 if(SMK_IS_KBD_RP2040)
     set(_smk_swift_defs "${_smk_swift_defs} -DSMK_BOARD_KBD_RP2040 -DSMK_RGB_AVAILABLE")
+endif()
+# Mirrors the C-side target_compile_definitions(smk_rp2040 PRIVATE
+# SMK_ENABLE_BLE) set above for pico_w/pico2_w — BleHidPicoW.swift's own
+# #if SMK_ENABLE_BLE needs this as a bare swiftc -D (Swift-level
+# conditional compilation), not just the -Xcc -D ${_compile_defs} form
+# ClangImporter sees, same reasoning as SMK_RGB_AVAILABLE above.
+if((PICO_BOARD STREQUAL "pico_w" OR PICO_BOARD STREQUAL "pico2_w") AND NOT SMK_IS_KBD_RP2040)
+    set(_smk_swift_defs "${_smk_swift_defs} -DSMK_ENABLE_BLE")
 endif()
 
 # RP2350 (Cortex-M33, Armv8-M Mainline) needs a different Swift target
