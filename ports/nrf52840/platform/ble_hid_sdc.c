@@ -259,10 +259,11 @@ static const hci_transport_t sdc_transport = {
 // build doesn't pass -fshort-enums, so sdc_hci_msg_type_t might compile
 // to a 4-byte enum while hci_internal_msg_get()/sdc_hci_get() only write
 // 1 byte into *msg_type_out (the real vendored sdc_hci_get() takes a
-// plain `uint8_t *`, not an enum pointer at all — the enum typing only
-// exists at hci_internal_msg_get()'s wrapper level, which casts to
-// uint8_t* before calling in) — leaving 3 uninitialized garbage bytes
-// that could make the switch below take an unpredictable branch.
+// plain `uint8_t *`, not an enum pointer at all — hci_internal_msg_get()'s
+// wrapper casts to uint8_t* before calling in, which is precisely why only
+// one byte gets written, i.e. the mechanism of the hazard, not a defense
+// against it) — leaving 3 uninitialized garbage bytes that could make the
+// switch below take an unpredictable branch.
 // Checked empirically rather than trusting either claim: compiled a
 // `sizeof(sdc_hci_msg_type_t)` probe with this exact toolchain/flags
 // (arm-none-eabi-gcc 14.3.1, no -fshort-enums passed) and it's 1 byte,
