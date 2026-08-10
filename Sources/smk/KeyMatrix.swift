@@ -1,9 +1,8 @@
-// ESP32-C6 and nRF52840 provide this as a plain Swift function
-// (GPIOInit.swift, part of this same module — see main/CMakeLists.txt's
-// and ports/nrf52840/CMakeLists.txt's swift_srcs); RP2040 still provides
-// it as a C function (ports/rp2040/platform/gpio_init.c), so only that
-// build declares it here as an extern symbol to link against.
-#if !SMK_TARGET_ESP32C6 && !SMK_TARGET_NRF52840
+// ESP32-C6, RP2040, and nRF52840 provide this as a plain Swift function
+// (GPIOInit.swift, part of this same module — see main/CMakeLists.txt's,
+// ports/rp2040/CMakeLists.txt's, and ports/nrf52840/CMakeLists.txt's
+// swift_srcs).
+#if !SMK_TARGET_ESP32C6 && !SMK_TARGET_RP2040 && !SMK_TARGET_NRF52840
 @_extern(c, "init_keyboard_pins")
 func init_keyboard_pins(_ rows: UnsafePointer<Int32>, _ rowCount: Int32, _ cols: UnsafePointer<Int32>, _ colCount: Int32, _ colsAreDriven: Int32)
 #endif

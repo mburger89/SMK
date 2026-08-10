@@ -171,10 +171,11 @@ set(SHARED_SWIFT_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Config.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyEventProcessing.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/GPIORegisters.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/GPIOInit.swift"
 )
 
 set(PLATFORM_C_SRCS
-    platform/gpio_init.c
+    platform/gpio_init_wrappers.c
     platform/usb_hid.c
     platform/usb_descriptors.c
     platform/platform_glue.c
@@ -412,9 +413,9 @@ endforeach()
 # this is the belt-and-suspenders explicit form so Main.swift's own `#if`
 # definitely sees them too, regardless of how CMake's native Swift-language
 # support maps COMPILE_DEFINITIONS for a mixed C/Swift target.
-set(_smk_swift_defs "")
+set(_smk_swift_defs "-DSMK_TARGET_RP2040")
 if(SMK_IS_KBD_RP2040)
-    set(_smk_swift_defs "-DSMK_BOARD_KBD_RP2040 -DSMK_RGB_AVAILABLE")
+    set(_smk_swift_defs "${_smk_swift_defs} -DSMK_BOARD_KBD_RP2040 -DSMK_RGB_AVAILABLE")
 endif()
 
 # RP2350 (Cortex-M33, Armv8-M Mainline) needs a different Swift target

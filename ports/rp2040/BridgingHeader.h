@@ -20,12 +20,6 @@
 
 // --- Platform glue implemented in ports/rp2040/platform/*.c ---
 
-// GPIO matrix (gpio_init.c) — colsAreDriven selects which wiring convention
-// to configure; see the comment in Sources/smk/KeyMatrix.swift.
-void init_keyboard_pins(const int32_t *rows, int32_t row_count,
-                        const int32_t *cols, int32_t col_count,
-                        int32_t colsAreDriven);
-
 // USB HID — the "wired" path on RP2040 (usb_hid.c)
 void init_wired_link(void);
 void send_wired_report(uint8_t modifier, uint8_t *keycodes);
