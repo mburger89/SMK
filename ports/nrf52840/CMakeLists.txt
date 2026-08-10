@@ -143,6 +143,7 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapProtocol.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/UsbHid.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/MpslGlue.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/KeymapStoreStub.swift"
 )
 
 # cJSON (portable, no ESP-IDF dependency) — LayerEngine.swift/Config.swift
@@ -212,7 +213,6 @@ add_custom_command(
 
 set(c_srcs
     platform/platform_glue.c
-    platform/smk_keymap_store.c
     platform/usb_descriptors.c
     "${NRF52840_CJSON_DIR}/cJSON.c"
 )

@@ -15,44 +15,20 @@ let smkKeymapOpErase: UInt8 = 0x04
 let smkKeymapStatusOk: UInt8 = 0x00
 let smkKeymapStatusErr: UInt8 = 0x01
 
-// Real storage backends — still C-backed on nRF52840 until Task 7 lands
-// (that port's flash storage layer moves to Swift then, at which point
-// these become same-module calls and this whole `#if` block plus the
-// `@_extern` declarations go away). ESP32-C6 (Task 5,
-// Sources/smk/KeymapStoreNVS.swift) and RP2040 (Task 6,
-// ports/rp2040/KeymapStoreFlash.swift) already moved — both same module as
-// this file, flat-compiled together, no `@_extern` needed there anymore —
-// so both are excluded here; declaring `@_extern(c, "smk_keymap_begin_write")`
-// here AND a real Swift definition in KeymapStoreNVS.swift/
-// KeymapStoreFlash.swift would be a same-module redeclaration conflict.
+// Real storage backends are all same-module Swift now: ESP32-C6
+// (Sources/smk/KeymapStoreNVS.swift, Task 5), RP2040
+// (ports/rp2040/KeymapStoreFlash.swift, Task 6), and nRF52840
+// (ports/nrf52840/KeymapStoreStub.swift, Task 7) each flat-compile their
+// definitions of smk_keymap_begin_write/write_chunk/commit/erase/load
+// alongside this file into one swiftc invocation per target, so no
+// `@_extern(c, ...)` declaration is needed here for any of them — declaring
+// one here as well as a real Swift definition in one of those files would
+// be a same-module redeclaration conflict.
 //
-// Guarded to embedded targets only: these symbols don't exist in the
-// host test environment, so linking them unconditionally into the
-// SMKCore host target (SMKCoreTests) would fail. Host tests instead call
-// smkKeymapDispatchPacket(...) directly with injected fake closures —
-// see Tests/SMKCoreTests/KeymapProtocolTests.swift. Mirrors the pattern
-// the nRF52840 plan's Task 3 used for its SMK_HAS_REAL_BLE_HID_SDC-guarded
-// stubs, and Logging.swift's host-vs-embedded split for kb_log.
-//
-// smk_keymap_erase is declared/defined separately in
-// Sources/smk/Main.swift (ESP32-C6/RP2040: real Swift func now via
-// KeymapStoreNVS.swift/KeymapStoreFlash.swift; nRF52840: still `@_extern`)
-// — used there for the factory-reset-on-boot path. Every embedded target
-// flat-compiles Main.swift and this file into one swiftc invocation with
-// no real module boundary, so redeclaring it here would be a same-module
-// conflict. This file just reuses that declaration/definition.
-#if SMK_TARGET_NRF52840
-
-@_extern(c, "smk_keymap_begin_write")
-func smk_keymap_begin_write(_ totalLen: UInt16) -> Int32
-
-@_extern(c, "smk_keymap_write_chunk")
-func smk_keymap_write_chunk(_ offset: UInt16, _ data: UnsafePointer<UInt8>, _ len: UInt16) -> Int32
-
-@_extern(c, "smk_keymap_commit")
-func smk_keymap_commit(_ crc32: UInt32) -> Int32
-
-#endif
+// smk_keymap_erase is declared/defined separately in each of those same
+// per-target files (used there for the factory-reset-on-boot path in
+// Sources/smk/Main.swift); this file just reuses that same-module
+// definition.
 
 // Testable core of the dispatch logic. The four storage operations are
 // injected rather than called directly so host tests can substitute fakes
