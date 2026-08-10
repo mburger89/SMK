@@ -7,14 +7,17 @@
 #include "services/gap/ble_svc_gap.h"
 #include <string.h>
 
+// This file is a trimmed remainder of the former ble_helper.c — see
+// Sources/smk/BleHelper.swift's header comment for the full rationale.
+// Everything left here needed either a struct type that's genuinely
+// bitfield-heavy (struct ble_hs_adv_fields, struct ble_hs_cfg — both
+// verified against real ESP-IDF v6.0.1 headers, not assumed) or the
+// static esp_hid_device_config_t/esp_hid_raw_report_map_t construction
+// those depend on. ble_hidd_event_callback, send_keyboard_report,
+// smk_ble_set_battery_level, kb_log, and ble_hid_host_task all moved to
+// BleHelper.swift.
+
 static const char *TAG = "SMK_BLE";
-static esp_hidd_dev_t *s_hid_dev = NULL;
-
-void kb_log(const char *msg) {
-    ESP_LOGI(TAG, "%s", msg);
-}
-
-void smk_keymap_dispatch_packet(const uint8_t *packet, uint8_t *response);
 
 // HID Report Map: a standard keyboard (Report ID 1) plus a 32-byte
 // vendor-defined channel (Report ID 2) used only for keymap upload — see
@@ -48,7 +51,19 @@ static esp_hid_device_config_t ble_hid_config = {
     .report_maps_len = 1
 };
 
-static void start_advertising(void) {
+// Constructs struct ble_hs_adv_fields (host/ble_hs_adv.h), which packs
+// many optional fields behind 1-bit presence flags
+// (uuids16_is_complete:1, name_is_complete:1, tx_pwr_lvl_is_present:1,
+// sm_tk_value_is_present:1, sm_oob_flag_is_present:1, ...) alongside
+// pointer/uint8_t fields with no documented packing pragma — kept in C
+// per this task's Step 2 finding rather than hand-rolled in Swift.
+//
+// Not `static` anymore: Sources/smk/BleHelper.swift's
+// ble_hidd_event_callback (@_cdecl) calls this via
+// @_extern(c, "start_advertising") on the START/DISCONNECT events, so it
+// needs external linkage now that its only caller moved out of this
+// translation unit.
+void start_advertising(void) {
     struct ble_gap_adv_params adv_params;
     struct ble_hs_adv_fields fields;
     int rc;
@@ -80,43 +95,19 @@ static void start_advertising(void) {
     ESP_LOGI(TAG, "Advertising started");
 }
 
-static void ble_hidd_event_callback(void *handler_args, esp_event_base_t base, int32_t id, void *event_data) {
-    (void)handler_args;
-    (void)base;
-    esp_hidd_event_t event = (esp_hidd_event_t)id;
+// Defined in Sources/smk/BleHelper.swift as @_cdecl("ble_hidd_event_callback")
+// / @_cdecl("ble_hid_host_task") — forward-declared here so they can be
+// handed to esp_hidd_dev_init()/esp_nimble_enable() by address, same
+// "vtable-adjacent" pattern as any other C API that takes a raw function
+// pointer.
+extern void ble_hidd_event_callback(void *handler_args, esp_event_base_t base, int32_t id, void *event_data);
+extern void ble_hid_host_task(void *param);
 
-    switch (event) {
-        case ESP_HIDD_START_EVENT:
-            ESP_LOGI(TAG, "BLE HID Stack Started");
-            start_advertising();
-            break;
-        case ESP_HIDD_CONNECT_EVENT:
-            ESP_LOGI(TAG, "BLE HID Connected");
-            break;
-        case ESP_HIDD_OUTPUT_EVENT: {
-            esp_hidd_event_data_t *p = (esp_hidd_event_data_t *)event_data;
-            if (p != NULL && p->output.report_id == 2 && p->output.length >= 32) {
-                uint8_t response[32];
-                smk_keymap_dispatch_packet(p->output.data, response);
-                esp_hidd_dev_input_set(s_hid_dev, 0, 2, response, sizeof(response));
-            }
-            break;
-        }
-        case ESP_HIDD_DISCONNECT_EVENT:
-            ESP_LOGI(TAG, "BLE HID Disconnected");
-            start_advertising();
-            break;
-        default:
-            break;
-    }
-}
-
-void ble_hid_host_task(void *param) {
-    (void)param;
-    ESP_LOGI(TAG, "NimBLE Host Task Started");
-    nimble_port_run();
-    nimble_port_freertos_deinit();
-}
+// Defined in Sources/smk/BleHelper.swift. Hands the esp_hidd_dev_init()
+// out-param to Swift exactly once — see BleHelper.swift's header comment
+// on s_hid_dev ownership. Swift's `hidDev` is the single source of truth
+// from that point on; this file keeps no persistent copy.
+extern void smk_ble_set_hid_dev(void *dev);
 
 void init_ble_hid(void) {
     esp_err_t ret = nvs_flash_init();
@@ -126,8 +117,13 @@ void init_ble_hid(void) {
     }
     ESP_ERROR_CHECK(ret);
 
-    // Initialize the HID device stack
+    // Initialize the HID device stack. s_hid_dev is local now (not a
+    // persistent file-static) — its address is only needed transiently
+    // as esp_hidd_dev_init's out-param; the resulting pointer is handed
+    // to Swift immediately below and not touched here again.
+    esp_hidd_dev_t *s_hid_dev = NULL;
     ESP_ERROR_CHECK(esp_hidd_dev_init(&ble_hid_config, ESP_HID_TRANSPORT_BLE, ble_hidd_event_callback, &s_hid_dev));
+    smk_ble_set_hid_dev(s_hid_dev);
 
     // Make the advertised/GATT device name match what we broadcast in
     // start_advertising() (esp_hidd_dev_init leaves the GAP service with the
@@ -148,6 +144,11 @@ void init_ble_hid(void) {
     // (CONFIG_BT_NIMBLE_SM_LVL and CONFIG_BT_NIMBLE_NVS_PERSIST in sdkconfig
     // must also be enabled — see sdkconfig.defaults — for this to actually
     // take effect and survive a reboot.)
+    //
+    // ble_hs_cfg (extern struct ble_hs_cfg, host/ble_hs.h) packs
+    // sm_oob_data_flag:1/sm_bonding:1/sm_mitm:1/sm_sc:1/... as adjacent
+    // 1-bit bitfields — the same kind of struct this task's Step 2 finding
+    // says to leave in C rather than hand-roll in Swift.
     ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
     ble_hs_cfg.sm_bonding = 1;
     ble_hs_cfg.sm_mitm = 0;
@@ -160,27 +161,4 @@ void init_ble_hid(void) {
 
     // Enable the NimBLE stack
     esp_nimble_enable(ble_hid_host_task);
-}
-
-void send_keyboard_report(uint8_t modifier, uint8_t keycodes[6]) {
-    if (s_hid_dev && esp_hidd_dev_connected(s_hid_dev)) {
-        uint8_t report[8];
-        report[0] = modifier;
-        report[1] = 0; // Reserved
-        memcpy(&report[2], keycodes, 6);
-        // Map index 0, Report ID 1 (matches descriptor)
-        esp_hidd_dev_input_set(s_hid_dev, 0, 1, report, 8);
-    }
-}
-
-// Reports a 0-100 battery level via the standard BLE Battery Service —
-// esp_hidd_dev_init() already creates this GATT service internally as
-// part of the HID-over-GATT profile, so this is the one call needed to
-// feed it real data. Called from BatteryMonitor.swift, which owns the
-// ADC-to-percentage math (see battery_adc.c / BatteryMonitor.swift for
-// why the ADC driver setup itself stays in C).
-void smk_ble_set_battery_level(uint8_t level) {
-    if (s_hid_dev) {
-        esp_hidd_dev_battery_set(s_hid_dev, level);
-    }
 }

@@ -37,8 +37,9 @@ func smk_battery_adc_init() -> Int32
 @_extern(c, "smk_battery_adc_read_raw")
 func smk_battery_adc_read_raw() -> Int32
 
-@_extern(c, "smk_ble_set_battery_level")
-func smk_ble_set_battery_level(_ level: UInt8)
+// smk_ble_set_battery_level: no @_extern here anymore — Task 11 ported it
+// directly to Swift (BleHelper.swift, same module as this file), so this
+// is now a plain same-module Swift-to-Swift call.
 
 private var batteryMonitorReady = false
 

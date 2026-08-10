@@ -1,30 +1,51 @@
 // The Swift Programming Language
 // https://docs.swift.org/swift-book
 
+// init_ble_hid stays C-backed (Sources/components/ble_helper.c, trimmed
+// remainder — see Sources/smk/BleHelper.swift's header comment for why:
+// it mutates NimBLE's bitfield-heavy struct ble_hs_cfg and owns the
+// esp_hid_device_config_t construction).
 @_extern(c, "init_ble_hid")
 func init_ble_hid()
 
+// send_keyboard_report — ESP32-C6 now backs this natively in Swift
+// (BleHelper.swift, this task, same module as this file — no @_extern
+// permitted here anymore, that would be a same-module redeclaration
+// conflict). RP2040 and nRF52840 still back it with C
+// (ports/rp2040/platform/ble_hid.c / ble_hid_kbd_uart.c,
+// ports/nrf52840/platform/ble_hid_sdc.c / platform_glue.c — NOT
+// UsbHid.swift, which only covers send_wired_report/init_wired_link for
+// those boards), so they still need this declared as an extern symbol.
+#if !SMK_TARGET_ESP32C6
 @_extern(c, "send_keyboard_report")
 func send_keyboard_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
+#endif
 
 // init_wired_link/send_wired_report: every board now backs these natively
 // in Swift, same-module resolution, no @_extern needed — ESP32-C6 via
-// WiredHidUart.swift (this task), RP2040 via ports/rp2040/UsbHid.swift, and
+// WiredHidUart.swift, RP2040 via ports/rp2040/UsbHid.swift, and
 // nRF52840 via ports/nrf52840/UsbHid.swift. So unlike init_keyboard_pins
 // (Sources/smk/KeyMatrix.swift), which still needs a guarded @_extern for
 // one remaining board, this pair needs no declaration at all anymore.
 
-// vTaskDelay/kb_log — ESP32-C6 backs both with C (real FreeRTOS vTaskDelay;
-// kb_log via Sources/components/ble_helper.c); nRF52840 backs both with C
-// placeholders (ports/nrf52840/platform/platform_glue.c). RP2040 now
-// provides both as plain Swift (ports/rp2040/PlatformConfig.swift,
-// vTaskDelay via @_cdecl since the shared scan loop calls it), same-module
-// with this file — so RP2040 must NOT also declare these as @_extern, or
-// it's a same-module redeclaration conflict.
+// vTaskDelay — ESP32-C6 backs this with C (real FreeRTOS, unchanged);
+// nRF52840 backs it with a C placeholder
+// (ports/nrf52840/platform/platform_glue.c). RP2040 provides it as plain
+// Swift (ports/rp2040/PlatformConfig.swift, @_cdecl since the shared scan
+// loop calls it), same-module with this file — so RP2040 must NOT also
+// declare this as @_extern, or it's a same-module redeclaration conflict.
 #if !SMK_TARGET_RP2040
 @_extern(c, "vTaskDelay")
 func vTaskDelay(_ xTicksToDelay: UInt32)
+#endif
 
+// kb_log — ESP32-C6 now provides this as a plain Swift function
+// (BleHelper.swift, this task, same module as this file — no @_extern
+// permitted here anymore, that would be a same-module redeclaration
+// conflict). nRF52840 still backs it with a C placeholder
+// (ports/nrf52840/platform/platform_glue.c). RP2040 already provided it
+// as plain Swift (ports/rp2040/PlatformConfig.swift) before this task.
+#if !SMK_TARGET_RP2040 && !SMK_TARGET_ESP32C6
 @_extern(c, "kb_log")
 func kb_log(_ msg: UnsafePointer<Int8>)
 #endif

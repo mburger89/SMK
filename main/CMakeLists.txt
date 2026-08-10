@@ -19,6 +19,7 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/KeymapStoreNVS.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/WiredHidUart.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/LedStripDriverRMT.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/BleHelper.swift"
 )
 
 set(c_srcs

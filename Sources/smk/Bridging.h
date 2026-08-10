@@ -7,9 +7,17 @@
 #include "cJSON.h"
 
 // BLE HID Functions
+//
+// init_ble_hid stays a real C prototype: init_ble_hid() itself stays
+// implemented in Sources/components/ble_helper.c (it mutates
+// struct ble_hs_cfg, a bitfield-heavy NimBLE global — see
+// Sources/smk/BleHelper.swift's header comment for the full rationale).
+//
+// send_keyboard_report/smk_ble_set_battery_level are NOT declared here
+// anymore: both are now implemented directly in Swift (BleHelper.swift).
+// A C prototype here would conflict with that same-module Swift
+// definition — same reasoning as init_wired_link/send_wired_report below.
 void init_ble_hid(void);
-void send_keyboard_report(uint8_t modifier, uint8_t keycodes[6]);
-void smk_ble_set_battery_level(uint8_t level);
 
 // VBAT battery ADC (Sources/components/battery_adc.c, ESP32-C6/smk_kbd
 // board only — IO4/ADC1_CH4, see CLAUDE.md's GPIO map). Returns 0/negative
@@ -25,8 +33,10 @@ int smk_battery_adc_read_raw(void);
 // shadow the real same-module Swift definition (Swift's own top-level
 // function takes precedence with no build error) rather than fail loudly.
 
-// Logging
-void kb_log(const char *msg);
+// Logging: kb_log is NOT declared here anymore — it's now implemented
+// directly in Swift for this target too (BleHelper.swift, alongside the
+// rest of the former ble_helper.c). A C prototype here would conflict
+// with that same-module Swift definition.
 
 // GPIO Matrix pin configuration (init_keyboard_pins) and board/
 // connection-mode config (smk_has_wired_bridge / smk_default_mode_is_wired
