@@ -10,6 +10,7 @@ A keyboard firmware written in **Embedded Swift**, targeting the **ESP32-C6**, *
 - **Layer Engine**: Supports momentary layers, toggled layers, and transparent keys (similar to QMK).
 - **JSON Configuration**: Keymaps and hardware settings defined via JSON.
 - **Per-Key RGB (opt-in)**: SK6812MINI-E/WS2812 backlight driver (ESP32-C6 only), off by default.
+- **Battery-Level Reporting (ESP32-C6/smk_kbd only)**: reads the board's VBAT divider and reports an estimated percentage via the BLE HID Battery Service — approximate (uncalibrated ADC + linear voltage curve), not yet checked against real hardware.
 - **Kconfig Board Options**: `idf.py menuconfig` toggles wired-bridge presence, default connection mode, and RGB backlight per board without touching source.
 
 ## Prerequisites
@@ -25,9 +26,10 @@ Before building, ensure you have the following installed:
 ## Getting Started
 
 ### 1. Configure the Environment
-Ensure your ESP-IDF environment is sourced:
+Ensure your ESP-IDF environment is sourced. The standard installer puts the real export script at
+`~/.espressif/v6.0.1/esp-idf/export.sh` (adjust the version if you installed a different one):
 ```bash
-. $HOME/export-esp-idf.sh  # Path may vary based on your installation
+. ~/.espressif/v6.0.1/esp-idf/export.sh  # or your own export-esp-idf.sh alias, if you have one
 ```
 
 ### 2. Configure Hardware & Keymap

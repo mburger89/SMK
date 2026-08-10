@@ -21,7 +21,7 @@ SMK (Swift Matrix Keyboard) is keyboard firmware written in **Embedded Swift** t
 ## Prerequisites
 
 ### ESP32-C6
-- **ESP-IDF v6.0.1** sourced via `. $HOME/export-esp-idf.sh`
+- **ESP-IDF v6.0.1** installed via the standard installer (`~/.espressif/v6.0.1/esp-idf`) and sourced via `. ~/.espressif/v6.0.1/esp-idf/export.sh` — the real export script; a top-level `~/export-esp-idf.sh` (as a personal alias/symlink to the above) also works if you've set one up, but isn't created by ESP-IDF's installer itself
 - **Swift 6.3.1 Embedded RISC-V toolchain** installed in `~/Library/Developer/Toolchains/`
 
 ### RP2040 / Pico
@@ -44,7 +44,7 @@ SMK (Swift Matrix Keyboard) is keyboard firmware written in **Embedded Swift** t
 ### ESP32-C6
 ```bash
 # Source ESP-IDF environment first
-. $HOME/export-esp-idf.sh
+. ~/.espressif/v6.0.1/esp-idf/export.sh   # or your own export-esp-idf.sh alias, if you have one
 
 idf.py set-target esp32c6   # one-time target selection
 idf.py build                 # compile Swift + C and link
