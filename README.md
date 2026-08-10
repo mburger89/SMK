@@ -174,7 +174,7 @@ not by an automated test suite. None of the four targets have been exercised on 
 this repo's CI.
 
 ## Known Issues / TODOs
-- **No battery-level reporting yet**: the smk_kbd board has a VBAT divider on IO4 for fuel gauging, but firmware doesn't read it yet.
+- **Battery-level reporting is unverified on real hardware**: the smk_kbd board's VBAT divider (IO4/ADC1_CH4) is now read and reported via the BLE HID Battery Service, but the voltage-to-percentage curve is a rough linear approximation, not a calibrated discharge curve, and the ADC reading itself isn't calibrated either — treat the reported percentage as approximate until checked against a real board with a multimeter. See `CLAUDE.md`'s smk_kbd board section for details.
 - **nRF52840 port is build-only**: no hardware verification yet, and the board's GPIO pin map in `Sources/smk/Main.swift` is an explicit placeholder that must be replaced before flashing a real board. See [`CLAUDE.md`'s nRF52840 section](CLAUDE.md#nrf52840) (Prerequisites through the "read before flashing real hardware" caveat) for the full list of known gaps (no LE bonding persistence, keymap upload accepted but not yet persisted, uncalibrated software timers).
 
 ## IDE Support

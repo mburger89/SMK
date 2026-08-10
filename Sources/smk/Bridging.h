@@ -9,6 +9,14 @@
 // BLE HID Functions
 void init_ble_hid(void);
 void send_keyboard_report(uint8_t modifier, uint8_t keycodes[6]);
+void smk_ble_set_battery_level(uint8_t level);
+
+// VBAT battery ADC (Sources/components/battery_adc.c, ESP32-C6/smk_kbd
+// board only — IO4/ADC1_CH4, see CLAUDE.md's GPIO map). Returns 0/negative
+// esp_err_t and a raw 0-4095 reading respectively; see BatteryMonitor.swift
+// for the mV/percentage conversion.
+int smk_battery_adc_init(void);
+int smk_battery_adc_read_raw(void);
 
 // Wired HID Functions
 void init_wired_link(void);

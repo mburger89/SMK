@@ -241,6 +241,14 @@ func app_main_swift() {
     // Initialize BLE Link
     init_ble_hid()
 
+    // Battery-level reporting (smk_kbd board / ESP32-C6 only — see
+    // BatteryMonitor.swift). RP2040/nRF52840 have no VBAT ADC divider
+    // wired to this firmware and no esp_hidd Battery Service, so this is
+    // a no-op there rather than a stub function that would need externing.
+    #if SMK_TARGET_ESP32C6
+    initBatteryMonitor()
+    #endif
+
     // Initialize Wired Link — only if this board actually has the CH9350
     // bridge (Kconfig SMK_HAS_WIRED_BRIDGE / RP2040 hardcoded true). The
     // smk_kbd board doesn't: its UART1 RX pin (GPIO20) is also a
@@ -314,6 +322,17 @@ func app_main_swift() {
     var lastScan = [Bool](repeating: false, count: totalKeys)
     var pressedActions: [KeyAction] = [KeyAction](repeating: .none, count: totalKeys)
 
+    #if SMK_TARGET_ESP32C6
+    // Battery voltage changes slowly, so polling it every scan tick would
+    // just waste ADC conversion time for no benefit. vTaskDelay(1) below is
+    // one real FreeRTOS tick (10ms at this project's default
+    // CONFIG_FREERTOS_HZ=100), so 2000 scan iterations is roughly 20
+    // seconds between reads — approximate, not calibrated against a
+    // stopwatch on real hardware.
+    let batteryPollIntervalScans = 2000
+    var scansSinceLastBatteryPoll = 0
+    #endif
+
     while true {
         let rawScan = matrix.scan()
         let cleanScan = debouncer.update(rawScan: rawScan)
@@ -359,6 +378,14 @@ func app_main_swift() {
                 }
             }
         }
+
+        #if SMK_TARGET_ESP32C6
+        scansSinceLastBatteryPoll += 1
+        if scansSinceLastBatteryPoll >= batteryPollIntervalScans {
+            scansSinceLastBatteryPoll = 0
+            pollBatteryLevel()
+        }
+        #endif
 
         vTaskDelay(1)
     }

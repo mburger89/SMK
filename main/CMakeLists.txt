@@ -13,6 +13,7 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/RGBLighting.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/GPIOInit.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/SmkConfig.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/BatteryMonitor.swift"
 )
 
 set(c_srcs
@@ -23,12 +24,13 @@ set(c_srcs
     "../Sources/components/smk_keymap_protocol.c"
     "../Sources/components/led_strip_encoder.c"
     "../Sources/components/led_strip_driver.c"
+    "../Sources/components/battery_adc.c"
 )
 
 # Register C sources and linker fragment
 idf_component_register(SRCS ${c_srcs}
                        INCLUDE_DIRS "../Sources/smk" "../Sources/components"
-                       REQUIRES esp_hid nvs_flash bt cjson driver esp_event esp_driver_uart esp_driver_gpio esp_driver_rmt
+                       REQUIRES esp_hid nvs_flash bt cjson driver esp_event esp_driver_uart esp_driver_gpio esp_driver_rmt esp_adc
                        LDFRAGMENTS "linker.lf")
 
 # --- Swift Compilation Step ---

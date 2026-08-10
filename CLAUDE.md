@@ -117,6 +117,7 @@ Compiled only into the ESP32-C6 build (`main/CMakeLists.txt`'s `swift_srcs`) —
 |---|---|
 | `GPIOInit.swift` | `init_keyboard_pins()` — configures rows/columns as push-pull output vs. pull-up/pull-down input depending on the `colsAreDriven` flag, by calling straight into the ESP-IDF gpio driver (`gpio_reset_pin`/`gpio_set_direction`/etc. via `@_extern(c, ...)`) |
 | `SmkConfig.swift` | `smk_has_wired_bridge()` / `smk_default_mode_is_wired()` / `smk_has_rgb_backlight()` / `smk_rgb_gpio()`, backed by `main/Kconfig.projbuild` via Swift-level `#if SMK_HAS_WIRED_BRIDGE`/etc. flags that `main/CMakeLists.txt` derives from the matching `CONFIG_SMK_*` CMake variables — lets `idf.py menuconfig` pick the boot-default connection mode and whether wired HID/RGB hardware exists on the board |
+| `BatteryMonitor.swift` | `initBatteryMonitor()` / `pollBatteryLevel()` — VBAT percentage estimate from the IO4/ADC1_CH4 divider, reported via `smk_ble_set_battery_level()` (`ble_helper.c`). ADC unit/channel setup itself stays in C (`battery_adc.c`, struct-heavy `adc_oneshot` driver config — same "constructing C-ABI structs" exception as BTstack's `hci_transport_t` in the nRF52840 port); the mV/percentage math and polling schedule are Swift. |
 
 ### smk_kbd board (ESP32-C6-MINI-1)
 
@@ -127,19 +128,22 @@ The active `configJson` in `Main.swift` targets this specific board (59-key, 5×
 | ROW0–ROW3 (sense, pull-down) | IO0–IO3 |
 | ROW4 (sense, pull-down) | IO5 |
 | COL0–COL11 (strobe, push-pull) | IO6, IO7, IO8, IO14, IO15, IO18, IO19, IO20, IO21, IO22, IO23, IO17 |
-| VBAT sense (÷2 divider) | IO4 / ADC1_CH4 — **not used by firmware yet** |
+| VBAT sense (÷2 divider) | IO4 / ADC1_CH4 — read by `BatteryMonitor.swift` via `adc_oneshot` (see below) |
 | USB D−/D+ (native, flashing only) | IO12/IO13 |
 | BOOT / RESET | IO9 / EN |
 
-Row 4 is irregular: 5 keys (cols 0–4), one 2U key (col 5), no switch at col 6, then 5 more keys (cols 7–11) — 59 physical keys over the 60-position matrix. Battery-voltage ADC reading (fuel gauge) is not yet implemented in firmware despite the hardware supporting it.
+Row 4 is irregular: 5 keys (cols 0–4), one 2U key (col 5), no switch at col 6, then 5 more keys (cols 7–11) — 59 physical keys over the 60-position matrix.
+
+Battery-voltage ADC reading is polled roughly every 20 seconds from the main scan loop and reported via the BLE HID Battery Service (`esp_hidd_dev_init()` creates this GATT service internally — `smk_ble_set_battery_level()` in `ble_helper.c` just feeds it data). The mV→percentage conversion is a rough single-cell Li-ion linear approximation (4200mV=100%, 3300mV=0%), not a calibrated discharge curve, and the ADC reading itself isn't calibrated via `adc_cali_*` either — good enough for a rough battery icon, not fuel-gauge accuracy. Not yet verified against a real board with a multimeter.
 
 ### C Sources (`Sources/components/`) — ESP32-C6 only
 
 | File | Responsibility |
 |---|---|
-| `ble_helper.c` | NimBLE/esp_hidd BLE HID init and `send_keyboard_report()` |
+| `ble_helper.c` | NimBLE/esp_hidd BLE HID init, `send_keyboard_report()`, and `smk_ble_set_battery_level()` (feeds `esp_hidd`'s built-in BLE Battery Service — see `BatteryMonitor.swift`) |
 | `uart_init.c` | UART1 init (TX:16, TX-only) and CH9350L wired HID bridge via `send_wired_report()` — only safe to enable via `SMK_HAS_WIRED_BRIDGE` (see below). IO16 is smk_kbd's one documented spare pad, so a wired-bridge revision and `SMK_HAS_RGB_BACKLIGHT` (which also defaults to IO16) are mutually exclusive unless RGB is moved to a different pin — Kconfig does not currently guard against enabling both. |
 | `kb_main.c` | `app_main()` C entry point; Unicode linker stubs for Embedded Swift |
+| `battery_adc.c` | `smk_battery_adc_init()` / `smk_battery_adc_read_raw()` — `adc_oneshot` driver setup for the IO4/ADC1_CH4 VBAT divider; kept in C because the driver's init/config calls take structs by pointer (see `BatteryMonitor.swift`) |
 
 GPIO pin configuration and Kconfig-backed board config used to live here too (`gpio_init.c`, `smk_config.c`) but are now plain Swift — see "ESP32-C6-only Swift Sources" above.
 
