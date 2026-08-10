@@ -170,6 +170,8 @@ set(SHARED_SWIFT_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/HIDReport.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Config.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyEventProcessing.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapFrame.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapProtocol.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/GPIORegisters.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/GPIOInit.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/UsbHid.swift"
@@ -183,8 +185,6 @@ set(PLATFORM_C_SRCS
     platform/smk_keymap_store.c
     # Portable cJSON (no ESP-IDF dependency)
     "${CMAKE_CURRENT_SOURCE_DIR}/../../managed_components/espressif__cjson/cJSON/cJSON.c"
-    # Shared upload-packet dispatch (see Sources/components/smk_keymap_protocol.c)
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/components/smk_keymap_protocol.c"
 )
 
 if(SMK_IS_KBD_RP2040)

@@ -1,5 +1,6 @@
 // Runtime keymap store (ESP32-C6, NVS-backed). Persists the framed
-// {"layers":[...]} JSON blob uploaded over BLE (see smk_keymap_protocol.c)
+// {"layers":[...]} JSON blob uploaded over BLE (see
+// Sources/SMKCore/KeymapProtocol.swift)
 // so LayerEngine.loadKeymap has something to load besides the compiled
 // default. See docs/superpowers/specs/2026-07-31-runtime-keymap-updates-
 // design.md for the frame layout and protocol.

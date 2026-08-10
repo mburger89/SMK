@@ -23,8 +23,8 @@
 // than assuming either of the approaches named above.
 //
 // USB HID (Task 4) is wired up now, so smk_keymap_begin_write/write_chunk/
-// commit ARE reachable from a real host via Sources/components/
-// smk_keymap_protocol.c's dispatch — they're not dead code. They just
+// commit ARE reachable from a real host via
+// Sources/SMKCore/KeymapProtocol.swift's dispatch — they're not dead code. They just
 // unconditionally fail (return -1), same as smk_keymap_load, since there's
 // still no backing store: any keymap upload attempted against this board
 // today will be accepted over USB but silently fail to persist.

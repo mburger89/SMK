@@ -139,6 +139,8 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Config.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LayerEngine.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyEventProcessing.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapFrame.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapProtocol.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/UsbHid.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/MpslGlue.swift"
 )
@@ -213,11 +215,6 @@ set(c_srcs
     platform/smk_keymap_store.c
     platform/usb_descriptors.c
     "${NRF52840_CJSON_DIR}/cJSON.c"
-    # Shared upload-packet dispatch (see Sources/components/smk_keymap_protocol.c)
-    # — usb_descriptors.c's smk_keymap_usb_service() calls
-    # smk_keymap_dispatch_packet(), defined there; matches
-    # ports/rp2040/CMakeLists.txt's PLATFORM_C_SRCS list.
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/components/smk_keymap_protocol.c"
 )
 
 add_executable(smk_nrf52840

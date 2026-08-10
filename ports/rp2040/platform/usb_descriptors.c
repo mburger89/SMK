@@ -46,7 +46,7 @@ uint8_t const desc_hid_report[] = {
 
 // ---------------------------------------------------------------------------
 // HID Report Descriptor — 32-byte vendor-defined raw channel, used only for
-// keymap upload (see smk_keymap_protocol.c). Its own interface, so no
+// keymap upload (see Sources/SMKCore/KeymapProtocol.swift). Its own interface, so no
 // Report ID is needed (unlike the BLE side, which multiplexes this onto the
 // same GATT report characteristic as the keyboard and needs one).
 // ---------------------------------------------------------------------------
