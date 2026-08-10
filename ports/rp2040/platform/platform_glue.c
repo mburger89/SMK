@@ -1,7 +1,7 @@
 // Misc platform glue for the RP2040 build: logging, the cooperative delay
 // shim, the C entry point, and the Embedded-Swift linker stubs.
 //
-// Counterpart to the relevant bits of Sources/componets/kb_main.c (ESP32).
+// Counterpart to the relevant bits of Sources/components/kb_main.c (ESP32).
 
 #include "pico/stdlib.h"
 #include <stdint.h>

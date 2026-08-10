@@ -1,7 +1,7 @@
 // USB descriptors for the SMK RP2040 HID keyboard.
 //
 // Reuses the same VID/PID and product name as the ESP32 BLE config
-// (Sources/componets/ble_helper.c) so the device presents consistently:
+// (Sources/components/ble_helper.c) so the device presents consistently:
 //   VID 0x16C0, PID 0x05DF, "SMK Keyboard" by "Swift".
 
 #include "tusb.h"

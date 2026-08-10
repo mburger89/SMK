@@ -72,7 +72,7 @@ The RP2040 build uses CMake's native Swift support (`enable_language(Swift)`) wi
 - `Sources/smk/Bridging.h` — C headers imported into Swift; declares all C functions callable from Swift
 - Swift uses `@_extern(c, "fn_name")` to call C functions (BLE init, GPIO init, FreeRTOS delay, logging)
 - Swift uses `@_cdecl("app_main_swift")` to expose its entry point to C
-- `Sources/componets/kb_main.c` contains `app_main()` which calls `app_main_swift()`
+- `Sources/components/kb_main.c` contains `app_main()` which calls `app_main_swift()`
 
 ### Shared Swift Sources (`Sources/smk/`) — compiled for ALL targets
 
@@ -133,7 +133,7 @@ The active `configJson` in `Main.swift` targets this specific board (59-key, 5×
 
 Row 4 is irregular: 5 keys (cols 0–4), one 2U key (col 5), no switch at col 6, then 5 more keys (cols 7–11) — 59 physical keys over the 60-position matrix. Battery-voltage ADC reading (fuel gauge) is not yet implemented in firmware despite the hardware supporting it.
 
-### C Sources (`Sources/componets/`) — ESP32-C6 only
+### C Sources (`Sources/components/`) — ESP32-C6 only
 
 | File | Responsibility |
 |---|---|

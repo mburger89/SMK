@@ -181,8 +181,8 @@ set(PLATFORM_C_SRCS
     platform/smk_keymap_store.c
     # Portable cJSON (no ESP-IDF dependency)
     "${CMAKE_CURRENT_SOURCE_DIR}/../../managed_components/espressif__cjson/cJSON/cJSON.c"
-    # Shared upload-packet dispatch (see Sources/componets/smk_keymap_protocol.c)
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/componets/smk_keymap_protocol.c"
+    # Shared upload-packet dispatch (see Sources/components/smk_keymap_protocol.c)
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/components/smk_keymap_protocol.c"
 )
 
 if(SMK_IS_KBD_RP2040)
@@ -341,7 +341,7 @@ endif()
 target_include_directories(smk_rp2040 PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/platform"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../managed_components/espressif__cjson/cJSON"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/componets"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/components"
 )
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 // RP2040 keyboard matrix pin setup.
 //
-// Counterpart to Sources/componets/gpio_init.c (ESP32). Two wiring
+// Counterpart to Sources/components/gpio_init.c (ESP32). Two wiring
 // conventions are supported (see the matching comment in
 // Sources/smk/KeyMatrix.swift) — which one applies is passed in from the
 // shared JSON config via cols_are_driven:

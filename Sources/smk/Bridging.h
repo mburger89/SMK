@@ -33,7 +33,7 @@ void led_strip_set_pixel(int32_t index, uint8_t r, uint8_t g, uint8_t b);
 void led_strip_refresh(void);
 void led_strip_clear(void);
 
-// Runtime keymap store (Sources/componets/smk_keymap_store.c, NVS-backed).
+// Runtime keymap store (Sources/components/smk_keymap_store.c, NVS-backed).
 // See docs/superpowers/specs/2026-07-31-runtime-keymap-updates-design.md.
 int32_t smk_keymap_load(char *buf, uint32_t buf_size);
 void smk_keymap_erase(void);

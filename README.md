@@ -77,7 +77,7 @@ idf.py flash monitor
   - `LayerEngine.swift`: Logic for handling layers and key actions.
   - `KeyMatrix.swift`: Hardware scanning and debouncing logic.
   - `GPIORegisters.swift`: Low-level Swift-friendly GPIO access.
-- `Sources/componets/`: C helper files for Bluetooth, UART, and hardware initialization (Note: Typo in folder name exists in source).
+- `Sources/components/`: C helper files for Bluetooth, UART, and hardware initialization.
 - `main/`: ESP-IDF component configuration and bridging.
   - `CMakeLists.txt`: Orchestrates the Swift and C compilation.
   - `Bridging.h`: C-to-Swift bridging header.
@@ -174,7 +174,6 @@ not by an automated test suite. None of the four targets have been exercised on 
 this repo's CI.
 
 ## Known Issues / TODOs
-- **Typo**: `Sources/componets/` contains a typo in the directory name.
 - **No battery-level reporting yet**: the smk_kbd board has a VBAT divider on IO4 for fuel gauging, but firmware doesn't read it yet.
 - **nRF52840 port is build-only**: no hardware verification yet, and the board's GPIO pin map in `Sources/smk/Main.swift` is an explicit placeholder that must be replaced before flashing a real board. See [`CLAUDE.md`'s nRF52840 section](CLAUDE.md#nrf52840) (Prerequisites through the "read before flashing real hardware" caveat) for the full list of known gaps (no LE bonding persistence, keymap upload accepted but not yet persisted, uncalibrated software timers).
 

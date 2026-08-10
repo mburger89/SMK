@@ -1,7 +1,7 @@
 // Runtime keymap store (nRF52840) — BUILD-ONLY STUB.
 //
 // Counterpart to ports/rp2040/platform/smk_keymap_store.c (flash-backed) and
-// Sources/componets/smk_keymap_store.c (ESP32-C6, NVS-backed). This board
+// Sources/components/smk_keymap_store.c (ESP32-C6, NVS-backed). This board
 // has no hardware yet (see
 // docs/superpowers/specs/2026-08-09-nrf52840-support-design.md's build-only
 // scope for this task), so there is no flash layout to target — every
@@ -23,7 +23,7 @@
 // than assuming either of the approaches named above.
 //
 // USB HID (Task 4) is wired up now, so smk_keymap_begin_write/write_chunk/
-// commit ARE reachable from a real host via Sources/componets/
+// commit ARE reachable from a real host via Sources/components/
 // smk_keymap_protocol.c's dispatch — they're not dead code. They just
 // unconditionally fail (return -1), same as smk_keymap_load, since there's
 // still no backing store: any keymap upload attempted against this board

@@ -9,7 +9,7 @@ func send_keyboard_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
 
 // Unlike init_keyboard_pins (Sources/smk/KeyMatrix.swift), which every board
 // except RP2040 now backs with a native Swift implementation, ESP32-C6
-// still backs this pair with C (Sources/componets/uart_init.c, unconditionally
+// still backs this pair with C (Sources/components/uart_init.c, unconditionally
 // compiled into the ESP32-C6 build) — so its declaration must stay active
 // there. Only NRF52840 backs these natively in Swift (ports/nrf52840/UsbHid.swift,
 // same-module resolution, no @_extern needed); RP2040 still backs them with C
@@ -45,7 +45,7 @@ func smk_has_wired_bridge() -> Int32
 func smk_default_mode_is_wired() -> Int32
 #endif
 
-// Runtime keymap store — see Sources/componets/smk_keymap_store.c (ESP32)
+// Runtime keymap store — see Sources/components/smk_keymap_store.c (ESP32)
 // and ports/rp2040/platform/smk_keymap_store.c (RP2040).
 @_extern(c, "smk_keymap_load")
 func smk_keymap_load(_ buf: UnsafeMutablePointer<Int8>, _ bufSize: UInt32) -> Int32
