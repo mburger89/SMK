@@ -35,14 +35,21 @@ void kb_log(const char *msg);
 // prototypes here: nothing outside the Swift module calls them.
 
 // RGB LED chain (SK6812MINI-E via RMT) — only referenced from Main.swift
-// when compiled with -DSMK_RGB_AVAILABLE (ESP32-C6 build only; RP2040
-// doesn't compile RGBLighting.swift at all). Chain wiring is serpentine,
-// see RGBLighting.swift's ledChainIndex; this driver only knows raw chain
-// position, not (row, col).
-void led_strip_driver_init(int32_t gpio_num, int32_t num_leds);
-void led_strip_set_pixel(int32_t index, uint8_t r, uint8_t g, uint8_t b);
-void led_strip_refresh(void);
-void led_strip_clear(void);
+// when compiled with -DSMK_RGB_AVAILABLE (ESP32-C6 build; also the
+// smk_kbd_rp2040 RP2040 board variant, which has a real wired chain and
+// compiles RGBLighting.swift too — only plain pico/pico_w don't). Chain
+// wiring is serpentine, see RGBLighting.swift's ledChainIndex; this driver
+// only knows raw chain position, not (row, col).
+//
+// led_strip_driver_init/led_strip_set_pixel/led_strip_refresh/
+// led_strip_clear are implemented directly in Swift for this target — see
+// LedStripDriverRMT.swift (RMT-based, formerly
+// Sources/components/led_strip_driver.c, deleted). No C prototypes here:
+// nothing outside the Swift module calls them, and a stale prototype here
+// would silently shadow the real same-module Swift definition (Swift's own
+// top-level function takes precedence with no build error) rather than
+// fail loudly — same reasoning as init_wired_link/send_wired_report above
+// and the GPIO/config block below.
 
 // Runtime keymap store (Sources/smk/KeymapStoreNVS.swift, NVS-backed) and
 // its BLE/USB dispatch (Sources/SMKCore/KeymapProtocol.swift) are
