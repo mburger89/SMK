@@ -44,23 +44,15 @@ func smk_has_wired_bridge() -> Int32
 func smk_default_mode_is_wired() -> Int32
 #endif
 
-// RGB backlight config — only declared/referenced when this build compiles
-// RGBLighting.swift in (ESP32-C6, via -DSMK_RGB_AVAILABLE in
-// main/CMakeLists.txt). RP2040 doesn't include RGBLighting.swift at all, so
-// this whole block must not exist there either, or the type lookup fails.
-// Within that, ESP32-C6 provides these as plain Swift functions
-// (SmkConfig.swift); only smk_kbd_rp2040 (the other SMK_RGB_AVAILABLE
-// board) needs the extern — it backs them with hardcoded C functions since
-// that board always has the RGB chain wired.
-#if SMK_RGB_AVAILABLE
-#if !SMK_TARGET_ESP32C6
-@_extern(c, "smk_has_rgb_backlight")
-func smk_has_rgb_backlight() -> Int32
-
-@_extern(c, "smk_rgb_gpio")
-func smk_rgb_gpio() -> Int32
-#endif
-#endif
+// RGB backlight config (smk_has_rgb_backlight/smk_rgb_gpio) — both boards
+// that compile RGBLighting.swift in (ESP32-C6 via -DSMK_RGB_AVAILABLE in
+// main/CMakeLists.txt; smk_kbd_rp2040 via SMK_RGB_AVAILABLE in
+// ports/rp2040/CMakeLists.txt) now provide these as plain, same-module
+// Swift functions — ESP32-C6 in SmkConfig.swift, RP2040 in
+// ports/rp2040/LedStripDriverPIO.swift (Task 10). No @_extern declaration
+// needed or permitted here for either: a same-module Swift definition can't
+// coexist with an @_extern(c, ...) forward declaration of the same name
+// ("invalid redeclaration").
 
 @_cdecl("app_main_swift")
 func app_main_swift() {

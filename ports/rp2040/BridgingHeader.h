@@ -43,18 +43,17 @@ void send_keyboard_report(uint8_t modifier, uint8_t *keycodes);
 // for the protocol this implements. Mirrors Sources/smk/Bridging.h's
 // ESP32-C6 precedent (Task 5).
 
-// RGB backlight (platform/led_strip_driver.c) — only declared when this
-// build compiles RGBLighting.swift in (SMK_TARGET_BOARD=smk_kbd_rp2040,
-// via SMK_RGB_AVAILABLE in ports/rp2040/CMakeLists.txt). Mirrors
-// Sources/smk/Bridging.h's ESP32 declarations; unlike ESP32 (Kconfig-driven,
-// off by default), this board always has the hardware, so both are hardcoded
-// — see led_strip_driver.c.
-#ifdef SMK_RGB_AVAILABLE
-int smk_has_rgb_backlight(void);
-int smk_rgb_gpio(void);
-
-void led_strip_driver_init(int32_t gpio_num, int32_t num_leds);
-void led_strip_set_pixel(int32_t index, uint8_t r, uint8_t g, uint8_t b);
-void led_strip_refresh(void);
-void led_strip_clear(void);
-#endif
+// RGB backlight (ports/rp2040/LedStripDriverPIO.swift, only compiled in for
+// SMK_TARGET_BOARD=smk_kbd_rp2040 via SMK_RGB_AVAILABLE in
+// ports/rp2040/CMakeLists.txt) is implemented directly in Swift for this
+// target. No C prototypes needed here for smk_has_rgb_backlight/
+// smk_rgb_gpio/led_strip_driver_init/led_strip_set_pixel/led_strip_refresh/
+// led_strip_clear: same-module Swift-to-Swift calls from RGBLighting.swift
+// (which reaches them via its own @_extern(c, ...) declarations — see that
+// file). Unlike ESP32 (Kconfig-driven, off by default), this board always
+// has the hardware, so both config functions are hardcoded true/17 — see
+// LedStripDriverPIO.swift. The one remaining C function this board's RGB
+// path needs, smk_ws2812_pio_start/smk_ws2812_put_blocking (the PIO
+// program's generated-struct-touching remainder), is declared via
+// ws2812_pio_shim.c's own header include (hardware/pio.h), not here, and
+// called from Swift the same way — see LedStripDriverPIO.swift.

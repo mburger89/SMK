@@ -196,9 +196,10 @@ if(SMK_IS_KBD_RP2040)
     list(APPEND SHARED_SWIFT_SRCS
         "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/smk/RGBLighting.swift"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LEDChainMapping.swift"
+        "${CMAKE_CURRENT_SOURCE_DIR}/LedStripDriverPIO.swift"
     )
     list(APPEND PLATFORM_C_SRCS
-        platform/led_strip_driver.c
+        platform/ws2812_pio_shim.c
         platform/ble_hid_kbd_uart.c
         platform/cyw43439_patchram.c
     )
@@ -324,7 +325,7 @@ elseif(SMK_IS_KBD_RP2040)
         "${CMAKE_CURRENT_SOURCE_DIR}/platform"
     )
 
-    # Generate ws2812.pio.h from the PIO program used by led_strip_driver.c.
+    # Generate ws2812.pio.h from the PIO program used by ws2812_pio_shim.c.
     pico_generate_pio_header(smk_rp2040
         "${CMAKE_CURRENT_SOURCE_DIR}/platform/ws2812.pio"
     )

@@ -18,34 +18,16 @@
 // led_strip_driver_init/led_strip_set_pixel/led_strip_refresh/led_strip_clear:
 // on ESP32-C6 these are same-module Swift definitions in
 // LedStripDriverRMT.swift (RMT-based driver, formerly
-// Sources/components/led_strip_driver.c) — no @_extern declaration is
-// needed or permitted there; a same-module Swift function definition can't
-// coexist with an @_extern(c, ...) forward declaration of the same name
-// ("invalid redeclaration"), same class of stale-prototype pitfall Task 8
-// hit with Bridging.h, just caught at compile time instead of silently
-// shadowed since both sides are Swift here. On RP2040 (smk_kbd_rp2040
-// board only) these stay real external C symbols
-// (ports/rp2040/platform/led_strip_driver.c, PIO-based) reached via
-// @_extern below — RP2040's own BridgingHeader.h also declares C
-// prototypes for them, but only inside `#ifdef SMK_RGB_AVAILABLE`, which
-// never fires there: SMK_RGB_AVAILABLE is passed as a bare swiftc `-D`
-// (Swift-level conditional compilation flag), never as `-Xcc -D`, so it's
-// not visible to the C preprocessor that parses a bridging header. That
-// bridging-header guard has therefore always been dead code; @_extern below
-// is what has actually been supplying these symbols to RP2040 Swift code.
-#if !SMK_TARGET_ESP32C6
-@_extern(c, "led_strip_driver_init")
-func led_strip_driver_init(_ gpioNum: Int32, _ numLeds: Int32)
-
-@_extern(c, "led_strip_set_pixel")
-func led_strip_set_pixel(_ index: Int32, _ r: UInt8, _ g: UInt8, _ b: UInt8)
-
-@_extern(c, "led_strip_refresh")
-func led_strip_refresh()
-
-@_extern(c, "led_strip_clear")
-func led_strip_clear()
-#endif
+// Sources/components/led_strip_driver.c). On RP2040 (smk_kbd_rp2040 board
+// only) these are now also same-module Swift definitions, in
+// ports/rp2040/LedStripDriverPIO.swift (PIO-based driver, formerly
+// ports/rp2040/platform/led_strip_driver.c — Task 10). No @_extern
+// declaration is needed or permitted for either board: a same-module Swift
+// function definition can't coexist with an @_extern(c, ...) forward
+// declaration of the same name ("invalid redeclaration"), same class of
+// stale-prototype pitfall Task 8 hit with Bridging.h, just caught at
+// compile time instead of silently shadowed since both sides are Swift
+// here.
 
 struct RGBLighting {
     let rowCount: Int
