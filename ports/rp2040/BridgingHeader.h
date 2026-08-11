@@ -18,11 +18,15 @@
 
 #include "cJSON.h"
 
-// --- Platform glue implemented in ports/rp2040/platform/*.c ---
+// --- Platform glue: mostly plain Swift now, narrow C remainder noted per-block below ---
 
-// USB HID — the "wired" path on RP2040 (usb_hid.c)
-void init_wired_link(void);
-void send_wired_report(uint8_t modifier, uint8_t *keycodes);
+// USB HID — the "wired" path on RP2040 — is implemented directly in Swift
+// for this target (ports/rp2040/UsbHid.swift), same reasoning as
+// ports/nrf52840/BridgingHeader.h's own init_wired_link/send_wired_report
+// block: init_wired_link/send_wired_report are deliberately NOT declared
+// here. A C prototype here would be redundant with — and could shadow —
+// the real same-module Swift definitions (Swift's own top-level function
+// takes precedence with no build error, rather than failing loudly).
 
 // BLE HID — real on Pico W / smk_kbd_rp2040, no-op stub on plain
 // Pico/Pico 2: now plain Swift for every RP2040 board
