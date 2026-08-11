@@ -39,6 +39,13 @@ SMK (Swift Matrix Keyboard) is keyboard firmware written in **Embedded Swift** t
 - **ARM toolchain with newlib**: same `arm-gcc-bin@14` already required for RP2040 — no new install.
 - **Swift Embedded ARM toolchain**: same one already required for RP2040/ESP32-C6 — `armv7em-none-none-eabi` has a real stdlib on every currently-installed toolchain (verified during this port's feasibility spike), no dev-snapshot requirement.
 
+### STM32F4
+- **cmsis-device-f4** (CMSIS device headers + Cortex-M4 startup assembly for the STM32F4 series — no GCC linker script is shipped here, this project hand-writes its own) at `~/cmsis-device-f4`: `git clone https://github.com/STMicroelectronics/cmsis-device-f4 ~/cmsis-device-f4`
+- **CMSIS_6** (ARM's own Cortex-M4 core headers — `cmsis-device-f4` depends on this separately, per that repo's own README) at `~/CMSIS_6`: `git clone https://github.com/ARM-software/CMSIS_6 ~/CMSIS_6`
+- **TinyUSB** at `~/tinyusb` (same checkout already required for RP2040/nRF52840 — no new clone needed if you have one).
+- **ARM toolchain with newlib**: same `arm-gcc-bin@14` already required for RP2040/nRF52840 — no new install.
+- **Swift Embedded ARM toolchain**: same one already required for RP2040/nRF52840/ESP32-C6 — `armv7em-none-none-eabi` has a real stdlib on every currently-installed toolchain (re-verified during this port's planning), no dev-snapshot requirement.
+
 ## Build & Flash Commands
 
 ### ESP32-C6
