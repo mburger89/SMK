@@ -1,9 +1,9 @@
-// ESP32-C6, RP2040, nRF52840, and STM32F4 provide this as a plain Swift
-// function (GPIOInit.swift, part of this same module — see
+// ESP32-C6, RP2040, nRF52840, STM32F4, and STM32WB provide this as a plain
+// Swift function (GPIOInit.swift, part of this same module — see
 // main/CMakeLists.txt's, ports/rp2040/CMakeLists.txt's,
-// ports/nrf52840/CMakeLists.txt's, and ports/stm32f4/CMakeLists.txt's
-// swift_srcs).
-#if !SMK_TARGET_ESP32C6 && !SMK_TARGET_RP2040 && !SMK_TARGET_NRF52840 && !SMK_TARGET_STM32F4
+// ports/nrf52840/CMakeLists.txt's, ports/stm32f4/CMakeLists.txt's, and
+// ports/stm32wb/CMakeLists.txt's swift_srcs).
+#if !SMK_TARGET_ESP32C6 && !SMK_TARGET_RP2040 && !SMK_TARGET_NRF52840 && !SMK_TARGET_STM32F4 && !SMK_TARGET_STM32WB
 @_extern(c, "init_keyboard_pins")
 func init_keyboard_pins(_ rows: UnsafePointer<Int32>, _ rowCount: Int32, _ cols: UnsafePointer<Int32>, _ colCount: Int32, _ colsAreDriven: Int32)
 #endif
