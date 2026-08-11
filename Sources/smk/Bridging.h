@@ -65,8 +65,9 @@ int smk_battery_adc_read_raw(void);
 // its BLE/USB dispatch (Sources/SMKCore/KeymapProtocol.swift) are
 // implemented directly in Swift for this target. No C prototypes here for
 // smk_keymap_load/erase/begin_write/write_chunk/commit/dispatch_packet:
-// these are Swift-owned (dispatch_packet via `@_cdecl`), called from C
-// (ble_helper.c), not the other way around — same direction as
-// app_main_swift, which isn't in this header either. ble_helper.c
-// declares its own local `extern`-style prototype for the one it calls.
-// See docs/superpowers/specs/2026-07-31-runtime-keymap-updates-design.md.
+// these are Swift-owned (dispatch_packet via `@_cdecl`), and the trimmed
+// ble_helper.c no longer references any of them at all — the BLE Report
+// ID 2 vendor channel that used to call dispatch_packet from C is now
+// handled directly in BleHelper.swift (same-module Swift-to-Swift call,
+// see that file). See
+// docs/superpowers/specs/2026-07-31-runtime-keymap-updates-design.md.

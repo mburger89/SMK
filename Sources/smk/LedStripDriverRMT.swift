@@ -139,6 +139,12 @@ func led_strip_refresh() {
         }
     }
     guard sendResult == 0 else { return }
+    // 100 here is milliseconds (rmt_tx_wait_all_done's real signature takes
+    // a ms timeout directly) — this is the intended value, not an
+    // accidental deviation from the deleted C original. That C code passed
+    // pdMS_TO_TICKS(100), which at this project's CONFIG_FREERTOS_HZ=100
+    // evaluated to 10 — a latent unit bug giving a 10ms timeout instead of
+    // the intended 100ms. This Swift port fixes it.
     _ = rmt_tx_wait_all_done(ledChan, 100)
 }
 

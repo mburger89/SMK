@@ -435,7 +435,8 @@ endforeach()
 # RGBLighting.swift) — passed as bare swiftc `-D` (Swift's own conditional-
 # compilation flag), distinct from ${_compile_defs} above which is C-level
 # `-Xcc -D...` for the Clang importer. target_compile_definitions() also sets
-# these for the C sources (gpio_init.c etc. see them as normal #ifdef macros);
+# these for the remaining C sources (platform/usb_descriptors.c etc. see
+# them as normal #ifdef macros);
 # this is the belt-and-suspenders explicit form so Main.swift's own `#if`
 # definitely sees them too, regardless of how CMake's native Swift-language
 # support maps COMPILE_DEFINITIONS for a mixed C/Swift target.

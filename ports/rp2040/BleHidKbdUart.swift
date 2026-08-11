@@ -560,6 +560,11 @@ func init_ble_hid() {
     sm_set_io_capabilities(3) // IO_CAPABILITY_NO_INPUT_NO_OUTPUT — verified (BleHidPicoW.swift)
     sm_set_authentication_requirements(0x09) // SM_AUTHREQ_BONDING | SM_AUTHREQ_SECURE_CONNECTION — verified
 
+    // Same as BleHidPicoW.swift: profile_data doesn't need permanentCopy()
+    // despite att_server_init retaining this pointer long-term — it's a C
+    // `.rodata` global with static storage duration, not a Swift
+    // `let`/`var` array that could be reallocated, so its address is
+    // already stable for the life of the process.
     withUnsafePointer(to: &profile_data) {
         att_server_init($0, nil, nil)
     }

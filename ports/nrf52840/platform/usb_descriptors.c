@@ -166,10 +166,12 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
 }
 
 // Services a keymap-upload packet received by tud_hid_set_report_cb, called
-// from the main loop (kb_usb_task in usb_hid.c) rather than from inside the
-// USB callback itself -- smk_keymap_dispatch_packet can trigger a multi-ms
-// flash erase+program (see smk_keymap_commit in smk_keymap_store.c), which
-// must not block the USB stack's own callback context.
+// from the main loop (kb_usb_task, now @_cdecl'd Swift in UsbHid.swift)
+// rather than from inside the USB callback itself -- smk_keymap_dispatch_packet
+// can trigger a multi-ms flash erase+program (see smk_keymap_commit in
+// KeymapStoreStub.swift — currently a no-op stub on this port, see that
+// file's header comment), which must not block the USB stack's own
+// callback context.
 void smk_keymap_usb_service(void) {
     if (!s_packet_pending) {
         return;

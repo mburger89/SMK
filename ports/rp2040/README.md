@@ -77,7 +77,7 @@ On Pico W the firmware starts USB HID immediately. `toggle_conn` (the `toggle_co
 - **Wired** (default) → USB HID reports
 - **Bluetooth** → BLE HID-over-GATT; the board advertises as "SMK Keyboard"
 
-BLE bonding credentials are not yet persisted across power cycles (scaffolded — see `platform/ble_hid.c`).
+BLE bonding credentials are not yet persisted across power cycles (scaffolded — see `BleHidPicoW.swift`).
 
 ## Pin assignments
 

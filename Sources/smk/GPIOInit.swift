@@ -2,12 +2,14 @@
 // Sources/components/gpio_init.c. Only compiled into the ESP32-C6 build
 // (main/CMakeLists.txt), so this is a plain module-internal Swift
 // function, not `@_extern`/`@_cdecl` — nothing outside this Swift module
-// calls it. RP2040 keeps its own C implementation
-// (ports/rp2040/platform/gpio_init.c), linked in behind the `@_extern(c,
-// "init_keyboard_pins")` declaration KeyMatrix.swift falls back to when
-// SMK_TARGET_ESP32C6 isn't defined (see main/CMakeLists.txt); that
-// declaration would conflict with a same-signature definition here, which
-// is why it's conditional rather than KeyMatrix.swift's call site
+// calls it. RP2040 and nRF52840 each have their own same-module Swift
+// definition too now (ports/rp2040/GPIOInit.swift,
+// ports/nrf52840/GPIOInit.swift). KeyMatrix.swift's `@_extern(c,
+// "init_keyboard_pins")` declaration is gated to compile out on all three
+// targets (`#if !SMK_TARGET_ESP32C6 && !SMK_TARGET_RP2040 &&
+// !SMK_TARGET_NRF52840`, see main/CMakeLists.txt) — a real C declaration
+// would conflict with each target's same-signature Swift definition,
+// which is why it's conditional rather than KeyMatrix.swift's call site
 // changing.
 //
 // Calls straight into the ESP-IDF gpio driver (esp_driver_gpio component,

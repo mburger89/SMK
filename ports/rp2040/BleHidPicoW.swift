@@ -267,6 +267,13 @@ func init_ble_hid() {
     sm_set_io_capabilities(3) // IO_CAPABILITY_NO_INPUT_NO_OUTPUT (bluetooth.h io_capability_t) — verified 3 (4th enumerator after DISPLAY_ONLY=0, DISPLAY_YES_NO=1, KEYBOARD_ONLY=2); plan's 0 placeholder was WRONG (0 is IO_CAPABILITY_DISPLAY_ONLY)
     sm_set_authentication_requirements(0x09) // SM_AUTHREQ_BONDING(0x01) | SM_AUTHREQ_SECURE_CONNECTION(0x08) — verified 0x09; plan's 0x03 placeholder was WRONG
 
+    // Unlike hidDescriptorKeyboardBytes/advDataBytes below, profile_data
+    // doesn't need permanentCopy() even though att_server_init also
+    // retains this pointer long-term: it's a C `.rodata` global with
+    // static storage duration (declared `extern` via @_extern(c,
+    // "profile_data") above), not a Swift `let`/`var` array that could be
+    // reallocated or go out of scope — its address is stable for the life
+    // of the process.
     withUnsafePointer(to: &profile_data) {
         att_server_init($0, nil, nil)
     }

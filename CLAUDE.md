@@ -96,6 +96,8 @@ Same flat-file-compilation treatment as `Sources/smk/` (added to `main/CMakeList
 | `LEDChainMapping.swift` | serpentine row/col -> RGB chain-position mapping |
 | `KeyEventProcessing.swift` | press/release edge detection, layer toggle/momentary add-remove, connection-toggle decision, HID report assembly — the scan loop calls this once per cycle |
 | `Logging.swift` | host-only `kb_log` no-op shim (not compiled into the embedded build) |
+| `KeymapFrame.swift` | shared keymap-store frame format: CRC32 + 11-byte header pack/unpack, extracted from what were three duplicated per-target copies |
+| `KeymapProtocol.swift` | shared BEGIN/CHUNK/COMMIT/ERASE packet dispatch for the runtime keymap upload protocol, transport-agnostic; storage operations are injected so this is host-testable |
 
 Run the test suite: `SMK_HOST_TESTS_ONLY=1 swift test`. `Package.resolved` is intentionally untracked (`.gitignore`'d): with `SMK_HOST_TESTS_ONLY=1`, `swift-mmio` isn't a dependency at all (see `Package.swift`), so a host-only resolve pins nothing meaningful and would just churn the file on every run.
 
@@ -117,7 +119,11 @@ Compiled only into the ESP32-C6 build (`main/CMakeLists.txt`'s `swift_srcs`) —
 |---|---|
 | `GPIOInit.swift` | `init_keyboard_pins()` — configures rows/columns as push-pull output vs. pull-up/pull-down input depending on the `colsAreDriven` flag, by calling straight into the ESP-IDF gpio driver (`gpio_reset_pin`/`gpio_set_direction`/etc. via `@_extern(c, ...)`) |
 | `SmkConfig.swift` | `smk_has_wired_bridge()` / `smk_default_mode_is_wired()` / `smk_has_rgb_backlight()` / `smk_rgb_gpio()`, backed by `main/Kconfig.projbuild` via Swift-level `#if SMK_HAS_WIRED_BRIDGE`/etc. flags that `main/CMakeLists.txt` derives from the matching `CONFIG_SMK_*` CMake variables — lets `idf.py menuconfig` pick the boot-default connection mode and whether wired HID/RGB hardware exists on the board |
-| `BatteryMonitor.swift` | `initBatteryMonitor()` / `pollBatteryLevel()` — VBAT percentage estimate from the IO4/ADC1_CH4 divider, reported via `smk_ble_set_battery_level()` (`ble_helper.c`). ADC unit/channel setup itself stays in C (`battery_adc.c`, struct-heavy `adc_oneshot` driver config — same "constructing C-ABI structs" exception as BTstack's `hci_transport_t` in the nRF52840 port); the mV/percentage math and polling schedule are Swift. |
+| `BatteryMonitor.swift` | `initBatteryMonitor()` / `pollBatteryLevel()` — VBAT percentage estimate from the IO4/ADC1_CH4 divider, reported via `smk_ble_set_battery_level()` (now in `BleHelper.swift`, see below). ADC unit/channel setup itself stays in C (`battery_adc.c`, struct-heavy `adc_oneshot` driver config — same "constructing C-ABI structs" exception as BTstack's `hci_transport_t` in the nRF52840 port); the mV/percentage math and polling schedule are Swift. |
+| `BleHelper.swift` | partial Swift port of the former `ble_helper.c`: `ble_hidd_event_callback`/`ble_hid_host_task` (`@_cdecl`, handed to the NimBLE/esp_hidd C APIs by address), `send_keyboard_report()`, `smk_ble_set_battery_level()`, and `kb_log`. The struct-heavy remainder (`ble_hs_adv_fields`/`ble_hs_cfg` construction, `start_advertising`, `init_ble_hid`) stays in the trimmed `ble_helper.c`. |
+| `WiredHidUart.swift` | Swift port of the former `uart_init.c` — UART1 init (TX:16, TX-only) and the CH9350L wired HID bridge via `send_wired_report()` |
+| `KeymapStoreNVS.swift` | runtime keymap store (ESP32-C6, NVS-backed) — Swift port of the former `Sources/components/smk_keymap_store.c`; frame/CRC logic itself lives in `KeymapFrame.swift`, shared with RP2040 |
+| `LedStripDriverRMT.swift` | SK6812MINI-E per-key RGB chain driver (RMT-based) — Swift port of the former `led_strip_driver.c`; `rmt_new_led_strip_encoder` stays C (`led_strip_encoder.c`, struct/vtable idiom) |
 
 ### smk_kbd board (ESP32-C6-MINI-1)
 
@@ -134,18 +140,17 @@ The active `configJson` in `Main.swift` targets this specific board (59-key, 5×
 
 Row 4 is irregular: 5 keys (cols 0–4), one 2U key (col 5), no switch at col 6, then 5 more keys (cols 7–11) — 59 physical keys over the 60-position matrix.
 
-Battery-voltage ADC reading is polled roughly every 20 seconds from the main scan loop and reported via the BLE HID Battery Service (`esp_hidd_dev_init()` creates this GATT service internally — `smk_ble_set_battery_level()` in `ble_helper.c` just feeds it data). The mV→percentage conversion is a rough single-cell Li-ion linear approximation (4200mV=100%, 3300mV=0%), not a calibrated discharge curve, and the ADC reading itself isn't calibrated via `adc_cali_*` either — good enough for a rough battery icon, not fuel-gauge accuracy. Not yet verified against a real board with a multimeter.
+Battery-voltage ADC reading is polled roughly every 20 seconds from the main scan loop and reported via the BLE HID Battery Service (`esp_hidd_dev_init()` creates this GATT service internally — `smk_ble_set_battery_level()` in `BleHelper.swift` just feeds it data). The mV→percentage conversion is a rough single-cell Li-ion linear approximation (4200mV=100%, 3300mV=0%), not a calibrated discharge curve, and the ADC reading itself isn't calibrated via `adc_cali_*` either — good enough for a rough battery icon, not fuel-gauge accuracy. Not yet verified against a real board with a multimeter.
 
 ### C Sources (`Sources/components/`) — ESP32-C6 only
 
 | File | Responsibility |
 |---|---|
-| `ble_helper.c` | NimBLE/esp_hidd BLE HID init, `send_keyboard_report()`, and `smk_ble_set_battery_level()` (feeds `esp_hidd`'s built-in BLE Battery Service — see `BatteryMonitor.swift`) |
-| `uart_init.c` | UART1 init (TX:16, TX-only) and CH9350L wired HID bridge via `send_wired_report()` — only safe to enable via `SMK_HAS_WIRED_BRIDGE` (see below). IO16 is smk_kbd's one documented spare pad, so a wired-bridge revision and `SMK_HAS_RGB_BACKLIGHT` (which also defaults to IO16) are mutually exclusive unless RGB is moved to a different pin — Kconfig does not currently guard against enabling both. |
+| `ble_helper.c` | trimmed remainder of the former `ble_helper.c`: `start_advertising()`/`init_ble_hid()` and the struct-heavy config (`ble_hs_adv_fields`, `ble_hs_cfg`, `esp_hid_device_config_t`) they build — `send_keyboard_report()`/`smk_ble_set_battery_level()`/`kb_log` moved to `BleHelper.swift` (see above) |
 | `kb_main.c` | `app_main()` C entry point; Unicode linker stubs for Embedded Swift |
 | `battery_adc.c` | `smk_battery_adc_init()` / `smk_battery_adc_read_raw()` — `adc_oneshot` driver setup for the IO4/ADC1_CH4 VBAT divider; kept in C because the driver's init/config calls take structs by pointer (see `BatteryMonitor.swift`) |
 
-GPIO pin configuration and Kconfig-backed board config used to live here too (`gpio_init.c`, `smk_config.c`) but are now plain Swift — see "ESP32-C6-only Swift Sources" above.
+GPIO pin configuration, Kconfig-backed board config, the UART wired-HID bridge, the RGB LED strip driver, and the keymap store used to live here too (`gpio_init.c`, `smk_config.c`, `uart_init.c`, `led_strip_driver.c`, `smk_keymap_store.c`) but are now plain Swift — see "ESP32-C6-only Swift Sources" above (`GPIOInit.swift`, `SmkConfig.swift`, `WiredHidUart.swift`, `LedStripDriverRMT.swift`, `KeymapStoreNVS.swift`).
 
 ### Board Configuration (Kconfig)
 
@@ -172,23 +177,32 @@ The `DebouncedMatrix` wraps raw scans and requires 5 consecutive agreeing sample
 | File | Responsibility |
 |---|---|
 | `GPIORegisters.swift` | RP2040 SIO registers (`0xD0000000`) — same API as ESP32 version |
-| `BridgingHeader.h` | RP2040 bridging header: cJSON + libc + platform glue prototypes |
+| `BridgingHeader.h` | RP2040 bridging header: cJSON + libc + platform glue prototypes (mostly comment blocks now — see file; the real glue is same-module Swift) |
 | `CMakeLists.txt` | pico-sdk + native CMake Swift integration; auto-discovers swiftc |
-| `platform/gpio_init.c` | `init_keyboard_pins()` via `hardware/gpio.h`; rows driven / columns sensed by default (`colsAreDriven: false`) |
-| `platform/usb_hid.c` | `init_wired_link()` / `send_wired_report()` via TinyUSB |
+| `GPIOInit.swift` | `init_keyboard_pins()` — Swift port of the former `platform/gpio_init.c`; rows driven / columns sensed by default (`colsAreDriven: false`) |
+| `UsbHid.swift` | `init_wired_link()` / `send_wired_report()` via TinyUSB — Swift port of the former `platform/usb_hid.c` |
+| `PlatformConfig.swift` | board/connection-mode config and `kb_log` — Swift port of the portable half of the former `platform/platform_glue.c` (`main()`, `posix_memalign`, and the Unicode-stdlib linker stubs stay in C — see that file) |
+| `KeymapStoreFlash.swift` | runtime keymap store (RP2040, flash-backed, last flash sector reserved) — Swift port of the former `platform/smk_keymap_store.c`; frame/CRC logic lives in `Sources/SMKCore/KeymapFrame.swift` |
+| `LedStripDriverPIO.swift` | SK6812MINI-E per-key RGB chain driver (PIO-based), `smk_kbd_rp2040` board only — Swift port of the former `platform/led_strip_driver.c`; PIO state-machine claiming/program-loading stays in `platform/ws2812_pio_shim.c` |
+| `BleHidPicoW.swift` | BLE HID glue for Pico W — Swift port of the former `platform/ble_hid.c`'s `SMK_ENABLE_BLE` branch (CYW43 + BTstack HID-over-GATT); no-op on plain Pico |
+| `BleHidKbdUart.swift` | BLE HID glue for `smk_kbd_rp2040` — Swift port of the former `platform/ble_hid_kbd_uart.c`; talks to the onboard CYW43439 over the board's dedicated Bluetooth UART instead of Pico W's SPI/PIO link |
 | `platform/usb_descriptors.c` | TinyUSB device + HID keyboard report descriptors |
 | `platform/tusb_config.h` | TinyUSB device config |
-| `platform/platform_glue.c` | `kb_log`, `vTaskDelay` shim, `main()`, Swift stdlib stubs, `posix_memalign` |
-| `platform/ble_hid.c` | Pico W: CYW43 + BTstack HID-over-GATT; plain Pico: no-op stubs |
-| `platform/btstack_config.h` | BTstack config (Pico W only) |
+| `platform/platform_glue.c` | `main()`, Swift stdlib stubs, `posix_memalign` — the non-portable remainder of the former full file, see `PlatformConfig.swift` above |
+| `platform/btstack_config.h` | BTstack config (Pico W / smk_kbd_rp2040 only) |
 | `platform/smk_hid.gatt` | GATT database for BLE HID (compiled to `smk_hid.h` at build time) |
+| `platform/gpio_init_wrappers.c` | non-inline wrapper entry points for pico-sdk's `static inline` `hardware/gpio.h` functions, so `GPIOInit.swift` can bind them via `@_extern(c, ...)` |
+| `platform/flash_irq_wrappers.c` | non-inline wrappers for pico-sdk's `static inline`/`__force_inline` `hardware/sync.h` interrupt-disable functions, plus a runtime accessor for `PICO_FLASH_SIZE_BYTES` — both needed by `KeymapStoreFlash.swift` |
+| `platform/ws2812_pio_shim.c` | narrow C remainder for the RGB driver: instantiates the build-generated `ws2812_program` PIO program struct and claims/loads the PIO state machine, since hand-replicating that generated struct layout in Swift would be fragile for no benefit — see `LedStripDriverPIO.swift` |
+| `platform/uart_driver_vtable.c` | narrow C remainder for `smk_kbd_rp2040`'s BLE UART transport: the pieces pico-sdk/BTstack expose only as struct literals, `static inline` functions, or macros that Swift can't bind to directly — see `BleHidKbdUart.swift` |
+| `platform/smk_hid_gatt_data.c` | `#include`s the generated `smk_hid.h` to instantiate `const uint8_t profile_data[]` as a real linkable symbol (the header only declares its contents as C source text) |
 
 ### nRF52840 board (nrf52840dk / PCA10056) — read before flashing real hardware
 
 **The GPIO pin map for this board (the `SMK_BOARD_NRF52840DK` branch of `Sources/smk/Main.swift`'s `configJson`) is a placeholder, not a verified pin assignment.** No board schematic was consulted when choosing it — see that branch's own comment ("GPIO map deferred to hardware bring-up... Placeholder pin numbers below MUST be replaced before this board is ever flashed"). It MUST be replaced with real, schematic-verified pin assignments before this board is ever flashed to physical hardware — using the placeholder numbers as-is risks driving pins that aren't wired the way the firmware assumes.
 
 Other known gaps on this port, briefly (this is a build-only pass — see `docs/superpowers/specs/2026-08-09-nrf52840-support-design.md`):
-- **Runtime keymap store is a no-op stub** (`ports/nrf52840/platform/smk_keymap_store.c`) — a keymap upload over USB HID is accepted and dispatched, but every write silently fails; nothing persists across reboots yet.
+- **Runtime keymap store is a no-op stub** (`ports/nrf52840/KeymapStoreStub.swift`) — a keymap upload over USB HID is accepted and dispatched, but every write silently fails; nothing persists across reboots yet.
 - **LE bonding does not survive a reboot** (Task 7's known gap — no persistent bonding-info storage wired up yet).
 - **No real clock**: `hal_time_ms()` (`ports/nrf52840/platform/ble_hid_sdc.c`), `tusb_time_millis_api()` (`ports/nrf52840/UsbHid.swift`), and the `vTaskDelay` busy-loop (`ports/nrf52840/platform/platform_glue.c`) are all uncalibrated per-call/per-loop counters, not real millisecond clocks, until a real hardware timer (`NRF_RTC`, once MPSL claims it) is wired up.
 
@@ -198,7 +212,7 @@ The active keymap is the `configJson` string literal in `Sources/smk/Main.swift`
 
 ### RGB Backlight (opt-in, off by default)
 
-`RGBLighting.swift` and `led_strip_driver.c`/`led_strip_encoder.c` implement an SK6812MINI-E per-key RGB chain, but the stock smk_kbd board has no such chain (its only LED is a fixed charge-status indicator wired straight to the charger IC). Enable via `SMK_HAS_RGB_BACKLIGHT` in `idf.py menuconfig` if you wire one up yourself.
+`RGBLighting.swift` and `LedStripDriverRMT.swift`/`led_strip_encoder.c` implement an SK6812MINI-E per-key RGB chain, but the stock smk_kbd board has no such chain (its only LED is a fixed charge-status indicator wired straight to the charger IC). Enable via `SMK_HAS_RGB_BACKLIGHT` in `idf.py menuconfig` if you wire one up yourself.
 
 Gated two ways: compiled in only for the ESP32-C6 build (`-DSMK_RGB_AVAILABLE` in `main/CMakeLists.txt`; RP2040 doesn't include `RGBLighting.swift` at all, so the `#if SMK_RGB_AVAILABLE` block in `Main.swift` compiles out there instead of failing a type lookup), and instantiated at runtime only if the Kconfig option is on. `SMK_RGB_GPIO` (default IO16, the PCB's documented spare pad) is checked against the matrix pins at boot; a collision (e.g. the old hardcoded GPIO0, which is ROW0) disables the chain with a log warning instead of corrupting the scan.
 

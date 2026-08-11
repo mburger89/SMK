@@ -138,7 +138,7 @@ func app_main_swift() {
     //   RGB_GPIO = GPIO17 (SK6812MINI-E chain, via level shifter U7)
     //   VBAT_SENSE = GPIO26/ADC0 — reserved, not used by the matrix
     //   GPIO18-23 + GPIO28 are the CYW43439 BLE UART link (BT_REG_ON,
-    //   BT_DEV_WAKE, BT_UART_*, BT_HOST_WAKE) — see ble_hid_kbd_uart.c
+    //   BT_DEV_WAKE, BT_UART_*, BT_HOST_WAKE) — see ports/rp2040/BleHidKbdUart.swift
     // colsAreDriven:1 for the same reason as the ESP32 board below — this
     // board's matrix is also COL2ROW (diode anode at the column/switch
     // side) — see KeyMatrix.swift.

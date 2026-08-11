@@ -1,6 +1,6 @@
 // nRF52840 matrix pin configuration — same role as
 // Sources/smk/GPIOInit.swift (ESP32-C6) and
-// ports/rp2040/platform/gpio_init.c (RP2040, still C there). Plain Swift
+// ports/rp2040/GPIOInit.swift (RP2040, also plain Swift now). Plain Swift
 // here: PIN_CNF is a raw register, so there's no vendor driver call to
 // wrap via @_extern(c) the way ESP32-C6's version needs — just direct
 // UnsafeMutablePointer writes, same style GPIORegisters.swift already

@@ -16,7 +16,7 @@
 //
 // NOTE: The SIO only drives/reads the pin *level*. Each pad must first be
 // muxed to the SIO function and have its direction / pull-ups configured.
-// That one-time setup is done in `platform/gpio_init.c` via the pico-sdk.
+// That one-time setup is done in `GPIOInit.swift` via the pico-sdk.
 
 struct GPIORegisters {
     let baseAddress: UnsafeMutablePointer<UInt32>
