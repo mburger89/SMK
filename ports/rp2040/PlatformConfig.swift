@@ -33,10 +33,11 @@ func smk_default_mode_is_wired() -> Int32 { 1 }
 // on exactly this mistake (feedback/CLAUDE.md history: same-module
 // Swift-to-Swift calls need neither @_extern nor @_cdecl).
 
-#if SMK_BOARD_KBD_RP2040
-@_extern(c, "ble_kbd_uart_poll")
-func ble_kbd_uart_poll()
-#endif
+// ble_kbd_uart_poll: Task 13 ported smk_kbd_rp2040's BLE UART transport to
+// Swift (ports/rp2040/BleHidKbdUart.swift, same module as this file) — no
+// @_extern permitted here anymore, that would be a same-module
+// redeclaration conflict (same established SourceKit lesson as
+// kb_usb_task above).
 
 @_extern(c, "sleep_ms")
 func sleep_ms(_ ms: UInt32)

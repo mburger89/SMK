@@ -3,12 +3,13 @@
 // smk_hid.h. That header only declares the array's contents as C source
 // text — something has to #include it into one real translation unit for
 // profile_data to exist as an actual linkable symbol. The deleted
-// ports/rp2040/platform/ble_hid.c used to do this implicitly via its own
-// `#include "smk_hid.h"`; ports/rp2040/BleHidPicoW.swift (this board's
-// BLE HID glue, now Swift) references profile_data via
+// ports/rp2040/platform/ble_hid.c (pico_w/pico2_w) and
+// ports/rp2040/platform/ble_hid_kbd_uart.c (smk_kbd_rp2040) used to do
+// this implicitly via their own `#include "smk_hid.h"`; both boards' BLE
+// HID glue is now Swift (ports/rp2040/BleHidPicoW.swift /
+// ports/rp2040/BleHidKbdUart.swift), referencing profile_data via
 // `@_extern(c, "profile_data")`, which only binds to an existing symbol —
-// it doesn't create one. Only needed for the pico_w/pico2_w branch: the
-// smk_kbd_rp2040 board's platform/ble_hid_kbd_uart.c already has its own
-// `#include "smk_hid.h"` and so already instantiates this symbol for that
-// board.
+// it doesn't create one. So this one file is now compiled in for both
+// branches (see CMakeLists.txt: target_sources() for pico_w/pico2_w,
+// PLATFORM_C_SRCS for smk_kbd_rp2040).
 #include "smk_hid.h"

@@ -24,16 +24,15 @@
 void init_wired_link(void);
 void send_wired_report(uint8_t modifier, uint8_t *keycodes);
 
-// BLE HID — real on Pico W, no-op stub on plain Pico/Pico 2: now plain
-// Swift (ports/rp2040/BleHidPicoW.swift, part of this same module — see
-// that file's own #if SMK_ENABLE_BLE split). No C prototypes needed here
-// for init_ble_hid/send_keyboard_report on those boards; Main.swift's own
-// `#if !SMK_TARGET_RP2040 || SMK_BOARD_KBD_RP2040` guards keep it from
-// redeclaring them as @_extern for a same-module conflict. smk_kbd_rp2040
-// is the one remaining RP2040 board that still backs these two in C
-// (platform/ble_hid_kbd_uart.c, its own CYW43439-over-UART transport) —
-// that board's Main.swift still needs the @_extern declaration, hence the
-// guard rather than a flat exclusion.
+// BLE HID — real on Pico W / smk_kbd_rp2040, no-op stub on plain
+// Pico/Pico 2: now plain Swift for every RP2040 board
+// (ports/rp2040/BleHidPicoW.swift for plain Pico/Pico W/Pico 2/Pico 2 W,
+// see that file's own #if SMK_ENABLE_BLE split; ports/rp2040/
+// BleHidKbdUart.swift for smk_kbd_rp2040's own CYW43439-over-UART
+// transport). No C prototypes needed here for
+// init_ble_hid/send_keyboard_report on any RP2040 board; Main.swift's own
+// `#if !SMK_TARGET_RP2040` guards keep it from redeclaring them as
+// @_extern for a same-module conflict.
 
 // Board/connection-mode config, logging, and the cooperative delay shim are
 // now plain Swift — see ports/rp2040/PlatformConfig.swift. No C prototypes

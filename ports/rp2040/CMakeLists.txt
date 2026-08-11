@@ -192,16 +192,26 @@ if(SMK_IS_KBD_RP2040)
     # smk_kbd_rp2040 has a real 59-key SK6812MINI-E chain (RGBLighting
     # is opt-in/off elsewhere, but always-on here since the hardware exists)
     # and its own CYW43439-over-UART BLE transport instead of Pico W's
-    # SPI-wired one — see platform/ble_hid_kbd_uart.c.
+    # SPI-wired one — now Swift (BleHidKbdUart.swift), with only the
+    # narrow struct-literal/inline-function/macro remainder left in C
+    # (platform/uart_driver_vtable.c — see that file's own header comment).
     list(APPEND SHARED_SWIFT_SRCS
         "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/smk/RGBLighting.swift"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LEDChainMapping.swift"
         "${CMAKE_CURRENT_SOURCE_DIR}/LedStripDriverPIO.swift"
+        "${CMAKE_CURRENT_SOURCE_DIR}/BleHidKbdUart.swift"
     )
     list(APPEND PLATFORM_C_SRCS
         platform/ws2812_pio_shim.c
-        platform/ble_hid_kbd_uart.c
+        platform/uart_driver_vtable.c
         platform/cyw43439_patchram.c
+        # profile_data[] (from smk_hid.h, generated below) needs a real
+        # translation unit to be instantiated in — the deleted
+        # ble_hid_kbd_uart.c used to supply this via its own
+        # `#include "smk_hid.h"`; now shared with the pico_w/pico2_w branch's
+        # copy of the same requirement (see smk_hid_gatt_data.c's own header
+        # comment).
+        platform/smk_hid_gatt_data.c
     )
 else()
     # Plain Pico / Pico W / Pico 2 / Pico 2 W: BLE HID glue is now Swift
@@ -257,10 +267,10 @@ target_link_libraries(smk_rp2040
 #             expose it as its own library target) and the async_context-
 #             based run loop (pico_btstack_run_loop_async_context) so
 #             BTstack's HCI/L2CAP/SM state machines actually get pumped from
-#             this project's cooperative tick loop. See
-#             platform/ble_hid_kbd_uart.c for what's implemented vs. the one
-#             remaining gap (the actual PatchRAM firmware bytes — see
-#             platform/cyw43439_patchram.c).
+#             this project's cooperative tick loop. See BleHidKbdUart.swift
+#             (and platform/uart_driver_vtable.c for the narrow C remainder)
+#             for what's implemented vs. the one remaining gap (the actual
+#             PatchRAM firmware bytes — see platform/cyw43439_patchram.c).
 #   - plain pico: no radio at all; BleHidPicoW.swift's #else stub branch
 #             is compiled instead (see SHARED_SWIFT_SRCS above).
 # ---------------------------------------------------------------------------
@@ -305,7 +315,7 @@ elseif(SMK_IS_KBD_RP2040)
     target_link_libraries(smk_rp2040
         pico_btstack_base         # BTstack core (run loop glue) — transport-agnostic
         pico_btstack_ble
-        pico_btstack_run_loop_async_context # async_context-driven run loop (see ble_hid_kbd_uart.c)
+        pico_btstack_run_loop_async_context # async_context-driven run loop (see BleHidKbdUart.swift)
         pico_async_context_poll   # plain polling async_context — nothing here is IRQ-driven
         hardware_uart              # CYW43439 HCI link (GPIO20/21, +CTS/RTS on 22/23)
         hardware_pio                # SK6812MINI-E chain driver
