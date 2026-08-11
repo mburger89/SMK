@@ -129,6 +129,37 @@ func app_main_swift() {
         ]
     }
     """
+#elseif SMK_BOARD_STM32F4_BLACKPILL
+    // WeAct Black Pill (STM32F411CEU6) — bring-up target, not a real
+    // keyboard. All matrix pins are on GPIOB (0-9) per this plan's
+    // single-port constraint (see ports/stm32f4/GPIORegisters.swift).
+    // Placeholder pin numbers and layout below MUST be replaced once a
+    // real STM32F4 keyboard PCB is designed.
+    let configJson = """
+    {
+        "matrix": {
+            "rows": [0, 1, 2, 3, 4],
+            "cols": [5, 6, 7, 8, 9],
+            "colsAreDriven": 0
+        },
+        "layers": [
+            [
+                ["key:1", "key:2", "key:3", "key:4", "key:5"],
+                ["key:q", "key:w", "key:e", "key:r", "key:t"],
+                ["key:a", "key:s", "key:d", "key:f", "key:g"],
+                ["mod:leftShift", "key:z", "key:x", "key:c", "key:v"],
+                ["mod:leftCtrl", "mo:1", "key:space", "mo:1", "mod:rightCtrl"]
+            ],
+            [
+                ["toggle_conn", "trans", "trans", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans"],
+                ["trans", "trans", "trans", "trans", "trans"],
+                ["trans", "none", "trans", "none", "trans"]
+            ]
+        ]
+    }
+    """
 #elseif SMK_BOARD_KBD_RP2040
     // smk_kbd_rp2040 board (RP2040 QFN-56 chip-down) — GPIO map per
     // generate_kbd_rp2040.py (source of truth for this board's pin

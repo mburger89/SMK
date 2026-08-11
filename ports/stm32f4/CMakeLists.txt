@@ -133,18 +133,37 @@ if(NOT STM32F4_GCC_XCC_INCLUDES)
 endif()
 
 # ---------------------------------------------------------------------------
-# Minimal smoke-test executable for this task: CMSIS startup + SystemInit +
-# a trivial Swift @_cdecl entry point calling nothing else yet. Proves the
-# whole pipeline (Swift compile -> C/ASM compile -> link against the
-# hand-written linker script) works before any real peripheral code exists.
-# Tasks 2-5 grow swift_srcs/c_srcs and replace platform_glue.c's stub.
+# Full shared application layer: Sources/smk (Main.swift's scan loop/config
+# parsing, KeyMatrix.swift) + Sources/SMKCore (LayerEngine's cJSON-backed
+# keymap parsing, HIDReport, Debounce, Modifier, ConnectionMode,
+# KeyEventProcessing, KeymapFrame, KeymapProtocol) + this board's own
+# GPIO/clock/keymap-store glue. No RGB (LEDChainMapping.swift/
+# RGBLighting.swift/LedPixelBuffer.swift) — this board has no RGB chain.
 # ---------------------------------------------------------------------------
 set(swift_srcs
-    "${CMAKE_CURRENT_SOURCE_DIR}/smoke_test.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/smk/Main.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/smk/KeyMatrix.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/ClockInit.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/GPIORegisters.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/GPIOInit.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/KeymapStoreStub.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/UsbHid.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Modifier.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Debounce.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/ConnectionMode.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/HIDReport.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Config.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LayerEngine.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyEventProcessing.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapFrame.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapProtocol.swift"
 )
+
+# cJSON (portable, no ESP-IDF dependency) — LayerEngine.swift/Config.swift
+# parse JSON via cJSON_* calls imported through BridgingHeader.h's
+# `#include "cJSON.h"`; matches the other three ports' use of the same
+# vendored copy under managed_components/.
+set(STM32F4_CJSON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../managed_components/espressif__cjson/cJSON")
 
 set(swift_obj "${CMAKE_CURRENT_BINARY_DIR}/smk_swift.o")
 add_custom_command(
@@ -157,26 +176,34 @@ add_custom_command(
             -enable-experimental-feature Extern
             -parse-as-library
             -DSMK_TARGET_STM32F4
+            -DSMK_BOARD_STM32F4_BLACKPILL
+            -import-objc-header "${CMAKE_CURRENT_SOURCE_DIR}/BridgingHeader.h"
             -wmo
             -Xcc -mfloat-abi=soft
             -Xcc -mcpu=cortex-m4
             -Xcc -mthumb
+            -Xcc -I${STM32F4_CJSON_DIR}
             ${STM32F4_GCC_XCC_INCLUDES}
             -emit-object
             -o "${swift_obj}"
             ${swift_srcs}
-    DEPENDS ${swift_srcs}
+    DEPENDS ${swift_srcs} "${CMAKE_CURRENT_SOURCE_DIR}/BridgingHeader.h"
     COMMENT "Compiling SMK Swift sources (STM32F4)..."
     VERBATIM
+)
+
+set(c_srcs
+    platform/platform_glue.c
+    "${STM32F4_CJSON_DIR}/cJSON.c"
 )
 
 add_executable(smk_stm32f4
     "${CMSIS_F4_GCC}/startup_stm32f411xe.s"
     "${CMSIS_F4_TEMPLATES}/system_stm32f4xx.c"
-    platform/platform_glue.c
+    ${c_srcs}
     "${swift_obj}"
 )
-target_include_directories(smk_stm32f4 PRIVATE "${CMSIS_F4_INCLUDE}" "${CMSIS_CORE_INCLUDE}")
+target_include_directories(smk_stm32f4 PRIVATE "${CMSIS_F4_INCLUDE}" "${CMSIS_CORE_INCLUDE}" "${STM32F4_CJSON_DIR}")
 
 add_custom_command(TARGET smk_stm32f4 POST_BUILD
     COMMAND arm-none-eabi-objcopy -O binary $<TARGET_FILE:smk_stm32f4> smk_stm32f4.bin
