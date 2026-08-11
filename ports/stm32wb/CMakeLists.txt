@@ -155,6 +155,13 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/GPIOInit.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/KeymapStoreStub.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/UsbHid.swift"
+    # IPCC hardware layer for the vendored mailbox transport (Task 6). Not
+    # called by anything yet — Task 7 wires up the real CPU2 boot sequence.
+    # Swift rather than C (the brief left this open): every HW_IPCC_* entry
+    # point is void(void) apart from one function-pointer argument, and the
+    # two IRQ vectors are the same @_cdecl weak-symbol override this port's
+    # UsbHid.swift already uses. See that file's header comment.
+    "${CMAKE_CURRENT_SOURCE_DIR}/HwIpcc.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Modifier.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Debounce.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/ConnectionMode.swift"
@@ -199,9 +206,40 @@ add_custom_command(
     VERBATIM
 )
 
+# ---------------------------------------------------------------------------
+# IPCC mailbox transport layer (Task 6).
+#
+# platform/{tl.h,tl_mbox.c,mbox_def.h,hci_tl.c,hci_tl.h,hci_tl_if.c,
+# shci_tl.c,shci_tl.h,shci_tl_if.c,shci.c,shci.h,stm_list.c,stm_list.h,
+# stm32_wpan_common.h,hw.h} are vendored BYTE-FOR-BYTE from STM32CubeWB
+# v1.24.0 (Middlewares/ST/STM32_WPAN/...); their ST copyright headers are
+# preserved and no line of any of them was modified. Every adaptation this
+# project needed lives instead in four small project-local headers that
+# stand in for CubeMX-generated ones the vendored files #include:
+# tl_dbg_conf.h, utilities_common.h, ble_common.h, ble_const.h — each
+# carries a header comment explaining exactly what it replaces and why.
+#
+# platform/cortex_m_intrinsics.c is new (not vendored): the four CMSIS core
+# intrinsics HwIpcc.swift can't bind to from Swift.
+#
+# Nothing calls any of this yet — this is the "prove it compiles and links
+# standalone" scope, same as the nRF52840 port's own Task 6. Task 7 calls
+# TL_Init()/TL_BLE_Init()/shci_init()/SHCI_C2_BLE_Init() for real.
+set(stm32wb_ipcc_srcs
+    platform/tl_mbox.c
+    platform/stm_list.c
+    platform/shci.c
+    platform/shci_tl.c
+    platform/shci_tl_if.c
+    platform/hci_tl.c
+    platform/hci_tl_if.c
+    platform/cortex_m_intrinsics.c
+)
+
 set(c_srcs
     platform/platform_glue.c
     platform/usb_descriptors.c
+    ${stm32wb_ipcc_srcs}
     "${STM32WB_CJSON_DIR}/cJSON.c"
 )
 

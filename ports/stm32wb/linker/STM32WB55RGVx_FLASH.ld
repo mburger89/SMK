@@ -91,42 +91,104 @@ SECTIONS
     . = ALIGN(8);
   } >RAM
 
-  /* cmsis-device-wb's startup_stm32wb55xx_cm4.s unconditionally references
-     _sMB_MEM2/_eMB_MEM2/_siMB_MEM2 (real finding from this task's build —
-     not anticipated by the plan draft): its Reset_Handler always runs an
-     INIT_DATA copy (flash -> RAM, same mechanism as .data) into a
-     ".MB_MEM2" region before falling through to __libc_init_array/main, so
-     the symbols must exist even though nothing places data into this
-     section yet. Kept as its own tiny AT>FLASH output section (currently
-     empty: _sMB_MEM2 == _eMB_MEM2, so Reset_Handler's copy loop is a no-op)
-     rather than merged into .mailbox_ram below, since the two have
-     different loading semantics (INIT_DATA copy-from-flash vs. NOLOAD
-     hardware-reset-zeroed) and different owners (ST's vendored startup
-     code vs. Task 6's own IPCC mailbox tables). Both share the
-     MAILBOX_RAM memory region since SRAM2A is exactly where dual-core
-     WB55 designs put CPU2-visible state. */
-  .MB_MEM2 :
+  /* ------------------------------------------------------------------
+     IPCC mailbox regions (SRAM2A) — Task 6.
+     ------------------------------------------------------------------
+     Task 1 guessed that the vendored mailbox code would use a
+     ".mailbox_ram" section name; the real vendored source does not. The
+     vendored `tl_mbox.c` places its tables with ST's own
+     `PLACE_IN_SECTION("...")` macro, whose expansion (confirmed by reading
+     the vendored `stm32_wpan_common.h`, which is the file that defines it)
+     is exactly:
+
+         #define PLACE_IN_SECTION( __x__ )  __attribute__((section (__x__)))
+
+     i.e. the section name is the string passed *verbatim*, with NO leading
+     dot. `tl_mbox.c` uses three such names — "MAPPING_TABLE", "MB_MEM1"
+     and "MB_MEM2" — matching ST's own linker scripts (e.g. STM32CubeWB's
+     Projects/P-NUCLEO-WB55.Nucleo/Applications/BLE/BLE_HeartRate/
+     STM32CubeIDE/STM32WB55RGVX_FLASH.ld, which matches `*(MAPPING_TABLE)`
+     / `*(MB_MEM1)` / `*(MB_MEM2)`, all NOLOAD, all in its RAM_SHARED
+     region). Task 1's reviewer flagged the dot/no-dot mismatch as a
+     latent silent-misplacement bug; this is the fix — the patterns below
+     match the vendor's real names.
+
+     `*(.MB_MEM2)` (with the dot) is kept alongside `*(MB_MEM2)` only
+     because cmsis-device-wb's startup_stm32wb55xx_cm4.s names the section
+     that way in its own comments; no input section actually uses the
+     dotted spelling today, and keeping the pattern costs nothing while
+     removing any chance of a silently-orphaned input section.
+
+     ORDER MATTERS: MAPPING_TABLE must come first, at the very start of
+     SRAM2A (0x20030000). CPU2's wireless firmware is never *told* where
+     `TL_RefTable` is — `TL_Init()` (tl_mbox.c) only fills the table in and
+     calls HW_IPCC_Init(); CPU2 finds it at the fixed address configured by
+     the IPCCDBA option byte, whose default is the SRAM2A base. Reordering
+     these three output sections would silently break CPU2 hand-off.
+
+     NOLOAD, matching ST: these are uninitialized buffers filled in at
+     runtime by TL_Init()/TL_*_Init(). They sit outside the RAM region, so
+     Reset_Handler's _sbss.._ebss zero-fill loop never touches them either.
+
+     _siMB_MEM2: cmsis-device-wb's Reset_Handler unconditionally runs
+     `INIT_DATA _sMB_MEM2, _eMB_MEM2, _siMB_MEM2` (a flash->RAM copy, same
+     macro as .data). ST's own CubeIDE linker script never defines
+     _siMB_MEM2 at all, because ST's CubeIDE startup file has no such copy
+     — but the cmsis-device-wb startup file this port uses does, so the
+     symbol must exist. Pointing it at _sMB_MEM2 turns that copy into a
+     self-copy no-op, which is the behaviour ST's NOLOAD placement implies.
+     (Task 1's version instead made this an `AT> FLASH` loaded section,
+     which was harmless only while the section was empty: now that
+     tl_mbox.c's CsBuffer really lands here, a loaded section would burn
+     flash to copy uninitialized bytes over a buffer CPU2 also writes.) */
+  MAPPING_TABLE (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(MAPPING_TABLE)
+    . = ALIGN(4);
+  } >MAILBOX_RAM
+
+  MB_MEM1 (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(MB_MEM1)
+    . = ALIGN(4);
+  } >MAILBOX_RAM
+
+  MB_MEM2 (NOLOAD) :
   {
     . = ALIGN(4);
     _sMB_MEM2 = .;
+    *(MB_MEM2)
     *(.MB_MEM2)
     . = ALIGN(4);
     _eMB_MEM2 = .;
-  } >MAILBOX_RAM AT> FLASH
-  _siMB_MEM2 = LOADADDR(.MB_MEM2);
+  } >MAILBOX_RAM
+  _siMB_MEM2 = _sMB_MEM2;
 
-  /* Task 6 places the IPCC mailbox tables here via
-     __attribute__((section(".mailbox_ram"))) — CPU2 can only access
-     SRAM2A/SRAM2B, so these buffers must not land in ordinary .bss (RAM,
-     above). NOLOAD: zero-initialized by hardware reset state, not the C
-     runtime's .bss zero-fill loop (this region is outside RAM above, so
-     Reset_Handler's zero-fill loop never touches it). */
-  .mailbox_ram (NOLOAD) :
+  /* The vendored transport layer's two other PLACE_IN_SECTION names —
+     "BLE_DRIVER_CONTEXT" (hci_tl.c) and "SYSTEM_DRIVER_CONTEXT"
+     (shci_tl.c). Unlike the three above these are ordinary CPU1-private
+     state (queue heads, a command-buffer pointer, a flow-control flag),
+     never read by CPU2, so they belong in RAM, not SRAM2A. ST's own linker
+     scripts don't name them at all and let the linker orphan-place them;
+     naming them explicitly here just makes the placement deterministic
+     instead of dependent on GNU ld's orphan heuristics. NOLOAD for the
+     same reason as above: every one of these is assigned before first read
+     by hci_tl.c's TlInit()/shci_tl.c's TlInit(). */
+  BLE_DRIVER_CONTEXT (NOLOAD) :
   {
     . = ALIGN(4);
-    *(.mailbox_ram)
+    *(BLE_DRIVER_CONTEXT)
     . = ALIGN(4);
-  } >MAILBOX_RAM
+  } >RAM
+
+  SYSTEM_DRIVER_CONTEXT (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(SYSTEM_DRIVER_CONTEXT)
+    . = ALIGN(4);
+  } >RAM
 
   /DISCARD/ :
   {
