@@ -4,7 +4,7 @@ A keyboard firmware written in **Embedded Swift**, targeting the **ESP32-C6**, *
 
 ## Features
 - **Embedded Swift**: Leverages Swift's safety and modern syntax on bare-metal hardware.
-- **Multi-target**: Supports ESP32-C6 (RISC-V via ESP-IDF), RP2040/RP2350 (ARM via pico-sdk), and nRF52840 (ARM via a vendored nRF5 SDK + CMake). See [`CLAUDE.md`'s Supported Targets table](CLAUDE.md#supported-targets) for the full matrix of what's working vs. build-only-so-far per target.
+- **Multi-target**: Supports ESP32-C6 (RISC-V via ESP-IDF), RP2040/RP2350 (ARM via pico-sdk), nRF52840 (ARM via a vendored nRF5 SDK + CMake), and STM32F4 (ARM via vendored CMSIS + CMake). See [`CLAUDE.md`'s Supported Targets table](CLAUDE.md#supported-targets) for the full matrix of what's working vs. build-only-so-far per target.
 - **Dual Mode**: Switch between Bluetooth and Wired (USB HID / CH9350 bridge) modes.
 - **Dynamic Matrix**: Configurable GPIO pins for rows and columns.
 - **Layer Engine**: Supports momentary layers, toggled layers, and transparent keys (similar to QMK).
@@ -154,6 +154,24 @@ export BTSTACK_PATH=~/btstack
 See [`CLAUDE.md`'s nRF52840 Prerequisites subsection](CLAUDE.md#nrf52840) for how to obtain and
 place the four vendored dependencies these env vars point at.
 
+SMK also targets the **STM32F4** (WeAct Black Pill, STM32F411CEU6, Arm Cortex-M4F) — USB HID
+(TinyUSB's `dwc2` driver) only this pass, no BLE (a future STM32WB cycle covers that), build-only,
+not yet verified on real hardware. As with the other ports, the keyboard logic (`Sources/smk/`) is
+shared single-source; only the hardware platform layer (`ports/stm32f4/`) differs — including a
+hand-written linker script, since ST's `cmsis-device-f4` ships device headers and startup assembly
+but no GCC linker script.
+
+```bash
+export CMSIS_F4_PATH=~/cmsis-device-f4
+export CMSIS_CORE_PATH=~/CMSIS_6
+export TINYUSB_PATH=~/tinyusb
+
+./build_stm32f4.sh
+```
+
+See [`CLAUDE.md`'s STM32F4 Prerequisites subsection](CLAUDE.md#stm32f4) for how to obtain and
+place the three vendored dependencies these env vars point at.
+
 ## Tests
 
 The hardware-independent logic (`Sources/SMKCore/`: layer resolution, key-event/debounce
@@ -172,12 +190,13 @@ push/PR to `main` via [`.github/workflows/host-tests.yml`](.github/workflows/hos
 Everything outside `Sources/SMKCore/` — GPIO register pokes, USB/BLE stack glue, vendor SDK calls —
 is hardware-dependent by nature and isn't unit-testable; it's verified by a clean build/link per
 target (see each target's build command above) plus code review against the real vendored source,
-not by an automated test suite. None of the four targets have been exercised on real hardware in
+not by an automated test suite. None of the five targets have been exercised on real hardware in
 this repo's CI.
 
 ## Known Issues / TODOs
 - **Battery-level reporting is unverified on real hardware**: the smk_kbd board's VBAT divider (IO4/ADC1_CH4) is now read and reported via the BLE HID Battery Service, but the voltage-to-percentage curve is a rough linear approximation, not a calibrated discharge curve, and the ADC reading itself isn't calibrated either — treat the reported percentage as approximate until checked against a real board with a multimeter. See `CLAUDE.md`'s smk_kbd board section for details.
 - **nRF52840 port is build-only**: no hardware verification yet, and the board's GPIO pin map in `Sources/smk/Main.swift` is an explicit placeholder that must be replaced before flashing a real board. See [`CLAUDE.md`'s nRF52840 section](CLAUDE.md#nrf52840) (Prerequisites through the "read before flashing real hardware" caveat) for the full list of known gaps (no LE bonding persistence, keymap upload accepted but not yet persisted, uncalibrated software timers).
+- **STM32F4 port is build-only, USB HID only, and its bring-up matrix isn't a real keyboard**: no WeAct Black Pill hardware verification yet, and `Sources/smk/Main.swift`'s STM32F4 board branch is a placeholder 5x5 test matrix on GPIOB, not a real layout — no board schematic exists yet (this targets the bare dev board). BLE is out of scope for this pass (a future STM32WB cycle), and the matrix is single-GPIO-port-only for now (`ports/stm32f4/GPIORegisters.swift`'s own header comment explains why). See `CLAUDE.md`'s STM32F4 Prerequisites subsection and `docs/superpowers/specs/2026-08-10-stm32f4-support-design.md`'s Future Work section.
 
 ## IDE Support
 To enable code completion and syntax highlighting in VS Code or Xcode:
