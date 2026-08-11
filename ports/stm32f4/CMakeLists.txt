@@ -194,6 +194,7 @@ add_custom_command(
 
 set(c_srcs
     platform/platform_glue.c
+    platform/usb_descriptors.c
     "${STM32F4_CJSON_DIR}/cJSON.c"
 )
 
@@ -204,6 +205,25 @@ add_executable(smk_stm32f4
     "${swift_obj}"
 )
 target_include_directories(smk_stm32f4 PRIVATE "${CMSIS_F4_INCLUDE}" "${CMSIS_CORE_INCLUDE}" "${STM32F4_CJSON_DIR}")
+
+# ---------------------------------------------------------------------------
+# TinyUSB (device stack, HID class, dwc2 OTG_FS driver) — the "wired" USB
+# HID transport, glued from Swift (UsbHid.swift above) per this project's
+# Swift-first preference; usb_descriptors.c stays C (macro-computed
+# descriptor byte tables — see that file's header comment).
+# ---------------------------------------------------------------------------
+target_include_directories(smk_stm32f4 PRIVATE
+    "${TINYUSB_PATH}/src"
+    platform
+)
+target_sources(smk_stm32f4 PRIVATE
+    "${TINYUSB_PATH}/src/tusb.c"
+    "${TINYUSB_PATH}/src/common/tusb_fifo.c"
+    "${TINYUSB_PATH}/src/device/usbd.c"
+    "${TINYUSB_PATH}/src/class/hid/hid_device.c"
+    "${TINYUSB_PATH}/src/portable/synopsys/dwc2/dcd_dwc2.c"
+    "${TINYUSB_PATH}/src/portable/synopsys/dwc2/dwc2_common.c"
+)
 
 add_custom_command(TARGET smk_stm32f4 POST_BUILD
     COMMAND arm-none-eabi-objcopy -O binary $<TARGET_FILE:smk_stm32f4> smk_stm32f4.bin

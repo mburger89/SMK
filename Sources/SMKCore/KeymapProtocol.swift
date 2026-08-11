@@ -75,10 +75,11 @@ func smkKeymapDispatchPacket(
     response[1] = opcode
 }
 
-#if SMK_TARGET_ESP32C6 || SMK_TARGET_RP2040 || SMK_TARGET_NRF52840
+#if SMK_TARGET_ESP32C6 || SMK_TARGET_RP2040 || SMK_TARGET_NRF52840 || SMK_TARGET_STM32F4
 
-// Real cross-language entry point. ports/rp2040/platform/usb_descriptors.c
-// and ports/nrf52840/platform/usb_descriptors.c call this directly from C
+// Real cross-language entry point. ports/rp2040/platform/usb_descriptors.c,
+// ports/nrf52840/platform/usb_descriptors.c, and
+// ports/stm32f4/platform/usb_descriptors.c all call this directly from C
 // via smk_keymap_usb_service(); ble_helper.c's BLE Report ID 2 path calls
 // it too. The `@_cdecl` boundary is real even though the dispatch logic
 // above now lives in Swift.
