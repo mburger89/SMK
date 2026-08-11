@@ -18,6 +18,7 @@ SMK (Swift Matrix Keyboard) is keyboard firmware written in **Embedded Swift** t
 | smk_kbd_rp2040 | RP2040 ARM (chip-down + CYW43439) | CMake / Ninja + pico-sdk (`SMK_TARGET_BOARD=smk_kbd_rp2040`) | USB HID + per-key RGB (working) + BLE (BTstack over dedicated UART; PatchRAM firmware data embedded in `ports/rp2040/platform/cyw43439_patchram.c`, sourced from Murata's public `cyw-bt-patch` repo per their CYW43439→"1YN" module mapping — matched by part number, not yet hardware-confirmed via `lmp_subversion` since the board is still at fab) |
 | nRF52840 | Arm Cortex-M4F | CMake / Ninja (no pico-sdk equivalent — vendored nRF5 SDK + sdk-nrfxlib + TinyUSB + BTstack) | USB HID + BLE HID (SoftDevice Controller over BTstack); build-only, not yet hardware-verified |
 | STM32F4 (WeAct Black Pill) | Arm Cortex-M4F | CMake / Ninja (hand-rolled — vendored cmsis-device-f4 + CMSIS_6 + TinyUSB, hand-written linker script) | USB HID (TinyUSB's `dwc2` driver); build-only, not yet hardware-verified |
+| STM32WB (NUCLEO-WB55RG) | Arm Cortex-M4 (+ on-chip Cortex-M0+ radio coprocessor running ST's own firmware) | CMake / Ninja (hand-rolled — vendored cmsis-device-wb + CMSIS_6 + TinyUSB + BTstack + STM32CubeWB's IPCC transport layer) | USB HID (TinyUSB's `fsdev` driver) + BLE HID (ST's HCI-Layer wireless coprocessor over BTstack); build-only, not yet hardware-verified |
 
 ## Prerequisites
 
@@ -222,6 +223,34 @@ Other known gaps on this port, briefly (this is a build-only pass — see `docs/
 - **Runtime keymap store is a no-op stub** (`ports/nrf52840/KeymapStoreStub.swift`) — a keymap upload over USB HID is accepted and dispatched, but every write silently fails; nothing persists across reboots yet.
 - **LE bonding does not survive a reboot** (Task 7's known gap — no persistent bonding-info storage wired up yet).
 - **No real clock**: `hal_time_ms()` (`ports/nrf52840/platform/ble_hid_sdc.c`), `tusb_time_millis_api()` (`ports/nrf52840/UsbHid.swift`), and the `vTaskDelay` busy-loop (`ports/nrf52840/platform/platform_glue.c`) are all uncalibrated per-call/per-loop counters, not real millisecond clocks, until a real hardware timer (`NRF_RTC`, once MPSL claims it) is wired up.
+
+### STM32WB Platform Sources (`ports/stm32wb/`)
+
+| File | Responsibility |
+|---|---|
+| `GPIORegisters.swift` | GPIOB register access — same `outSet`/`outClear`/`input` API as the other ports |
+| `ClockInit.swift` | HSE/HSI48/CRS clock bring-up (Swift port of the equivalent STM32F4 init, adapted for the WB55's clock tree) |
+| `GPIOInit.swift` | `init_keyboard_pins()` — matrix pin configuration on GPIOB |
+| `UsbHid.swift` | `init_wired_link()` / `send_wired_report()` via TinyUSB's `fsdev` driver |
+| `HwIpcc.swift` | Swift side of the IPCC (Inter-Processor Communication Controller) bridge to CPU2 — mailbox channel setup, CPU2 boot handshake, and the BTstack HCI transport glue that sits on top of ST's vendored `shci`/`tl_mbox` layer (see `platform/` below) |
+| `KeymapStoreStub.swift` | runtime keymap store stub — same no-op-write pattern as the nRF52840 port; nothing persists across reboots yet |
+| `BridgingHeader.h` | STM32WB bridging header |
+| `CMakeLists.txt` | hand-rolled CMake + Ninja build, no vendor SDK CMake integration — auto-discovers swiftc |
+| `linker/` | hand-written GCC linker script (cmsis-device-wb ships no linker script, same gap as cmsis-device-f4) |
+| `platform/tl_mbox.c`, `platform/shci.c`, `platform/shci_tl.c`, `platform/hci_tl.c`, `platform/stm_list.c`, and related headers | **vendored, lightly adapted** from STM32CubeWB's IPCC transport layer — ST's mailbox protocol for talking to CPU2's HCI-Layer firmware. See the license note immediately below before distributing anything built from this port. |
+| `platform/ble_hid_wb.c` | narrow C remainder for BTstack HCI transport glue that Swift can't bind to directly (struct-literal/vtable idiom, same exception pattern as other ports) |
+| `platform/usb_descriptors.c`, `platform/tusb_config.h` | TinyUSB device + HID keyboard report descriptors / config |
+| `platform/smk_hid.gatt` | GATT database for BLE HID (compiled to a header at build time) |
+| `platform/platform_glue.c`, `platform/cortex_m_intrinsics.c` | `main()`, Swift stdlib stubs, and compiler-intrinsic shims non-portable enough to stay C |
+
+### STM32WB board (NUCLEO-WB55RG) — read before flashing real hardware, and before distributing a build
+
+**License conflict — unresolved by deliberate decision.** This repository is licensed GPL-3.0 (see root `LICENSE`). The IPCC transport-layer files vendored into `ports/stm32wb/platform/` from STM32CubeWB (`tl_mbox.c`, `shci.c`, `shci_tl.c`, and related headers) are distributed by ST under the SLA0044 license, whose clause 5 explicitly forbids redistributing SLA0044-licensed software under GPL terms. This is a real, currently-unresolved conflict between this repo's license and its vendored dependencies — it was flagged during this port's implementation, and the decision (made explicitly, not by omission) was to continue the port and defer resolution rather than pause or restructure now. **Do not release or otherwise distribute a build of this port** until the maintainer has reviewed and resolved this — via a carve-out, re-licensing, replacing the vendored files, or another approach not yet decided.
+
+Other known gaps on this port, briefly (build-only pass):
+- **The GPIO pin map is an explicit bring-up placeholder, not a real keyboard layout** — the `SMK_BOARD_STM32WB_NUCLEO` branch of `Sources/smk/Main.swift`'s `configJson` is a 5×5 test matrix on GPIOB pins 0–9, same placeholder-until-schematic-verified pattern as the nRF52840 and STM32F4 ports.
+- **HSE capacitor tuning from factory OTP is not applied.** Real STM32WB boards ship a per-die factory HSE trim value (`Tune_HSE()`/`LL_RCC_HSE_SetCapacitorTuning()` in ST's reference code) that this port's `ClockInit.swift` does not read or apply — the radio clock runs on the default HSE trim instead. This is an RF frequency-accuracy concern for real BLE operation and should be revisited before relying on over-the-air range/reliability from a real board.
+- **CPU2 firmware is a separate, manual flashing step this project does not automate.** The WB55's on-chip Cortex-M0+ radio coprocessor (CPU2) must be flashed with ST's **"HCI Layer"** wireless-coprocessor firmware specifically — e.g. `stm32wb5x_BLE_HCILayer_extended_fw.bin` from `STM32CubeWB/Projects/STM32WB_Copro_Wireless_Binaries/STM32WB5x/` in the vendored `STM32CubeWB` checkout. The "Full Stack" firmware variant will **not** work with this port's BTstack-based host (this port supplies its own BLE host stack over IPCC/HCI, whereas "Full Stack" runs the host on CPU2 itself). Flash CPU2 with ST's own tooling (e.g. STM32CubeProgrammer) before expecting BLE HID to come up — this repo's build only produces the CPU1 (application) image.
 
 ### Keymap Configuration
 

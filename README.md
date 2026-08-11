@@ -1,10 +1,10 @@
 # SMK (Swift Matrix Keyboard)
 
-A keyboard firmware written in **Embedded Swift**, targeting the **ESP32-C6**, **Raspberry Pi Pico / Pico W (RP2040)**, **Raspberry Pi Pico 2 / Pico 2 W (RP2350)**, and **Nordic nRF52840**. SMK provides a modern development experience for keyboard enthusiasts, featuring Bluetooth (BLE) and Wired (USB/UART) connectivity, and a flexible JSON-based keymap system.
+A keyboard firmware written in **Embedded Swift**, targeting the **ESP32-C6**, **Raspberry Pi Pico / Pico W (RP2040)**, **Raspberry Pi Pico 2 / Pico 2 W (RP2350)**, **Nordic nRF52840**, **STM32F4**, and **STM32WB**. SMK provides a modern development experience for keyboard enthusiasts, featuring Bluetooth (BLE) and Wired (USB/UART) connectivity, and a flexible JSON-based keymap system.
 
 ## Features
 - **Embedded Swift**: Leverages Swift's safety and modern syntax on bare-metal hardware.
-- **Multi-target**: Supports ESP32-C6 (RISC-V via ESP-IDF), RP2040/RP2350 (ARM via pico-sdk), nRF52840 (ARM via a vendored nRF5 SDK + CMake), and STM32F4 (ARM via vendored CMSIS + CMake). See [`CLAUDE.md`'s Supported Targets table](CLAUDE.md#supported-targets) for the full matrix of what's working vs. build-only-so-far per target.
+- **Multi-target**: Supports ESP32-C6 (RISC-V via ESP-IDF), RP2040/RP2350 (ARM via pico-sdk), nRF52840 (ARM via a vendored nRF5 SDK + CMake), STM32F4 (ARM via vendored CMSIS + CMake), and STM32WB (ARM via vendored CMSIS + CMake + BTstack + a vendored IPCC transport layer). See [`CLAUDE.md`'s Supported Targets table](CLAUDE.md#supported-targets) for the full matrix of what's working vs. build-only-so-far per target.
 - **Dual Mode**: Switch between Bluetooth and Wired (USB HID / CH9350 bridge) modes.
 - **Dynamic Matrix**: Configurable GPIO pins for rows and columns.
 - **Layer Engine**: Supports momentary layers, toggled layers, and transparent keys (similar to QMK).
@@ -172,6 +172,31 @@ export TINYUSB_PATH=~/tinyusb
 See [`CLAUDE.md`'s STM32F4 Prerequisites subsection](CLAUDE.md#stm32f4) for how to obtain and
 place the three vendored dependencies these env vars point at.
 
+SMK also targets the **STM32WB** (NUCLEO-WB55RG, Arm Cortex-M4 + an on-chip Cortex-M0+ radio
+coprocessor) — USB HID (TinyUSB's `fsdev` driver) + BLE HID (ST's HCI-Layer wireless coprocessor
+firmware over a vendored IPCC transport layer, bridged into BTstack), build-only, not yet verified
+on real hardware. As with the other ports, the keyboard logic (`Sources/smk/`) is shared
+single-source; only the hardware platform layer (`ports/stm32wb/`) differs.
+
+**Read [`CLAUDE.md`'s STM32WB board section](CLAUDE.md#stm32wb-board-nucleo-wb55rg--read-before-flashing-real-hardware-and-before-distributing-a-build)
+before flashing real hardware or distributing a build of this port** — it covers an unresolved
+license conflict between this repo's GPL-3.0 license and the vendored SLA0044-licensed IPCC
+transport files, plus hardware bring-up caveats (placeholder GPIO map, unapplied HSE trim, and the
+separate manual CPU2 firmware flashing step).
+
+```bash
+export CMSIS_WB_PATH=~/cmsis-device-wb
+export CMSIS_CORE_PATH=~/CMSIS_6
+export TINYUSB_PATH=~/tinyusb
+export BTSTACK_PATH=~/btstack
+export STM32CUBEWB_PATH=~/STM32CubeWB
+
+./build_stm32wb.sh
+```
+
+See [`CLAUDE.md`'s STM32WB Prerequisites subsection](CLAUDE.md#stm32wb) for how to obtain and
+place the five vendored dependencies these env vars point at.
+
 ## Tests
 
 The hardware-independent logic (`Sources/SMKCore/`: layer resolution, key-event/debounce
@@ -190,13 +215,14 @@ push/PR to `main` via [`.github/workflows/host-tests.yml`](.github/workflows/hos
 Everything outside `Sources/SMKCore/` — GPIO register pokes, USB/BLE stack glue, vendor SDK calls —
 is hardware-dependent by nature and isn't unit-testable; it's verified by a clean build/link per
 target (see each target's build command above) plus code review against the real vendored source,
-not by an automated test suite. None of the five targets have been exercised on real hardware in
+not by an automated test suite. None of these targets have been exercised on real hardware in
 this repo's CI.
 
 ## Known Issues / TODOs
 - **Battery-level reporting is unverified on real hardware**: the smk_kbd board's VBAT divider (IO4/ADC1_CH4) is now read and reported via the BLE HID Battery Service, but the voltage-to-percentage curve is a rough linear approximation, not a calibrated discharge curve, and the ADC reading itself isn't calibrated either — treat the reported percentage as approximate until checked against a real board with a multimeter. See `CLAUDE.md`'s smk_kbd board section for details.
 - **nRF52840 port is build-only**: no hardware verification yet, and the board's GPIO pin map in `Sources/smk/Main.swift` is an explicit placeholder that must be replaced before flashing a real board. See [`CLAUDE.md`'s nRF52840 section](CLAUDE.md#nrf52840) (Prerequisites through the "read before flashing real hardware" caveat) for the full list of known gaps (no LE bonding persistence, keymap upload accepted but not yet persisted, uncalibrated software timers).
 - **STM32F4 port is build-only, USB HID only, and its bring-up matrix isn't a real keyboard**: no WeAct Black Pill hardware verification yet, and `Sources/smk/Main.swift`'s STM32F4 board branch is a placeholder 5x5 test matrix on GPIOB, not a real layout — no board schematic exists yet (this targets the bare dev board). BLE is out of scope for this pass (a future STM32WB cycle), and the matrix is single-GPIO-port-only for now (`ports/stm32f4/GPIORegisters.swift`'s own header comment explains why). See `CLAUDE.md`'s STM32F4 Prerequisites subsection and `docs/superpowers/specs/2026-08-10-stm32f4-support-design.md`'s Future Work section.
+- **STM32WB port has an unresolved license conflict — do not distribute a build.** This repo is GPL-3.0, but the vendored IPCC transport-layer files in `ports/stm32wb/platform/` (`tl_mbox.c`, `shci.c`, `shci_tl.c`, etc., sourced from STM32CubeWB) are licensed under ST's SLA0044, which forbids GPL redistribution. This was flagged during the port and deliberately deferred rather than resolved — see `CLAUDE.md`'s STM32WB board section. The port is also build-only (no NUCLEO-WB55RG hardware verification yet), its GPIO pin map is a placeholder 5x5 test matrix, factory HSE capacitor trim isn't applied (an RF accuracy concern), and CPU2 requires a separate manual flash of ST's "HCI Layer" wireless-coprocessor firmware that this project's build does not perform.
 
 ## IDE Support
 To enable code completion and syntax highlighting in VS Code or Xcode:
