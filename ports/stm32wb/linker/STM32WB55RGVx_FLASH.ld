@@ -81,6 +81,47 @@ SECTIONS
     _ebss = .;
   } >RAM
 
+  /* The vendored transport layer's two CPU1-private PLACE_IN_SECTION names —
+     "BLE_DRIVER_CONTEXT" (hci_tl.c:48-51: hci_timer_id, HciAsynchEventQueue,
+     pCmdBuffer, UserEventFlow) and "SYSTEM_DRIVER_CONTEXT" (shci_tl.c:45-48,
+     the SHCI equivalents). Unlike MAPPING_TABLE/MB_MEM1/MB_MEM2 below, CPU2
+     never reads any of these, so they belong in ordinary RAM, not SRAM2A.
+
+     THEY MUST STAY HERE, immediately after .bss and BEFORE
+     ._user_heap_stack. This project's newlib `_sbrk` has NO heap limit
+     check whatsoever — disassembled from a linked image, it loads the break
+     pointer, adds the increment, stores it back and returns, with no
+     comparison against any bound. `._user_heap_stack` therefore only
+     *reserves* _Min_Heap_Size + _Min_Stack_Size; it does not cap anything,
+     and the heap really does grow unbounded past it. (SMK mallocs at boot:
+     cJSON parsing Main.swift's configJson comfortably exceeds the 0x800
+     reserved here.) An earlier revision of this file placed these two
+     sections after ._user_heap_stack, which put them 0x800 above `end` —
+     directly in the heap's growth path. That was invisible at the time only
+     because Task 6 calls nothing in hci_tl.c/shci_tl.c, so both objects were
+     dead-code-eliminated and both sections were size 0; the corruption would
+     have appeared the moment Task 7 wired up real calls. Placing them here
+     is also exactly where GNU ld's orphan-section heuristic puts them when
+     the script doesn't name them at all (adjacent to .bss), which is what
+     ST's own linker scripts rely on.
+
+     NOLOAD: every one of these variables is assigned before first read, by
+     hci_tl.c's / shci_tl.c's TlInit(). They sit above _ebss, so
+     Reset_Handler's zero-fill loop does not cover them either way. */
+  BLE_DRIVER_CONTEXT (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(BLE_DRIVER_CONTEXT)
+    . = ALIGN(4);
+  } >RAM
+
+  SYSTEM_DRIVER_CONTEXT (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(SYSTEM_DRIVER_CONTEXT)
+    . = ALIGN(4);
+  } >RAM
+
   ._user_heap_stack :
   {
     . = ALIGN(8);
@@ -166,29 +207,10 @@ SECTIONS
   } >MAILBOX_RAM
   _siMB_MEM2 = _sMB_MEM2;
 
-  /* The vendored transport layer's two other PLACE_IN_SECTION names —
-     "BLE_DRIVER_CONTEXT" (hci_tl.c) and "SYSTEM_DRIVER_CONTEXT"
-     (shci_tl.c). Unlike the three above these are ordinary CPU1-private
-     state (queue heads, a command-buffer pointer, a flow-control flag),
-     never read by CPU2, so they belong in RAM, not SRAM2A. ST's own linker
-     scripts don't name them at all and let the linker orphan-place them;
-     naming them explicitly here just makes the placement deterministic
-     instead of dependent on GNU ld's orphan heuristics. NOLOAD for the
-     same reason as above: every one of these is assigned before first read
-     by hci_tl.c's TlInit()/shci_tl.c's TlInit(). */
-  BLE_DRIVER_CONTEXT (NOLOAD) :
-  {
-    . = ALIGN(4);
-    *(BLE_DRIVER_CONTEXT)
-    . = ALIGN(4);
-  } >RAM
-
-  SYSTEM_DRIVER_CONTEXT (NOLOAD) :
-  {
-    . = ALIGN(4);
-    *(SYSTEM_DRIVER_CONTEXT)
-    . = ALIGN(4);
-  } >RAM
+  /* BLE_DRIVER_CONTEXT / SYSTEM_DRIVER_CONTEXT are NOT here — they are
+     CPU1-private and live in RAM, placed above between .bss and
+     ._user_heap_stack. See the comment there for why that position is
+     load-bearing. */
 
   /DISCARD/ :
   {

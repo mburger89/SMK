@@ -302,9 +302,13 @@ func HW_IPCC_Enable() {
     extiRtsr2.pointee |= extiLine41Bit
     extiC2emr2.pointee |= extiLine41Bit
 
-    // ST: at least one system clock cycle is required between arming the
-    // EXTI line above and the SEV below. Set the internal event flag and
-    // signal CPU2, then immediately consume the local flag.
+    // ST requires at least one system clock cycle between arming the rising
+    // trigger (the RTSR2 write) and the SEV below. Nothing extra is needed
+    // to satisfy that: the C2EMR2 write between them IS the intervening
+    // cycle. Keep these three statements in this order.
+    //
+    // Set the internal event flag and signal CPU2, then immediately consume
+    // the local flag so it can't make a later WFE fall straight through.
     smk_cpu_sev()
     smk_cpu_wfe()
 

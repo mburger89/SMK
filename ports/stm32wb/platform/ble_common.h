@@ -16,6 +16,15 @@
  * this header stands on its own).
  *
  * Forwarding keeps `hci_tl.c` byte-for-byte identical to upstream v1.24.0.
+ *
+ * NOTE FOR TASK 7: this file deliberately reuses ST's real header name so the
+ * vendored .c files can stay byte-identical to upstream. It lives on the shared
+ * ports/stm32wb/platform/ include path, so it will SHADOW the genuine ST header
+ * of the same name if a real ST HAL/middleware tree is ever added to this
+ * target's include path (e.g. BTstack's vendored STM32WBxx_HAL_Driver copy
+ * under ~/btstack/port/stm32-wb55xx-nucleo-freertos/Drivers/). If Task 7 adds
+ * such a path and something mysteriously can't find an ST symbol it expects,
+ * this shadowing is the first thing to check.
  */
 
 #ifndef SMK_BLE_COMMON_H
