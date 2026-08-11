@@ -80,6 +80,17 @@ extern int uart_driver_set_flowcontrol(int flowcontrol);
 extern void uart_driver_receive_block(uint8_t *buffer, uint16_t len);
 extern void uart_driver_send_block(const uint8_t *buffer, uint16_t length);
 
+// BleHidKbdUart.swift takes this struct's ADDRESS from Swift (needed as
+// hci_transport_h4_instance()'s argument) via a scalar-placeholder
+// `@_extern(c, "smk_uart_driver") var smk_uart_driver: UInt8` +
+// `withUnsafePointer(to:)` — empirically verified (standalone probe, then
+// re-confirmed against this exact struct's real address in the linked
+// smk_kbd_rp2040 binary) to produce a correct address-of, not a
+// dereference. If a future toolchain ever changes that codegen behavior,
+// the brief's documented fallback is a one-line C accessor here:
+//   const btstack_uart_block_t *smk_uart_driver_ptr(void) { return &smk_uart_driver; }
+// — swap the Swift side to call that instead of taking the extern var's
+// address; no other change needed.
 const btstack_uart_block_t smk_uart_driver = {
     .init = &uart_driver_init,
     .open = &uart_driver_open,

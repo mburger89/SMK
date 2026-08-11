@@ -27,6 +27,38 @@
 // command set, so BLE advertising will not start — a data problem, not a
 // missing protocol implementation. ***
 //
+// Verified against the CYW43439 datasheet (Cypress/Infineon doc 002-30348
+// Rev *D, in ~/esp/SMK_Keyboard/datasheets/cyw43439_lcsc.pdf) while writing
+// the deleted C file this replaces:
+//   - Section 8 "Microprocessor and Memory Unit for Bluetooth": Bluetooth
+//     has its own ARM Cortex-M3 core, 576KB ROM + 160KB RAM/patch memory,
+//     and its own POR gated by BT_REG_ON alone — confirms this board's
+//     BT-only-over-UART approach (WLAN held in reset, no SPI/gSPI wiring
+//     at all) is a real, independent configuration, not a workaround.
+//   - Section 19.1.1 / Figure 35 "WLAN = OFF, Bluetooth = ON": this exact
+//     configuration is a documented reference case.
+//   - Section 9.2 "UART Interface": default baud 115.2 kbaud, H4 transport
+//     supported — matches btUartBaudBoot below and hci_transport_h4
+//     already in use.
+// This resolved an earlier (wrong) concern that Pico W's SPI-based BT
+// transport (cyw43-driver's combined WiFi+BT memory-image loader) meant
+// this chip needed the WLAN backplane for BT bring-up — it doesn't; Pico
+// W's SPI routing is a Raspberry Pi board design choice, not a chip
+// requirement.
+//
+// PatchRAM integration uses BTstack's own btstack_chipset_bcm driver (the
+// same one used for e.g. Raspberry Pi 3/4/Zero W's BCM4345-family UART
+// BT). There's no setter function to call: btstack_chipset_bcm.c's
+// embedded (non-POSIX) build reads the firmware image straight from three
+// extern globals (brcm_patchram_buf/brcm_patch_ram_length/
+// brcm_patch_version, defined in cyw43439_patchram.c) once
+// hci_set_chipset() below points it at btstack_chipset_bcm_instance() —
+// BTstack's hci.c runs the whole Download-Minidriver/Write-RAM/Launch-RAM
+// sequence internally from there; nothing bespoke needed here.
+//
+// send_keyboard_report() degrades gracefully either way (no-ops without a
+// connection), so USB HID keeps working regardless of BLE's state.
+//
 // The HID-over-GATT half below (from `l2cap_init()` down through
 // `send_keyboard_report`) is copied directly from
 // ports/rp2040/BleHidPicoW.swift (Task 12), not re-derived — see that
@@ -233,8 +265,16 @@ func uart_driver_receive_block(_ buffer: UnsafeMutablePointer<UInt8>?, _ len: UI
 
 @_cdecl("uart_driver_send_block")
 func uart_driver_send_block(_ buffer: UnsafePointer<UInt8>?, _ length: UInt16) {
-    guard let buffer = buffer else { return }
-    smk_uart_write_blocking(bt_uart_instance(), buffer, Int(length))
+    // The original C always called uart_write_blocking(buffer, length) then
+    // fired block_sent_cb unconditionally, regardless of buffer. This path
+    // is currently unreachable — BTstack's real hci_transport_h4.c never
+    // passes a NULL buffer here — but preserve that exact behavior rather
+    // than silently dropping the callback on a hypothetical NULL buffer
+    // (the `if let` below only guards the Swift-side pointer dereference
+    // needed to call smk_uart_write_blocking; it doesn't gate the callback).
+    if let buffer = buffer {
+        smk_uart_write_blocking(bt_uart_instance(), buffer, Int(length))
+    }
     blockSentCb?()
 }
 
