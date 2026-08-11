@@ -97,10 +97,7 @@ private var numLeds = 0
 private var ready = false
 
 func led_strip_driver_init(_ gpioNum: Int32, _ requestedNumLeds: Int32) {
-    var count = Int(requestedNumLeds)
-    if count < 0 { count = 0 }
-    if count > ledStripMaxLeds { count = ledStripMaxLeds }
-    numLeds = count
+    numLeds = smkLedStripClampCount(requestedNumLeds, maxLeds: ledStripMaxLeds)
     for i in 0..<pixels.count { pixels[i] = 0 }
 
     var txConfig = RmtTxChannelConfig(
@@ -122,12 +119,8 @@ func led_strip_driver_init(_ gpioNum: Int32, _ requestedNumLeds: Int32) {
 }
 
 func led_strip_set_pixel(_ index: Int32, _ r: UInt8, _ g: UInt8, _ b: UInt8) {
-    guard ready, index >= 0, Int(index) < numLeds else { return }
-    let i = Int(index)
-    // SK6812/WS2812 wire order is G, R, B.
-    pixels[i * 3 + 0] = g
-    pixels[i * 3 + 1] = r
-    pixels[i * 3 + 2] = b
+    guard ready else { return }
+    smkLedStripSetPixel(&pixels, index: index, numLeds: numLeds, r: r, g: g, b: b)
 }
 
 func led_strip_refresh() {

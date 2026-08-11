@@ -140,6 +140,7 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LayerEngine.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyEventProcessing.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapFrame.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LedPixelBuffer.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapProtocol.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/UsbHid.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/MpslGlue.swift"

@@ -11,6 +11,7 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/SMKCore/KeyEventProcessing.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/SMKCore/KeymapFrame.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/SMKCore/KeymapProtocol.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/SMKCore/LedPixelBuffer.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/GPIORegisters.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/RGBLighting.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/GPIOInit.swift"
