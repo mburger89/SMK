@@ -201,6 +201,7 @@ add_custom_command(
 
 set(c_srcs
     platform/platform_glue.c
+    platform/usb_descriptors.c
     "${STM32WB_CJSON_DIR}/cJSON.c"
 )
 
@@ -211,6 +212,34 @@ add_executable(smk_stm32wb
     "${swift_obj}"
 )
 target_include_directories(smk_stm32wb PRIVATE "${CMSIS_WB_INCLUDE}" "${CMSIS_CORE_INCLUDE}" "${STM32WB_CJSON_DIR}")
+
+# ---------------------------------------------------------------------------
+# TinyUSB (device stack, HID class, fsdev driver) — the "wired" USB HID
+# transport, glued from Swift (UsbHid.swift above) per this project's
+# Swift-first preference; usb_descriptors.c stays C (macro-computed
+# descriptor byte tables — see that file's header comment). fsdev is WB55's
+# classic device-only "USB_FS" peripheral, a different (simpler, FS-only)
+# driver than STM32F4's dwc2 OTG_FS core — confirmed present at this path in
+# the vendored TinyUSB checkout during this task's implementation.
+# ---------------------------------------------------------------------------
+target_include_directories(smk_stm32wb PRIVATE
+    "${TINYUSB_PATH}/src"
+    platform
+)
+target_sources(smk_stm32wb PRIVATE
+    "${TINYUSB_PATH}/src/tusb.c"
+    "${TINYUSB_PATH}/src/common/tusb_fifo.c"
+    "${TINYUSB_PATH}/src/device/usbd.c"
+    "${TINYUSB_PATH}/src/class/hid/hid_device.c"
+    "${TINYUSB_PATH}/src/portable/st/stm32_fsdev/dcd_stm32_fsdev.c"
+    # fsdev_common.c: shared PMA/BTABLE helpers (fsdev_core_reset/fsdev_deinit/
+    # btable_set_rx_bufsize/pma_align_buffer_size) that dcd_stm32_fsdev.c calls
+    # into but doesn't itself define — found via a real "undefined reference"
+    # link error during this task's implementation; the brief's snippet only
+    # listed dcd_stm32_fsdev.c, which is the driver's dcd_* API surface but not
+    # its whole translation unit set.
+    "${TINYUSB_PATH}/src/portable/st/stm32_fsdev/fsdev_common.c"
+)
 
 add_custom_command(TARGET smk_stm32wb POST_BUILD
     COMMAND arm-none-eabi-objcopy -O binary $<TARGET_FILE:smk_stm32wb> smk_stm32wb.bin
