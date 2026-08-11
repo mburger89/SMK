@@ -20,6 +20,7 @@
 #include <malloc.h>
 #include <stddef.h>
 
+extern void smk_clock_init(void); // RCC/PLL bring-up (Task 2, ports/stm32f4/ClockInit.swift)
 extern void app_main_swift(void);
 
 int posix_memalign(void **memptr, size_t alignment, size_t size) {
@@ -34,6 +35,7 @@ int posix_memalign(void **memptr, size_t alignment, size_t size) {
 void _init(void) {}
 
 int main(void) {
+    smk_clock_init();
     app_main_swift();
     return 0;
 }

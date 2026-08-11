@@ -141,6 +141,7 @@ endif()
 # ---------------------------------------------------------------------------
 set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/smoke_test.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ClockInit.swift"
 )
 
 set(swift_obj "${CMAKE_CURRENT_BINARY_DIR}/smk_swift.o")
