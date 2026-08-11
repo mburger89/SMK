@@ -225,14 +225,34 @@ add_custom_command(
 # Nothing calls any of this yet — this is the "prove it compiles and links
 # standalone" scope, same as the nRF52840 port's own Task 6. Task 7 calls
 # TL_Init()/TL_BLE_Init()/shci_init()/SHCI_C2_BLE_Init() for real.
+#
+# TASK 7 UPDATE — platform/hci_tl.c and platform/hci_tl_if.c are vendored on
+# disk but deliberately NOT built. Two independent hard reasons, both found
+# by reading the real vendored code (full write-up in ble_hid_wb.c's header
+# comment):
+#   1. hci_tl.c:68 defines `void hci_init(void(*)(void*), void*)`, colliding
+#      with BTstack src/hci.c's `void hci_init(const hci_transport_t*,
+#      const void*)`. Both are unconditionally in the link -> duplicate
+#      symbol.
+#   2. hci_tl.c:275-289 routes HCI Command Complete/Status events into a
+#      private queue drained only by ST's own blocking hci_send_req() API,
+#      which BTstack never calls — BTstack is the HCI host here and needs
+#      every event.
+# BTstack's own reference port for this exact chip makes the same call:
+# ~/btstack/port/stm32-wb55xx-nucleo-freertos/Makefile:91-96 builds shci_tl.c,
+# shci_tl_if.c, tl_mbox.c, shci.c and stm_list.c — and no hci_tl.c.
+# Consequence: of the two application-layer callbacks Task 6 left
+# deliberately unstubbed, only shci_notify_asynch_evt() still has a caller
+# (shci_tl.c:127/142/230); it is implemented in ble_hid_wb.c.
+# platform/ble_common.h and platform/ble_const.h existed solely to satisfy
+# hci_tl.c's #includes and are now unused; left in place as part of Task 6's
+# vendoring record.
 set(stm32wb_ipcc_srcs
     platform/tl_mbox.c
     platform/stm_list.c
     platform/shci.c
     platform/shci_tl.c
     platform/shci_tl_if.c
-    platform/hci_tl.c
-    platform/hci_tl_if.c
     platform/cortex_m_intrinsics.c
 )
 
@@ -278,6 +298,95 @@ target_sources(smk_stm32wb PRIVATE
     # its whole translation unit set.
     "${TINYUSB_PATH}/src/portable/st/stm32_fsdev/fsdev_common.c"
 )
+
+# ---------------------------------------------------------------------------
+# Task 7: CPU2 boot + hci_transport_t bridge + BTstack HID-over-GATT.
+# See platform/ble_hid_wb.c's header comment for the transport design and for
+# why the vendored hci_tl.c is not in the build.
+# ---------------------------------------------------------------------------
+
+# Generate smk_hid.h from smk_hid.gatt (byte-identical to the RP2040 and
+# nRF52840 copies — HID-over-GATT doesn't depend on the transport under it).
+# No pico-sdk here, so drive btstack's own tool/compile_gatt.py directly,
+# same as ports/nrf52840/CMakeLists.txt.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(STM32WB_GATT_HEADER "${CMAKE_CURRENT_BINARY_DIR}/smk_hid.h")
+add_custom_command(
+    OUTPUT "${STM32WB_GATT_HEADER}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}"
+    COMMAND ${Python3_EXECUTABLE} "${BTSTACK_PATH}/tool/compile_gatt.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/platform/smk_hid.gatt"
+            "${STM32WB_GATT_HEADER}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/platform/smk_hid.gatt"
+    COMMENT "Generating smk_hid.h (STM32WB)..."
+    VERBATIM
+)
+add_custom_target(smk_stm32wb_gatt_header DEPENDS "${STM32WB_GATT_HEADER}")
+add_dependencies(smk_stm32wb smk_stm32wb_gatt_header)
+
+# NOTE on include-path ordering (the warning Task 6 left in
+# platform/{ble_common,ble_const,utilities_common,tl_dbg_conf}.h): BTstack's
+# checkout also vendors a full ST HAL tree under
+# ~/btstack/port/stm32-wb55xx-nucleo-freertos/Drivers/, whose Middlewares
+# copy contains real ST headers with those same four filenames. Only
+# ${BTSTACK_PATH}/src, /platform/embedded and /3rd-party/* are added below —
+# nothing from that port/ subtree — so Task 6's stand-ins are not shadowed
+# and the vendored .c files stay byte-identical to upstream.
+target_include_directories(smk_stm32wb PRIVATE
+    "${BTSTACK_PATH}/src"
+    "${BTSTACK_PATH}/platform/embedded"
+    "${BTSTACK_PATH}/3rd-party/rijndael"   # rijndael.h — btstack_crypto.c's AES128 backend
+    "${BTSTACK_PATH}/3rd-party/micro-ecc"  # uECC.h — btstack_crypto.c's ECC backend
+    "${CMAKE_CURRENT_BINARY_DIR}"          # smk_hid.h lands here
+)
+
+# BTstack source list: started as a verbatim copy of
+# ports/nrf52840/CMakeLists.txt's (itself cross-checked against pico-sdk's
+# pico_btstack_base/pico_btstack_ble), per the brief's "copy that list as a
+# starting point, not gospel". It turned out to be exactly right for this
+# port too — the transport underneath BTstack changed, the host-side source
+# set did not — so no file had to be added or removed for undefined symbols.
+target_sources(smk_stm32wb PRIVATE
+    "${BTSTACK_PATH}/src/btstack_util.c"
+    "${BTSTACK_PATH}/src/btstack_linked_list.c"
+    "${BTSTACK_PATH}/src/btstack_memory.c"
+    "${BTSTACK_PATH}/src/btstack_memory_pool.c"
+    "${BTSTACK_PATH}/src/btstack_run_loop.c"
+    "${BTSTACK_PATH}/src/btstack_run_loop_base.c"
+    "${BTSTACK_PATH}/src/btstack_tlv.c"
+    "${BTSTACK_PATH}/src/btstack_tlv_none.c"
+    "${BTSTACK_PATH}/src/btstack_crypto.c"
+    "${BTSTACK_PATH}/src/hci.c"
+    "${BTSTACK_PATH}/src/hci_cmd.c"
+    "${BTSTACK_PATH}/src/hci_dump.c"
+    "${BTSTACK_PATH}/src/hci_event.c"
+    "${BTSTACK_PATH}/src/l2cap.c"
+    "${BTSTACK_PATH}/src/l2cap_signaling.c"
+    "${BTSTACK_PATH}/src/ble/att_db.c"
+    "${BTSTACK_PATH}/src/ble/att_dispatch.c"
+    "${BTSTACK_PATH}/src/ble/att_server.c"
+    "${BTSTACK_PATH}/src/ble/le_device_db_memory.c"
+    "${BTSTACK_PATH}/src/ble/sm.c"
+    "${BTSTACK_PATH}/src/ble/gatt-service/hids_device.c"
+    "${BTSTACK_PATH}/src/ble/gatt-service/battery_service_server.c"
+    "${BTSTACK_PATH}/src/ble/gatt-service/device_information_service_server.c"
+    "${BTSTACK_PATH}/src/btstack_hid_parser.c"   # hids_device.c's report-size lookup
+    "${BTSTACK_PATH}/platform/embedded/hci_dump_embedded_stdout.c"
+    # Generic "embedded" run loop: hci.c needs a run loop installed before
+    # hci_init(), and this port's transport hangs its polling data source off
+    # it. Pumped from platform_glue.c's vTaskDelay via smk_ble_poll().
+    "${BTSTACK_PATH}/platform/embedded/btstack_run_loop_embedded.c"
+    "${BTSTACK_PATH}/3rd-party/rijndael/rijndael.c"     # AES (ENABLE_SOFTWARE_AES128)
+    "${BTSTACK_PATH}/3rd-party/micro-ecc/uECC.c"        # ECC (ENABLE_MICRO_ECC_FOR_LE_SECURE_CONNECTIONS)
+    platform/ble_hid_wb.c
+)
+
+# Disables platform_glue.c's Task-4 init_ble_hid()/send_keyboard_report()
+# stubs now that ble_hid_wb.c defines them for real, and enables that file's
+# smk_ble_poll() call in vTaskDelay. Applies to every source in the target,
+# not just this line's neighbours — same mechanism as
+# ports/nrf52840/CMakeLists.txt's SMK_HAS_REAL_BLE_HID_SDC.
+target_compile_definitions(smk_stm32wb PRIVATE SMK_HAS_REAL_BLE_HID_WB)
 
 add_custom_command(TARGET smk_stm32wb POST_BUILD
     COMMAND arm-none-eabi-objcopy -O binary $<TARGET_FILE:smk_stm32wb> smk_stm32wb.bin

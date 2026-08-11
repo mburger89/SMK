@@ -1,7 +1,7 @@
 // Misc platform glue for the STM32WB build: logging, the cooperative delay
-// shim, the C entry point, board/connection-mode config, BLE HID stubs
-// (real implementation lands in Task 7), the newlib syscall stub bodies,
-// and the Embedded-Swift linker stubs.
+// shim, the C entry point, board/connection-mode config, the (now
+// compiled-out) BLE HID stubs, the newlib syscall stub bodies, and the
+// Embedded-Swift linker stubs.
 //
 // This is a build-only pass — no hardware bring-up beyond Tasks 1-3 has
 // happened yet. kb_log and vTaskDelay below are placeholders, same status
@@ -25,6 +25,16 @@ extern void smk_clock_init(void); // RCC/HSE/HSI48/CRS bring-up (Task 2, ports/s
 extern void app_main_swift(void); // shared entry point (Sources/smk/Main.swift)
 extern void kb_usb_task(void);    // pumps TinyUSB (Task 5, ports/stm32wb/UsbHid.swift)
 
+#ifdef SMK_HAS_REAL_BLE_HID_WB
+// Task 7 (platform/ble_hid_wb.c): one call per scan tick drives BTstack's
+// embedded run loop, which in turn polls the IPCC transport data source
+// (SHCI system events, the CPU2-ready -> SHCI_C2_BLE_Init transition, and
+// HCI event/ACL delivery into BTstack). Same cooperative-polling pattern as
+// ports/nrf52840/platform/platform_glue.c's sdc_transport_poll() +
+// btstack_run_loop_embedded_execute_once() pair.
+extern void smk_ble_poll(void);
+#endif
+
 // --- Logging -----------------------------------------------------------
 void kb_log(const char *msg) {
     (void)msg;
@@ -36,6 +46,9 @@ void kb_log(const char *msg) {
 // hardware timer once hardware bring-up starts.
 void vTaskDelay(uint32_t ticks) {
     kb_usb_task();
+#ifdef SMK_HAS_REAL_BLE_HID_WB
+    smk_ble_poll();
+#endif
     if (ticks == 0) ticks = 1;
     for (volatile uint32_t i = 0; i < ticks * 100000u; i++) {
         __asm__ volatile("nop");
@@ -43,18 +56,22 @@ void vTaskDelay(uint32_t ticks) {
 }
 
 // --- Connection-mode config ------------------------------------------------
-// This board has real native-USB wired HID (Task 5) and, until Task 7 lands
-// real BLE HID, defaults to wired — same reasoning as
-// ports/stm32f4/platform/platform_glue.c.
+// This board has real native-USB wired HID (Task 5) and now real BLE HID too
+// (Task 7, platform/ble_hid_wb.c). Wired stays the boot default, matching
+// ports/nrf52840/ and ports/rp2040/ — `toggle_conn` switches to BLE at
+// runtime.
 int smk_has_wired_bridge(void) { return 1; }
 int smk_default_mode_is_wired(void) { return 1; }
 
-// --- BLE HID stub (real implementation lands in Task 7, platform/ble_hid_wb.c) ---
+// --- BLE HID stub (superseded by platform/ble_hid_wb.c since Task 7) -------
 // Sources/smk/Main.swift calls these unconditionally regardless of board.
-// Guarded so Task 7 can supersede this pair by defining
-// SMK_HAS_REAL_BLE_HID_WB, matching ports/nrf52840/platform/platform_glue.c's
-// own SMK_HAS_REAL_BLE_HID_SDC pattern for the identical
-// "task N stubs it, task N+1 provides the real definition" problem.
+// ports/stm32wb/CMakeLists.txt defines SMK_HAS_REAL_BLE_HID_WB for the whole
+// target now that ble_hid_wb.c provides the real definitions, so this block
+// compiles out — without the guard both files would define the same
+// C-linkage symbols and the link would fail with a multiple-definition
+// error. Same mechanism as ports/nrf52840/platform/platform_glue.c's
+// SMK_HAS_REAL_BLE_HID_SDC. Kept (rather than deleted) so the port still
+// builds if BLE is ever configured out.
 #ifndef SMK_HAS_REAL_BLE_HID_WB
 void init_ble_hid(void) {
     // Stub — Task 7 (ble_hid_wb.c) provides the real implementation.

@@ -13,8 +13,9 @@
 // bridging header. This board has no RGB chain and no wired-HID bridge, so
 // neither of those externs appears here either.
 //
-// Unlike STM32F4, this board WILL back BLE HID with C
-// (platform/ble_hid_wb.c, Task 7) — init_ble_hid/send_keyboard_report stay
+// Unlike STM32F4, this board backs BLE HID with C
+// (platform/ble_hid_wb.c, Task 7 — BTstack over the IPCC mailbox to CPU2, and
+// BTstack's own headers are C-only) — init_ble_hid/send_keyboard_report are
 // declared below as real extern C functions, not a permanently-out-of-scope
 // stub pair.
 
@@ -29,9 +30,9 @@
 
 // --- Platform glue implemented in ports/stm32wb/platform/platform_glue.c ---
 
-// This board has real native-USB wired HID (Task 5, TinyUSB fsdev) and, for
-// now (until Task 7 lands real BLE HID), defaults to wired at boot — same
-// reasoning as ports/stm32f4/BridgingHeader.h.
+// This board has real native-USB wired HID (Task 5, TinyUSB fsdev) and real
+// BLE HID (Task 7); wired is the boot default, same as ports/nrf52840 and
+// ports/rp2040.
 int smk_has_wired_bridge(void);
 int smk_default_mode_is_wired(void);
 
@@ -40,10 +41,9 @@ void kb_log(const char *msg);
 void vTaskDelay(uint32_t ticks); // shim: pumps USB then delays ~ticks ms
 
 // BLE HID: Sources/smk/Main.swift calls init_ble_hid()/send_keyboard_report()
-// unconditionally regardless of board. This task (Task 4) still needs *some*
-// definition of them to link — platform_glue.c provides
-// #ifndef SMK_HAS_REAL_BLE_HID_WB stub bodies for both, which Task 7's
-// platform/ble_hid_wb.c will supersede by defining that macro.
+// unconditionally regardless of board. platform/ble_hid_wb.c defines both for
+// real; platform_glue.c keeps #ifndef SMK_HAS_REAL_BLE_HID_WB stub bodies that
+// CMakeLists.txt's target_compile_definitions now compiles out.
 void init_ble_hid(void);
 void send_keyboard_report(uint8_t modifier, uint8_t *keycodes);
 
