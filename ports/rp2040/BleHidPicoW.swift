@@ -64,8 +64,9 @@ func gap_advertisements_set_params(_ advIntMin: UInt16, _ advIntMax: UInt16, _ a
 // gap.h's real signature takes a non-const `uint8_t *`, not `const
 // uint8_t *` — BTstack doesn't actually mutate it (the deleted C file
 // cast away const at the call site: `(uint8_t *)adv_data`), but the
-// extern here matches the header, so advData below is `var` and passed
-// via withUnsafeMutableBufferPointer.
+// extern here matches the header. Called with the permanently-allocated
+// advDataStorage below (UnsafeMutableBufferPointer), not a scoped
+// closure pointer — see the comment on advDataBytes for why.
 @_extern(c, "gap_advertisements_set_data")
 func gap_advertisements_set_data(_ advDataLen: UInt8, _ advData: UnsafeMutablePointer<UInt8>)
 
@@ -145,7 +146,29 @@ var profile_data: UInt8
 // HCI_CON_HANDLE_INVALID (btstack_defines.h) — verified 0xffffu, matches plan.
 private let hciConHandleInvalid: UInt16 = 0xFFFF
 
-private let hidDescriptorKeyboard: [UInt8] = [
+// hidDescriptorKeyboard / advData are handed to BTstack calls that store
+// the raw pointer LONG-TERM, not just for the duration of the call —
+// verified against the real vendored source:
+//   - hids_device_init() -> ble/gatt-service/hids_device.c:420 stores
+//     `instance->hid_descriptor = hid_descriptor` and reads it again on
+//     every future protocol-mode/report-map GATT read.
+//   - gap_advertisements_set_data() -> hci.c:~8770 stores
+//     `hci_stack->le_advertisements_data = advertising_data`, read again
+//     later inside hci_run() (after hci_power_control(HCI_POWER_ON)), not
+//     synchronously during the call.
+// A Swift `withUnsafeBufferPointer`/`withUnsafeMutableBufferPointer`
+// closure's pointer is only contractually valid *inside* the closure —
+// passing it to either of these would be a latent dangling-pointer trap:
+// it happens to work today only because nothing currently reallocates
+// these globals' backing storage, but any future change that does
+// (e.g. a runtime-configurable device name) would silently corrupt
+// BTstack's stored pointer with no compile/link error. Fixed by copying
+// each into permanently allocated, intentionally-never-freed storage
+// once in init_ble_hid() below — matching the lifetime the deleted C
+// file's own `static const uint8_t[]` arrays actually guaranteed. (No
+// existing Swift file in this plan had already established a pattern for
+// "C retains this pointer past the call", so this is the first one.)
+private let hidDescriptorKeyboardBytes: [UInt8] = [
     0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, 0x85, 0x01, 0x05, 0x07, 0x19, 0xe0, 0x29, 0xe7, 0x15, 0x00,
     0x25, 0x01, 0x75, 0x01, 0x95, 0x08, 0x81, 0x02, 0x95, 0x01, 0x75, 0x08, 0x81, 0x03, 0x95, 0x05,
     0x75, 0x01, 0x05, 0x08, 0x19, 0x01, 0x29, 0x05, 0x91, 0x02, 0x95, 0x01, 0x75, 0x03, 0x91, 0x03,
@@ -155,14 +178,27 @@ private let hidDescriptorKeyboard: [UInt8] = [
 
 // Advertisement: flags, appearance (keyboard), 16-bit HID service UUID,
 // name. All BLUETOOTH_DATA_TYPE_* type bytes verified against
-// bluetooth_data_types.h. `var`, not `let`: gap_advertisements_set_data
-// takes a non-const pointer (see above).
-private var advData: [UInt8] = [
+// bluetooth_data_types.h.
+private let advDataBytes: [UInt8] = [
     0x02, 0x01, 0x06,       // len=2, BLUETOOTH_DATA_TYPE_FLAGS(0x01) — verified, matches plan; General Discoverable + BR/EDR Not Supported
     0x03, 0x19, 0xC1, 0x03, // len=3, BLUETOOTH_DATA_TYPE_APPEARANCE(0x19) — verified, matches plan; 0x03C1 = Keyboard
     0x03, 0x02, 0x12, 0x18, // len=3, BLUETOOTH_DATA_TYPE_INCOMPLETE_LIST_OF_16_BIT_SERVICE_CLASS_UUIDS — verified 0x02, plan's 0x03 was wrong (0x03 is the *complete*-list type, a different AD type); HID service UUID 0x1812
     0x0d, 0x09, 0x53, 0x4D, 0x4B, 0x20, 0x4B, 0x65, 0x79, 0x62, 0x6F, 0x61, 0x72, 0x64, // len=13, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME(0x09) — verified, matches plan; "SMK Keyboard"
 ]
+
+// Permanent copies of the two buffers above, allocated once in
+// init_ble_hid() and intentionally never deallocated (deliberate leak,
+// matching a C `static` array's process-lifetime storage — this firmware
+// never exits). Kept as module-level `var`s so they aren't
+// deallocated/reused once init_ble_hid()'s local scope ends.
+private var hidDescriptorKeyboardStorage: UnsafeMutableBufferPointer<UInt8>?
+private var advDataStorage: UnsafeMutableBufferPointer<UInt8>?
+
+private func permanentCopy(_ bytes: [UInt8]) -> UnsafeMutableBufferPointer<UInt8> {
+    let storage = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: bytes.count)
+    _ = storage.initialize(from: bytes)
+    return storage
+}
 
 private var hciEventCallbackRegistration = BtstackPacketCallbackRegistration()
 private var smEventCallbackRegistration = BtstackPacketCallbackRegistration()
@@ -237,13 +273,31 @@ func init_ble_hid() {
 
     battery_service_server_init(battery)
     device_information_service_server_init()
-    hidDescriptorKeyboard.withUnsafeBufferPointer { hids_device_init(0, $0.baseAddress!, UInt16($0.count)) }
+    // hids_device_init stores this pointer long-term (hids_device.c:420,
+    // `instance->hid_descriptor = hid_descriptor`) — must be the
+    // permanent copy, not a withUnsafeBufferPointer-scoped one (see the
+    // comment on hidDescriptorKeyboardBytes above).
+    let hidDescStorage = permanentCopy(hidDescriptorKeyboardBytes)
+    hidDescriptorKeyboardStorage = hidDescStorage
+    hids_device_init(0, hidDescStorage.baseAddress!, UInt16(hidDescStorage.count))
 
+    // gap_advertisements_set_params's direct_address is memcpy'd into
+    // hci_stack's own storage synchronously (hci.c's
+    // hci_le_advertisements_set_params: `memcpy(hci_stack->
+    // le_advertisements_direct_address, direct_address, 6)`) — unlike
+    // the two buffers above, BTstack does NOT retain this pointer, so a
+    // withUnsafeBufferPointer-scoped one is fine here.
     let nullAddr = [UInt8](repeating: 0, count: 6)
     nullAddr.withUnsafeBufferPointer { addrPtr in
         gap_advertisements_set_params(0x0030, 0x0030, 0, 0, addrPtr.baseAddress!, 0x07, 0x00)
     }
-    advData.withUnsafeMutableBufferPointer { gap_advertisements_set_data(UInt8($0.count), $0.baseAddress!) }
+    // gap_advertisements_set_data stores this pointer long-term too
+    // (hci.c:8768, `hci_stack->le_advertisements_data = advertising_data`,
+    // read again later inside hci_run()) — same reasoning as
+    // hids_device_init above; must be the permanent copy.
+    let advStorage = permanentCopy(advDataBytes)
+    advDataStorage = advStorage
+    gap_advertisements_set_data(UInt8(advStorage.count), advStorage.baseAddress!)
     gap_advertisements_enable(1)
 
     hciEventCallbackRegistration.callback = packetHandler
