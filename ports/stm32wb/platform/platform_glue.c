@@ -19,6 +19,7 @@
 #include <malloc.h>
 #include <stddef.h>
 
+extern void smk_clock_init(void); // RCC/HSE/HSI48/CRS bring-up (Task 2, ports/stm32wb/ClockInit.swift)
 extern void app_main_swift(void);
 
 int posix_memalign(void **memptr, size_t alignment, size_t size) {
@@ -33,6 +34,7 @@ int posix_memalign(void **memptr, size_t alignment, size_t size) {
 void _init(void) {}
 
 int main(void) {
+    smk_clock_init(); // RCC/HSE/HSI48/CRS bring-up before anything else (Task 2)
     app_main_swift();
     return 0;
 }
