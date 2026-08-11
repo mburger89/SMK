@@ -141,7 +141,8 @@ GPIO API shape.
 1. **STM32WB BLE support** — separate future brainstorming cycle (agreed
    sequencing: F4 first, WB second). BTstack-based; likely mirrors the
    RP2040 Pico W / `smk_kbd_rp2040` dual-transport pattern once F4's
-   USB-only path is proven on hardware.
+   USB-only path is proven on hardware. **In progress**: now being scoped
+   in its own design spec (`docs/superpowers/specs/2026-08-11-stm32wb-support-design.md`).
 2. **Custom STM32F4 keyboard PCB** — this cycle targets the bare Black
    Pill dev board with a minimal test matrix; a real keyboard PCB
    (schematic, GPIO map, `SMK_TARGET_BOARD`-style board config) is a
@@ -159,6 +160,14 @@ GPIO API shape.
    instead of `dwc2`). Deliberately not pulled into this cycle — would
    need its own brainstorming pass, either after F4 bring-up is proven or
    as a third parallel-track family alongside F4/WB.
+6. **Custom STM32WB keyboard PCB** — found while scoping item 1's own
+   design spec; same reasoning as item 2, but for the NUCLEO-WB55RG
+   bring-up board instead of the Black Pill — a distinct board from F4's
+   custom-PCB item, tracked separately since it's a different chip/design.
+7. **LE bonding persistence across reboots (STM32WB)** — found while
+   scoping item 1's own design spec; no persistent bonding-info storage
+   design chosen yet for that port, same class of gap nRF52840's BLE port
+   already has (see that port's own known-gaps list in `CLAUDE.md`).
 
 ## Testing
 
