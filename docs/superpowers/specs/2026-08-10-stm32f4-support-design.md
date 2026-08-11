@@ -152,6 +152,13 @@ GPIO API shape.
 4. **Wired-HID bridge** (CH9350-style) — only relevant if a future
    STM32-based board design includes one; no current board target needs
    it.
+5. **STM32F0 (e.g. CircuitNeato's purpose-built keyboard controller,
+   STM32F072, Cortex-M0/ARMv6-M)** — a candidate real keyboard PCB target
+   found during this cycle's planning, but a different chip family from
+   F4 (different core, simpler clock tree, `dcd_stm32_fsdev` USB driver
+   instead of `dwc2`). Deliberately not pulled into this cycle — would
+   need its own brainstorming pass, either after F4 bring-up is proven or
+   as a third parallel-track family alongside F4/WB.
 
 ## Testing
 
