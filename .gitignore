@@ -38,6 +38,9 @@ build_nrf52840/
 # STM32F4 build output
 build_stm32f4/
 
+# STM32WB build output
+build_stm32wb/
+
 # CMakePresets.json files hardcode local toolchain paths (ESP-IDF, pico-sdk) —
 # personal machine config, not portable across contributors.
 CMakePresets.json

@@ -47,6 +47,15 @@ SMK (Swift Matrix Keyboard) is keyboard firmware written in **Embedded Swift** t
 - **ARM toolchain with newlib**: same `arm-gcc-bin@14` already required for RP2040/nRF52840 — no new install.
 - **Swift Embedded ARM toolchain**: same one already required for RP2040/nRF52840/ESP32-C6 — `armv7em-none-none-eabi` has a real stdlib on every currently-installed toolchain (re-verified during this port's planning), no dev-snapshot requirement.
 
+### STM32WB
+- **cmsis-device-wb** (CMSIS device headers + Cortex-M4 startup assembly for the STM32WB series — no GCC linker script shipped, same gap as cmsis-device-f4) at `~/cmsis-device-wb`: `git clone https://github.com/STMicroelectronics/cmsis-device-wb ~/cmsis-device-wb`
+- **CMSIS_6** (reused from the STM32F4 port — `~/CMSIS_6`, no new clone needed if you have one).
+- **TinyUSB** at `~/tinyusb` (reused — no new clone needed if you have one).
+- **BTstack** at `~/btstack` (reused from RP2040/nRF52840 — no new clone needed if you have one).
+- **STM32CubeWB** (pinned at v1.24.0 — the IPCC mailbox transport-layer source this port vendors from, plus the prebuilt CPU2 "HCI Layer" wireless-coprocessor firmware binary; later tags moved this content to a submodule that no longer covers dual-core WB55) at `~/STM32CubeWB`: `git clone --branch v1.24.0 https://github.com/STMicroelectronics/STM32CubeWB ~/STM32CubeWB`
+- **ARM toolchain with newlib**: same `arm-gcc-bin@14` already required for RP2040/nRF52840/STM32F4 — no new install.
+- **Swift Embedded ARM toolchain**: same one already required for the other ARM ports — `armv7em-none-none-eabi` has a real stdlib, no dev-snapshot requirement.
+
 ## Build & Flash Commands
 
 ### ESP32-C6
