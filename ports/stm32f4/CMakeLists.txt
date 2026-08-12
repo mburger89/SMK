@@ -195,6 +195,9 @@ add_custom_command(
 set(c_srcs
     platform/platform_glue.c
     platform/usb_descriptors.c
+    # smk_cpu_nop() — the opaque call ClockInit.swift's register-poll loops
+    # need so LLVM can't delete them. See that file's header comment.
+    platform/cortex_m_intrinsics.c
     "${STM32F4_CJSON_DIR}/cJSON.c"
 )
 

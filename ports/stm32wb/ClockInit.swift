@@ -27,6 +27,17 @@
 // stabilizes, there is nothing meaningful to do but hang — same fail-stop
 // pattern ports/stm32f4/ClockInit.swift and
 // ports/nrf52840/MpslGlue.swift use.
+//
+// IMPORTANT — every `while ... {}` poll below calls smk_cpu_nop() in its
+// body, and must keep doing so. `UnsafeMutablePointer.pointee` is not a
+// volatile access in Swift, so an empty-bodied loop that re-reads the same
+// address looks loop-invariant to LLVM and gets deleted under the
+// forward-progress rule (confirmed by disassembling a real build of this
+// file: every wait had vanished, leaving straight-line register writes).
+// The call to an opaque external C function
+// (platform/cortex_m_intrinsics.c's smk_cpu_nop) is what forces the load to
+// be re-issued each iteration. See CLAUDE.md's "Register polling loops in
+// Swift" note.
 
 // RCC: base AHB4PERIPH_BASE (0x58000000) + 0 — differs from STM32F4, where
 // RCC lives on AHB1PERIPH_BASE. Confirmed via stm32wb55xx.h's `#define
@@ -132,16 +143,22 @@ private let crsCfgrReloadDefault: UInt32 = 0xBB7F
 private let crsCfgrFelimDefault: UInt32 = 0x22 << 16
 private let crsCfgrSyncSrcUsb: UInt32 = 0b10 << 28
 
+// Opaque no-op, implemented in platform/cortex_m_intrinsics.c. Called inside
+// every busy-wait loop below so LLVM cannot prove the loop is invariant and
+// delete it — see this file's header comment.
+@_extern(c, "smk_cpu_nop")
+func smk_cpu_nop()
+
 @_cdecl("smk_clock_init")
 func smk_clock_init() {
     // 1. Start HSE and wait for it to stabilize.
     rccCr.pointee |= rccCrHseOn
-    while (rccCr.pointee & rccCrHseRdy) == 0 {}
+    while (rccCr.pointee & rccCrHseRdy) == 0 { smk_cpu_nop() }
 
     // 2. Select Voltage Scale Range 1 (required for SYSCLK > 16MHz) and
     //    wait for the regulator to settle.
     pwrCr1.pointee = (pwrCr1.pointee & ~pwrCr1VosMask) | pwrCr1VosRange1
-    while (pwrSr2.pointee & pwrSr2Vosf) != 0 {}
+    while (pwrSr2.pointee & pwrSr2Vosf) != 0 { smk_cpu_nop() }
 
     // 3. Flash wait states for 32MHz in Range 1, plus prefetch/instruction/
     //    data caches.
@@ -149,12 +166,12 @@ func smk_clock_init() {
 
     // 4. Switch SYSCLK to HSE and wait for the switch to take effect.
     rccCfgr.pointee = (rccCfgr.pointee & ~rccCfgrSwMask) | rccCfgrSwHse
-    while (rccCfgr.pointee & rccCfgrSwsMask) != rccCfgrSwsHse {}
+    while (rccCfgr.pointee & rccCfgrSwsMask) != rccCfgrSwsHse { smk_cpu_nop() }
 
     // 5. Start HSI48 (USB's dedicated 48MHz clock) and wait for it to
     //    stabilize.
     rccCrrcr.pointee |= rccCrrcrHsi48On
-    while (rccCrrcr.pointee & rccCrrcrHsi48Rdy) == 0 {}
+    while (rccCrrcr.pointee & rccCrrcrHsi48Rdy) == 0 { smk_cpu_nop() }
 
     // 6. Enable CRS's peripheral clock, configure it to trim HSI48 against
     //    USB SOF (RELOAD/FELIM/SYNCSRC), then enable counting + auto-trim.

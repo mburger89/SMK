@@ -6,6 +6,17 @@
 // This is a busy-wait bring-up routine with no timeout: if HSE or the PLL
 // never locks, there is nothing meaningful to do but hang — same fail-stop
 // pattern ports/nrf52840/MpslGlue.swift uses for mpsl_init failures.
+//
+// IMPORTANT — every `while ... {}` poll below calls smk_cpu_nop() in its
+// body, and must keep doing so. `UnsafeMutablePointer.pointee` is not a
+// volatile access in Swift, so an empty-bodied loop that re-reads the same
+// address looks loop-invariant to LLVM and gets deleted under the
+// forward-progress rule (confirmed by disassembling a real build of this
+// file: every wait had vanished, leaving straight-line register writes).
+// The call to an opaque external C function
+// (platform/cortex_m_intrinsics.c's smk_cpu_nop) is what forces the load to
+// be re-issued each iteration. See CLAUDE.md's "Register polling loops in
+// Swift" note.
 
 private let rccBase: UInt32 = 0x40023800
 private let rccCr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(rccBase + 0x00))!
@@ -46,11 +57,17 @@ private let rccCfgrSwsPll: UInt32 = 0b10 << 2
 private let rccCfgrPpre1Mask: UInt32 = 0b111 << 10
 private let rccCfgrPpre1Div2: UInt32 = 0b100 << 10 // APB1 max 50MHz: 96/2 = 48MHz
 
+// Opaque no-op, implemented in platform/cortex_m_intrinsics.c. Called inside
+// every busy-wait loop below so LLVM cannot prove the loop is invariant and
+// delete it — see this file's header comment.
+@_extern(c, "smk_cpu_nop")
+func smk_cpu_nop()
+
 @_cdecl("smk_clock_init")
 func smk_clock_init() {
     // 1. Start HSE and wait for it to stabilize.
     rccCr.pointee |= rccCrHseOn
-    while (rccCr.pointee & rccCrHseRdy) == 0 {}
+    while (rccCr.pointee & rccCrHseRdy) == 0 { smk_cpu_nop() }
 
     // 2. Power interface clock + Voltage Scale 1 (required above 84MHz).
     rccApb1Enr.pointee |= rccApb1EnrPwrEn
@@ -65,7 +82,7 @@ func smk_clock_init() {
 
     // 5. Enable the PLL and wait for lock.
     rccCr.pointee |= rccCrPllOn
-    while (rccCr.pointee & rccCrPllRdy) == 0 {}
+    while (rccCr.pointee & rccCrPllRdy) == 0 { smk_cpu_nop() }
 
     // 6. APB1 /2 (48MHz, within its 50MHz max); APB2 and AHB stay undivided
     //    (96MHz, within APB2's 100MHz max and AHB's 100MHz max) — both
@@ -74,5 +91,5 @@ func smk_clock_init() {
 
     // 7. Switch SYSCLK to the PLL and wait for the switch to take effect.
     rccCfgr.pointee = (rccCfgr.pointee & ~rccCfgrSwMask) | rccCfgrSwPll
-    while (rccCfgr.pointee & rccCfgrSwsMask) != rccCfgrSwsPll {}
+    while (rccCfgr.pointee & rccCfgrSwsMask) != rccCfgrSwsPll { smk_cpu_nop() }
 }

@@ -30,6 +30,23 @@ private let rccApb1Enr1 = UnsafeMutablePointer<UInt32>(bitPattern: UInt(rccBase 
 private let rccAhb2EnrGpioaEn: UInt32 = 1 << 0 // RCC_AHB2ENR_GPIOAEN_Pos, confirmed in stm32wb55xx.h
 private let rccApb1Enr1UsbEn: UInt32 = 1 << 26 // RCC_APB1ENR1_USBEN_Pos, confirmed in stm32wb55xx.h
 
+// PWR: base AHB4PERIPH_BASE + 0x400 (same base ports/stm32wb/ClockInit.swift
+// uses; its own pwrBase is file-private, so redeclared here). CR2 is at
+// offset 0x04 — confirmed by reading cmsis-device-wb's stm32wb55xx.h
+// PWR_TypeDef directly (`CR1` 0x00, `CR2` 0x04, `CR3` 0x08, `CR4` 0x0C,
+// `SR1` 0x10, `SR2` 0x14), NOT assumed.
+//
+// USV ("USB Supply Valid", PWR_CR2_USV_Pos == 10, Msk 0x00000400 in
+// stm32wb55xx.h) resets to 0, which electrically isolates VDDUSB — the USB
+// transceiver has no supply and the device simply never enumerates, no
+// matter how correct the clock/pin/driver setup is. ST's own
+// P-NUCLEO-WB55.Nucleo USB_Device examples set it (HAL_PWREx_EnableVddUSB())
+// before starting the device stack. A build-only pass cannot catch this;
+// it shows up only as "nothing appears on the host" on real hardware.
+private let pwrBase: UInt32 = 0x5800_0400
+private let pwrCr2 = UnsafeMutablePointer<UInt32>(bitPattern: UInt(pwrBase + 0x04))!
+private let pwrCr2Usv: UInt32 = 1 << 10
+
 private let afAlternateFunctionMode: UInt32 = 0b10
 private let af10: UInt32 = 0b1010 // GPIO_AF10_USB, confirmed against ST's own P-NUCLEO-WB55.Nucleo HID_Standalone example (usbd_conf.c's HAL_PCD_MspInit)
 
@@ -51,6 +68,9 @@ private let af10: UInt32 = 0b1010 // GPIO_AF10_USB, confirmed against ST's own P
 private func enableUsbClockAndPins() {
     rccAhb2Enr.pointee |= rccAhb2EnrGpioaEn
     rccApb1Enr1.pointee |= rccApb1Enr1UsbEn
+
+    // Validate the USB supply (VDDUSB) — resets to isolated, see above.
+    pwrCr2.pointee |= pwrCr2Usv
 
     // PA11 = USB_DM, PA12 = USB_DP, both alternate-function mode, AF10.
     let moderMask: UInt32 = (0b11 << 22) | (0b11 << 24)

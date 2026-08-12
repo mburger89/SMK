@@ -525,7 +525,14 @@ static void transport_init(const void *transport_config) {
     //    asynchronous-event pool CPU2 allocates its event packets from.
     //    Must happen before CPU2 starts, or it has nowhere to put events.
     {
-        TL_MM_Config_t tl_mm_config;
+        // Zero-initialized, deliberately: TL_MM_Config_t (tl.h:174-182) has
+        // six fields, and TL_MM_Init() copies ALL of them into the shared
+        // mailbox reference table that CPU2 reads. The two this port has no
+        // use for (p_TracesEvtPool/TracesEvtPoolSize, for ST's trace
+        // channel, which is never enabled here) would otherwise be published
+        // to the other processor as uninitialized stack garbage — including
+        // a garbage pointer.
+        TL_MM_Config_t tl_mm_config = {0};
         tl_mm_config.p_BleSpareEvtBuffer = BleSpareEvtBuffer;
         tl_mm_config.p_SystemSpareEvtBuffer = SystemSpareEvtBuffer;
         tl_mm_config.p_AsynchEvtPool = EvtPool;

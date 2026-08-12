@@ -92,6 +92,8 @@ The RP2040 build uses CMake's native Swift support (`enable_language(Swift)`) wi
 - Swift uses `@_cdecl("app_main_swift")` to expose its entry point to C
 - `Sources/components/kb_main.c` contains `app_main()` which calls `app_main_swift()`
 
+**Register-polling loops written in Swift MUST call an opaque C function inside the loop body** (e.g. `smk_cpu_nop()` in `ports/stm32wb/platform/cortex_m_intrinsics.c` / `ports/stm32f4/platform/cortex_m_intrinsics.c`), because `UnsafeMutablePointer.pointee` is **not** a volatile access in Swift — LLVM treats an empty-bodied `while (reg.pointee & bit) == 0 {}` as loop-invariant and deletes it outright under the forward-progress rule, silently turning a hardware wait into no wait at all. This was a real bug found by disassembling both STM32 ports' `smk_clock_init`; any future port doing direct MMIO polling from Swift will hit it again.
+
 ### Shared Swift Sources (`Sources/smk/`) — compiled for ALL targets
 
 | File | Responsibility |
@@ -232,16 +234,25 @@ Other known gaps on this port, briefly (this is a build-only pass — see `docs/
 | `ClockInit.swift` | HSE/HSI48/CRS clock bring-up (Swift port of the equivalent STM32F4 init, adapted for the WB55's clock tree) |
 | `GPIOInit.swift` | `init_keyboard_pins()` — matrix pin configuration on GPIOB |
 | `UsbHid.swift` | `init_wired_link()` / `send_wired_report()` via TinyUSB's `fsdev` driver |
-| `HwIpcc.swift` | Swift side of the IPCC (Inter-Processor Communication Controller) bridge to CPU2 — mailbox channel setup, CPU2 boot handshake, and the BTstack HCI transport glue that sits on top of ST's vendored `shci`/`tl_mbox` layer (see `platform/` below) |
+| `HwIpcc.swift` | IPCC (Inter-Processor Communication Controller) **hardware layer only** — the `HW_IPCC_*` entry points ST's vendored `tl_mbox.c` calls down into: enabling the IPCC peripheral clock, releasing CPU2 from reset (PWR_CR4's C2BOOT), per-channel TX/RX mask manipulation, and both IPCC NVIC IRQ handlers dispatching to the transport layer's channel callbacks. It knows nothing about BTstack, HCI, or the CPU2 boot/SHCI handshake — those live in `platform/ble_hid_wb.c` |
 | `KeymapStoreStub.swift` | runtime keymap store stub — same no-op-write pattern as the nRF52840 port; nothing persists across reboots yet |
 | `BridgingHeader.h` | STM32WB bridging header |
 | `CMakeLists.txt` | hand-rolled CMake + Ninja build, no vendor SDK CMake integration — auto-discovers swiftc |
 | `linker/` | hand-written GCC linker script (cmsis-device-wb ships no linker script, same gap as cmsis-device-f4) |
-| `platform/tl_mbox.c`, `platform/shci.c`, `platform/shci_tl.c`, `platform/hci_tl.c`, `platform/stm_list.c`, and related headers | **vendored, lightly adapted** from STM32CubeWB's IPCC transport layer — ST's mailbox protocol for talking to CPU2's HCI-Layer firmware. See the license note immediately below before distributing anything built from this port. |
-| `platform/ble_hid_wb.c` | narrow C remainder for BTstack HCI transport glue that Swift can't bind to directly (struct-literal/vtable idiom, same exception pattern as other ports) |
+| `platform/tl_mbox.c`, `platform/shci.c`, `platform/shci_tl.c`, `platform/shci_tl_if.c`, `platform/stm_list.c`, and related headers | **vendored byte-for-byte** (not edited — see below) from STM32CubeWB v1.24.0's IPCC transport layer: ST's mailbox protocol for talking to CPU2's HCI-Layer firmware. See the license note immediately below before distributing anything built from this port. |
+| `platform/hci_tl.c`, `platform/hci_tl_if.c` | vendored on disk but **deliberately NOT compiled** — see the "`hci_tl.c` is excluded on purpose" note below before adding them to the build |
+| `platform/ble_hid_wb.c` | **the entire BLE implementation for this port** (~800 lines, not a narrow shim): the CPU2 boot sequence (`TL_Init`/`TL_MM_Init`/`TL_Enable`/`shci_init`/`SHCI_C2_BLE_Init`, plus LSE + RF wakeup clock and IPCC reset), the `hci_transport_t` bridge that carries BTstack's HCI traffic over the vendored mailbox layer (including the BTstack run-loop data source and the main-context event delivery queue), the SysTick 1ms time base and `hal_*` hooks BTstack needs, and the HID-over-GATT setup itself — `init_ble_hid()`/`send_keyboard_report()`, advertising, and security-manager (bonding/pairing) configuration |
 | `platform/usb_descriptors.c`, `platform/tusb_config.h` | TinyUSB device + HID keyboard report descriptors / config |
 | `platform/smk_hid.gatt` | GATT database for BLE HID (compiled to a header at build time) |
 | `platform/platform_glue.c`, `platform/cortex_m_intrinsics.c` | `main()`, Swift stdlib stubs, and compiler-intrinsic shims non-portable enough to stay C |
+
+**Vendored files are byte-identical to upstream — adapt via stand-in headers, not by editing them.** Every `.c`/`.h` taken from STM32CubeWB was copied verbatim, ST copyright headers intact, with not one line modified. The adaptations this project needed (replacements for CubeMX-generated headers the vendored sources `#include`) live instead in four small project-local stand-ins: `platform/tl_dbg_conf.h`, `platform/utilities_common.h`, `platform/ble_common.h`, `platform/ble_const.h`. Keep it that way — re-syncing against a newer CubeWB should be a straight file copy. (Include-path ordering matters here: BTstack's checkout vendors its own ST HAL tree containing real headers with those same four filenames, so `ports/stm32wb/CMakeLists.txt` deliberately adds only `${BTSTACK_PATH}/src`, `/platform/embedded` and `/3rd-party/*` — never anything under BTstack's `port/` subtree.)
+
+**`hci_tl.c` is excluded from the build on purpose — do not "helpfully" re-add it.** It is vendored on disk (`platform/hci_tl.c`, `platform/hci_tl_if.c`) as part of the CubeWB vendoring record, but is not in `CMakeLists.txt`'s `stm32wb_ipcc_srcs`, for two independent hard reasons:
+1. `hci_tl.c` defines `void hci_init(void (*)(void *), void *)`, which collides at link time with BTstack's `src/hci.c` `void hci_init(const hci_transport_t *, const void *)` — both are unconditionally in the link, so building it is a duplicate-symbol error.
+2. `hci_tl.c` routes HCI Command Complete/Status events into a private queue drained only by ST's own blocking `hci_send_req()` API, which BTstack never calls. BTstack **is** the HCI host in this port and needs to see every event.
+
+BTstack's own reference port for this exact chip makes the same call (`~/btstack/port/stm32-wb55xx-nucleo-freertos/Makefile` builds `shci_tl.c`, `shci_tl_if.c`, `tl_mbox.c`, `shci.c`, `stm_list.c` — and no `hci_tl.c`). Consequence: of the transport layer's two application-level callbacks, only `shci_notify_asynch_evt()` still has a caller, and it is implemented in `platform/ble_hid_wb.c`. `platform/ble_common.h`/`ble_const.h` existed solely to satisfy `hci_tl.c`'s `#include`s and are now unused.
 
 ### STM32WB board (NUCLEO-WB55RG) — read before flashing real hardware, and before distributing a build
 
