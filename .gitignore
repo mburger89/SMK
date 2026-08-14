@@ -56,3 +56,4 @@ openocd_esp32c6.sh
 
 # GitHub Pages site build output
 site/dist/
+site/**/__pycache__/

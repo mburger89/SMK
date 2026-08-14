@@ -24,6 +24,9 @@ def find_broken_links(dist_dir: pathlib.Path) -> list[str]:
 
 
 if __name__ == "__main__":
+    if not DIST_DIR.exists():
+        print(f"Error: {DIST_DIR} does not exist — run site/build.py first.")
+        sys.exit(1)
     broken = find_broken_links(DIST_DIR)
     if broken:
         print("Broken local links found:")

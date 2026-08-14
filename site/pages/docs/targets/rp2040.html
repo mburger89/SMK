@@ -16,9 +16,10 @@
 <pre><code>export PICO_SDK_PATH=~/pico-sdk
 
 ./build_rp2040.sh pico      # plain Pico — USB HID only
-./build_rp2040.sh pico_w    # Pico W — USB HID + BLE
+./build_rp2040.sh pico_w    # Pico W — USB HID + BLE (scaffolded)
 ./build_rp2040.sh pico2     # Pico 2 — USB HID only
 ./build_rp2040.sh pico2_w   # Pico 2 W — USB HID + BLE
+./build_rp2040.sh smk_kbd_rp2040   # custom PCB — USB HID + RGB + BLE-over-UART
 </code></pre>
 <p>Produces <code>build_rp2040_&lt;board&gt;/smk_rp2040.uf2</code>. Flash by holding <strong>BOOTSEL</strong>, connecting USB, then:</p>
 <pre><code>picotool load -f build_rp2040_pico/smk_rp2040.uf2</code></pre>

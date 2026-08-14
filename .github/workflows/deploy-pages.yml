@@ -11,12 +11,17 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Build site
         run: python3 site/build.py
+
+      - name: Check links
+        run: python3 site/check_links.py
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
