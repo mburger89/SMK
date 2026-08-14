@@ -35,8 +35,16 @@ func led_strip_driver_init(_ gpioNum: Int32, _ requestedNumLeds: Int32) {
     numLeds = smkLedStripClampCount(requestedNumLeds, maxLeds: ledStripMaxLeds)
     for i in 0..<pixels.count { pixels[i] = 0 }
 
-    _ = smk_ws2812_pio_start(UInt32(gpioNum), &pio, &sm)
-    ready = true
+    // smk_ws2812_pio_start's doc comment (ws2812_pio_shim.c) documents a
+    // 0-on-success return convention. Its implementation currently has no
+    // failure path (always returns 0), so this was previously harmless in
+    // practice — but discarding the result and setting `ready` unconditionally
+    // meant the one signal that would indicate a real failure (both PIO
+    // blocks full, no free state machine) was already thrown away, which
+    // would have let led_strip_set_pixel/led_strip_refresh push FIFO words
+    // to an invalid/unclaimed pio/sm pair the moment that C-side error path
+    // is ever added.
+    ready = smk_ws2812_pio_start(UInt32(gpioNum), &pio, &sm) == 0
 }
 
 func led_strip_set_pixel(_ index: Int32, _ r: UInt8, _ g: UInt8, _ b: UInt8) {

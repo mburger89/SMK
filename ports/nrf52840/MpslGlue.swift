@@ -100,7 +100,16 @@ private func nvicSetPriority(_ irqn: Int32, _ priority: UInt32) {
 
 @_cdecl("smk_mpsl_assert_handler")
 func smk_mpsl_assert_handler(_ file: UnsafePointer<CChar>?, _ line: UInt32) {
-    while true {}
+    // smk_cpu_nop() (declared in Sources/smk/KeyMatrix.swift, implemented
+    // in platform/cortex_m_intrinsics.c, same module) is required here, not
+    // decorative: an empty-bodied `while true {}` has zero side effects
+    // Swift can see, so LLVM's forward-progress rule is free to delete it
+    // outright under -Osize — the exact bug class CLAUDE.md documents for
+    // register-polling loops, but even more clear-cut for a bare infinite
+    // loop with no memory access at all. Without the opaque call, a fatal
+    // MPSL assert could fall through into whatever code follows this
+    // handler's caller instead of halting.
+    while true { smk_cpu_nop() }
 }
 
 // --- USB VBUS power event forwarding (Task 8 Step 1) -------------------
@@ -190,7 +199,9 @@ func mpsl_glue_init() {
     // hardware bring-up, matching this plan's build-only scope.
     let err = mpsl_init(nil, mpslLowPrioIRQn, smk_mpsl_assert_handler)
     if err != 0 {
-        while true {} // fatal — nothing meaningful to do without MPSL
+        // See smk_mpsl_assert_handler's comment above — smk_cpu_nop() is
+        // required to keep this halt loop from being optimized away.
+        while true { smk_cpu_nop() } // fatal — nothing meaningful to do without MPSL
     }
 
     nvicSetPriority(radioIRQn, 0) // MPSL_HIGH_IRQ_PRIORITY, per mpsl.rst

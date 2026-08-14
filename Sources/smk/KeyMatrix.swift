@@ -8,6 +8,20 @@
 func init_keyboard_pins(_ rows: UnsafePointer<Int32>, _ rowCount: Int32, _ cols: UnsafePointer<Int32>, _ colCount: Int32, _ colsAreDriven: Int32)
 #endif
 
+// smk_cpu_nop() — opaque no-op called from inside scan()'s settling-delay
+// loops below (see that comment for why). STM32F4/STM32WB already declare
+// this via @_extern in their own ClockInit.swift (same module, same
+// target, called there from register-polling loops for the identical
+// reason) — declaring it again here would be a same-module redeclaration
+// conflict, so only the three targets that don't already have it declare
+// it here. Implementations: Sources/components/cpu_intrinsics.c
+// (ESP32-C6), ports/rp2040/platform/cortex_m_intrinsics.c,
+// ports/nrf52840/platform/cortex_m_intrinsics.c.
+#if SMK_TARGET_ESP32C6 || SMK_TARGET_RP2040 || SMK_TARGET_NRF52840
+@_extern(c, "smk_cpu_nop")
+func smk_cpu_nop()
+#endif
+
 // Two wiring conventions coexist across targets/boards:
 //   - colsAreDriven == false (legacy/RP2040): rows are push-pull outputs
 //     (idle HIGH, strobed LOW one at a time); columns are inputs with
@@ -52,8 +66,16 @@ struct KeyMatrix {
                 // Drive the column HIGH to activate it
                 gpio.outSet = UInt32(1 << cPin)
 
-                // Brief pause for electrical stabilization
-                for _ in 0...50 { }
+                // Brief pause for electrical stabilization. smk_cpu_nop()
+                // is not optional here — see its own declaration comment
+                // above: an empty-bodied loop like this has zero side
+                // effects Swift can see, so LLVM deletes it outright under
+                // the forward-progress rule at this project's -Osize
+                // build flags, turning this into a zero-length "delay"
+                // (found by compiling this exact pattern and inspecting
+                // the emitted IR — the strobe and the read below ended up
+                // adjacent with no loop between them at all).
+                for _ in 0...50 { smk_cpu_nop() }
 
                 let inputState = gpio.input
 
@@ -72,8 +94,10 @@ struct KeyMatrix {
                 // Pull row LOW to activate it
                 gpio.outClear = UInt32(1 << rPin)
 
-                // Brief pause for electrical stabilization
-                for _ in 0...50 { }
+                // Brief pause for electrical stabilization — see the
+                // colsAreDriven branch above for why smk_cpu_nop() is
+                // required here, not optional.
+                for _ in 0...50 { smk_cpu_nop() }
 
                 let inputState = gpio.input
 

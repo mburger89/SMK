@@ -28,6 +28,7 @@ set(c_srcs
     "../Sources/components/kb_main.c"
     "../Sources/components/led_strip_encoder.c"
     "../Sources/components/battery_adc.c"
+    "../Sources/components/cpu_intrinsics.c"
 )
 
 # Register C sources and linker fragment

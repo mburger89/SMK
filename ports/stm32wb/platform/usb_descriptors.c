@@ -1,4 +1,4 @@
-// USB descriptors for the SMK STM32F4 HID keyboard.
+// USB descriptors for the SMK STM32WB HID keyboard.
 //
 // Reuses the same VID/PID and product name as the ESP32 BLE config
 // (Sources/components/ble_helper.c) so the device presents consistently:

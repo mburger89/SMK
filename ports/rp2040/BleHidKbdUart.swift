@@ -21,11 +21,16 @@
 // *** STATUS as of this port: power/UART transport, BTstack
 // chipset/patchram wiring, and the cooperative run-loop pump are all real
 // and datasheet-verified (preserved from the deleted C file below, on
-// cyw43439PowerUp/cyw43439BtInit). The one remaining gap is the actual
-// PatchRAM firmware bytes (proprietary, chip-revision-specific — see
-// cyw43439_patchram.c). Without them the chip stays on its ROM-only HCI
-// command set, so BLE advertising will not start — a data problem, not a
-// missing protocol implementation. ***
+// cyw43439PowerUp/cyw43439BtInit). cyw43439_patchram.c now carries real,
+// correctly-sized PatchRAM firmware data (brcm_patch_ram_length = 6979,
+// sourced from Murata's public cyw-bt-patch repo per this board's
+// CYW43439→"1YN" module mapping — see that file's own header), so the chip
+// is no longer stuck on its ROM-only HCI command set. What remains
+// unverified is real hardware confirmation that this is the *correct*
+// patch revision for the specific chip on this board (matched by part
+// number, not yet confirmed via a live `lmp_subversion` read — see
+// CLAUDE.md's smk_kbd_rp2040 row), not whether firmware data exists at
+// all. ***
 //
 // Verified against the CYW43439 datasheet (Cypress/Infineon doc 002-30348
 // Rev *D, in ~/esp/SMK_Keyboard/datasheets/cyw43439_lcsc.pdf) while writing
@@ -599,10 +604,11 @@ func init_ble_hid() {
 
     // Triggers hci.c's internal power-on state machine, which now includes
     // the chipset init sequence wired up in cyw43439BtInit() above. With
-    // cyw43439_patchram_data_len == 0 (placeholder — see
-    // cyw43439_patchram.c) this reaches HCI_STATE_WORKING using only the
-    // chip's ROM HCI command set; advertising will not actually start until
-    // real patch data is supplied there.
+    // real PatchRAM data present (cyw43439_patchram.c's
+    // brcm_patch_ram_length = 6979 — see the *** STATUS *** comment near
+    // the top of this file), this loads the patch before reaching
+    // HCI_STATE_WORKING, rather than falling back to the chip's ROM-only
+    // HCI command set.
     _ = hci_power_control(1) // HCI_POWER_ON — verified (BleHidPicoW.swift)
 }
 

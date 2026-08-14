@@ -185,6 +185,7 @@ set(PLATFORM_C_SRCS
     platform/flash_irq_wrappers.c
     platform/usb_descriptors.c
     platform/platform_glue.c
+    platform/cortex_m_intrinsics.c
     # Portable cJSON (no ESP-IDF dependency)
     "${CMAKE_CURRENT_SOURCE_DIR}/../../managed_components/espressif__cjson/cJSON/cJSON.c"
 )

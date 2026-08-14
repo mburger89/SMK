@@ -43,6 +43,15 @@ set(C_ASM_FLAGS
     -mfloat-abi=soft
     -DSTM32F411xE
     -DHSE_VALUE=25000000U
+    # Required for -Wl,--gc-sections (below) to actually prune anything:
+    # gc-sections operates at the granularity of one linker section per
+    # symbol, which only exists if each function/data object was compiled
+    # into its own section in the first place. Without these two, GCC
+    # defaults to one .text/.data section per FILE, so gc-sections had
+    # nothing finer-grained to collect and was a no-op against this
+    # build-only target's 512KB flash budget.
+    -ffunction-sections
+    -fdata-sections
 )
 add_compile_options(${C_ASM_FLAGS})
 # --specs=nosys.specs: newlib's always-fails syscall stubs (_exit/_sbrk/

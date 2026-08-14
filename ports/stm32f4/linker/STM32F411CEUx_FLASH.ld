@@ -79,10 +79,19 @@ SECTIONS
     . = ALIGN(8);
   } >RAM
 
-  /DISCARD/ :
-  {
-    libc.a ( * )
-    libm.a ( * )
-    libgcc.a ( * )
-  }
+  /* No /DISCARD/ block for libc.a/libm.a/libgcc.a here (a previous version
+   * of this file had one) -- it never took effect. The .text section above
+   * uses unrestricted wildcards (*(.text), *(.rodata), ...) with no
+   * archive/file selector, and GNU ld assigns each input section to the
+   * FIRST output-section rule that matches it in script order -- so those
+   * archives' .text/.rodata/.data/.bss contributions were already claimed
+   * by .text/.data/.bss above before a later /DISCARD/ rule could ever see
+   * them (confirmed empirically: building a minimal repro with this
+   * project's own arm-none-eabi-gcc/ld and an early unrestricted `.text :
+   * { *(.text) }` rule followed by `/DISCARD/ { liba.a(*) }`, the archived
+   * function still linked into the final .text section and symbol table).
+   * Unused code from these archives is instead pruned by
+   * -ffunction-sections/-fdata-sections (CMakeLists.txt's C_ASM_FLAGS) +
+   * -Wl,--gc-sections (its link options) -- the real mechanism for this,
+   * not a /DISCARD/ block matched against files that never reach it. */
 }

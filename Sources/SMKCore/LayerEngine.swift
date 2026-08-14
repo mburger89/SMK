@@ -216,7 +216,17 @@ enum KeyCode: UInt8 {
 }
 
 extension Modifier {
-    static func fromCString(_ cStr: UnsafePointer<Int8>) -> Modifier {
+    // Optional, unlike KeyCode.fromCString/KeyAction.fromCString's plain
+    // returns: Modifier has no neutral "no modifier" case (all 8 cases are
+    // real, functional modifier bits — see Modifier.swift), so there is no
+    // value this could safely default to. Returning .leftCtrl here used to
+    // silently bind any unrecognized/typo'd modifier name (e.g. a case
+    // mismatch like "rightGui") to a real, live modifier — worse than an
+    // inert key, since it produces plausible-but-wrong behavior instead of
+    // failing loudly or doing nothing. The one caller (KeyAction.fromCString
+    // below) turns nil into .none, matching every other unrecognized-input
+    // case in this file.
+    static func fromCString(_ cStr: UnsafePointer<Int8>) -> Modifier? {
         if strcmp(cStr, "leftCtrl") == 0 { return .leftCtrl }
         if strcmp(cStr, "leftShift") == 0 { return .leftShift }
         if strcmp(cStr, "leftAlt") == 0 { return .leftAlt }
@@ -225,7 +235,7 @@ extension Modifier {
         if strcmp(cStr, "rightShift") == 0 { return .rightShift }
         if strcmp(cStr, "rightAlt") == 0 { return .rightAlt }
         if strcmp(cStr, "rightGUI") == 0 { return .rightGUI }
-        return .leftCtrl
+        return nil
     }
 }
 
@@ -247,7 +257,8 @@ enum KeyAction: Equatable {
             return .key(KeyCode.fromCString(cStr.advanced(by: 4)))
         }
         if strncmp(cStr, "mod:", 4) == 0 {
-            return .modifier(Modifier.fromCString(cStr.advanced(by: 4)))
+            guard let mod = Modifier.fromCString(cStr.advanced(by: 4)) else { return .none }
+            return .modifier(mod)
         }
         if strncmp(cStr, "mo:", 3) == 0 {
             let val = Int(atoi(cStr.advanced(by: 3)))

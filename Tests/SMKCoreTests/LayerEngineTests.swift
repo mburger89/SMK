@@ -97,3 +97,12 @@ import Testing
     #expect("tg:3".withCString { KeyAction.fromCString($0) } == .toggleLayer(3))
     #expect("garbage".withCString { KeyAction.fromCString($0) } == .none)
 }
+
+@Test func keyActionFromCStringRejectsUnrecognizedModifier() {
+    // Regression test: an unrecognized/typo'd modifier name must become an
+    // inert .none, not silently bind to a real modifier (this used to
+    // default to .leftCtrl).
+    #expect("mod:rightGui".withCString { KeyAction.fromCString($0) } == .none)
+    #expect("mod:".withCString { KeyAction.fromCString($0) } == .none)
+    #expect("mod:garbage".withCString { KeyAction.fromCString($0) } == .none)
+}
