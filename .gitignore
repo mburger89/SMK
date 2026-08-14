@@ -53,3 +53,6 @@ openocd_esp32c6.sh
 # Claude scratch / discovery files
 .scratch/
 .superpowers/
+
+# GitHub Pages site build output
+site/dist/
