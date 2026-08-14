@@ -1,0 +1,22 @@
+<!-- TITLE: STM32F4 -->
+<!-- DESCRIPTION: Build SMK for the STM32F4 WeAct Black Pill — USB HID, build-only, not yet hardware-verified. -->
+<h1>STM32F4</h1>
+<p class="lede">WeAct Black Pill (STM32F411CEU6), Arm Cortex-M4F. USB HID via TinyUSB's <code>dwc2</code> driver — no BLE this pass (see the STM32WB page). Build-only for now, not yet verified on real hardware; the bring-up matrix is a placeholder, not a real keyboard layout.</p>
+
+<h2>Prerequisites</h2>
+<ul>
+  <li><strong>cmsis-device-f4</strong> (CMSIS device headers + Cortex-M4 startup assembly — no GCC linker script shipped, this project hand-writes its own) at <code>~/cmsis-device-f4</code>: <code>git clone https://github.com/STMicroelectronics/cmsis-device-f4 ~/cmsis-device-f4</code>.</li>
+  <li><strong>CMSIS_6</strong> (ARM's own Cortex-M4 core headers) at <code>~/CMSIS_6</code>: <code>git clone https://github.com/ARM-software/CMSIS_6 ~/CMSIS_6</code>.</li>
+  <li><strong>TinyUSB</strong> at <code>~/tinyusb</code> (shared with RP2040/nRF52840 — no new clone if you already have one).</li>
+  <li><strong>ARM toolchain with newlib</strong> and <strong>Swift Embedded ARM toolchain</strong> — same ones already required for RP2040/nRF52840.</li>
+</ul>
+
+<h2>Build</h2>
+<pre><code>export CMSIS_F4_PATH=~/cmsis-device-f4
+export CMSIS_CORE_PATH=~/CMSIS_6
+export TINYUSB_PATH=~/tinyusb
+
+./build_stm32f4.sh
+</code></pre>
+
+<a class="back-link" href="../index.html">← Back to Docs</a>

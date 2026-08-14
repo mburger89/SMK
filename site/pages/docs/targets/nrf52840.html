@@ -1,0 +1,26 @@
+<!-- TITLE: nRF52840 -->
+<!-- DESCRIPTION: Build SMK for the Nordic nRF52840 — USB HID + BLE HID, build-only, not yet hardware-verified. -->
+<h1>nRF52840</h1>
+<p class="lede">Arm Cortex-M4F. USB HID (TinyUSB) + BLE HID (Nordic's SoftDevice Controller over BTstack). Build-only for now — not yet verified on real hardware, and the GPIO pin map is an explicit placeholder that must be replaced with schematic-verified pins before ever flashing a real board.</p>
+
+<h2>Prerequisites</h2>
+<ul>
+  <li><strong>nRF5 SDK</strong> (CMSIS device header + Cortex-M4 startup/linker script) at <code>~/nRF5_SDK</code> — download v17.1.0+ from Nordic and unzip. Only <code>modules/nrfx/mdk/</code> is used.</li>
+  <li><strong>sdk-nrfxlib</strong> (prebuilt SoftDevice Controller + MPSL libraries) at <code>~/sdk-nrfxlib</code>: <code>git clone https://github.com/nrfconnect/sdk-nrfxlib ~/sdk-nrfxlib</code>.</li>
+  <li><strong>TinyUSB</strong> at <code>~/tinyusb</code>: <code>git clone https://github.com/hathach/tinyusb ~/tinyusb</code>.</li>
+  <li><strong>BTstack</strong> at <code>~/btstack</code>: <code>git clone https://github.com/bluekitchen/btstack ~/btstack</code>.</li>
+  <li><strong>ARM toolchain with newlib</strong> — same <code>arm-gcc-bin@14</code> already required for RP2040.</li>
+  <li><strong>Swift Embedded ARM toolchain</strong> — same one already required for RP2040/ESP32-C6.</li>
+</ul>
+
+<h2>Build</h2>
+<pre><code>export NRF5_SDK_PATH=~/nRF5_SDK
+export NRFXLIB_PATH=~/sdk-nrfxlib
+export TINYUSB_PATH=~/tinyusb
+export BTSTACK_PATH=~/btstack
+
+./build_nrf52840.sh
+</code></pre>
+<p><strong>Known gaps</strong>: runtime keymap store is a no-op stub (nothing persists across reboots), LE bonding does not survive a reboot, and the millisecond timers are uncalibrated software counters until a real hardware timer is wired up.</p>
+
+<a class="back-link" href="../index.html">← Back to Docs</a>
