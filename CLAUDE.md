@@ -10,10 +10,10 @@ SMK (Swift Matrix Keyboard) is keyboard firmware written in **Embedded Swift** t
 
 | Target | MCU | Build system | HID transport |
 |---|---|---|---|
-| ESP32-C6 | RISC-V | ESP-IDF / idf.py | BLE (NimBLE) + Wired (CH9350 UART) |
+| ESP32-C6 | RISC-V | ESP-IDF / idf.py | BLE (NimBLE) + Wired (CH9350 UART); BLE HID boot + advertising hardware-verified on a real smk_kbd board after fixing 3 real bugs found via that testing — see `Sources/components/ble_helper.c` and `Sources/components/kb_main.c` |
 | Pico | RP2040 ARM | CMake / Ninja + pico-sdk | USB HID (TinyUSB) |
 | Pico W | RP2040 ARM | CMake / Ninja + pico-sdk | USB HID + BLE (BTstack, scaffolded) |
-| Pico 2 | RP2350 ARM (Cortex-M33) | CMake / Ninja + pico-sdk (`SMK_TARGET_BOARD=pico2`) | USB HID (TinyUSB); build-only, not yet hardware-verified |
+| Pico 2 | RP2350 ARM (Cortex-M33) | CMake / Ninja + pico-sdk (`SMK_TARGET_BOARD=pico2`) | USB HID (TinyUSB); boot + USB HID enumeration hardware-verified on a Seeed XIAO RP2350 (same RP2350 chip, built with `PICO_BOARD=pico2`) — enumerated as "SMK Keyboard"; matrix scan not yet verified against real switches (no matrix wired on that board) |
 | Pico 2 W | RP2350 ARM (Cortex-M33) | CMake / Ninja + pico-sdk (`SMK_TARGET_BOARD=pico2_w`) | USB HID + BLE (BTstack, scaffolded); build-only, not yet hardware-verified |
 | smk_kbd_rp2040 | RP2040 ARM (chip-down + CYW43439) | CMake / Ninja + pico-sdk (`SMK_TARGET_BOARD=smk_kbd_rp2040`) | USB HID + per-key RGB (working) + BLE (BTstack over dedicated UART; PatchRAM firmware data embedded in `ports/rp2040/platform/cyw43439_patchram.c`, sourced from Murata's public `cyw-bt-patch` repo per their CYW43439→"1YN" module mapping — matched by part number, not yet hardware-confirmed via `lmp_subversion` since the board is still at fab) |
 | nRF52840 | Arm Cortex-M4F | CMake / Ninja (no pico-sdk equivalent — vendored nRF5 SDK + sdk-nrfxlib + TinyUSB + BTstack) | USB HID + BLE HID (SoftDevice Controller over BTstack); build-only, not yet hardware-verified |

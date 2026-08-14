@@ -5,8 +5,29 @@ CONFIG_BT_NIMBLE_MAX_BONDS=1
 CONFIG_BT_NIMBLE_SVC_GAP_APPEARANCE=0x03C1
 CONFIG_BT_NIMBLE_HID_SERVICE=y
 
+# Our HID report map (Sources/components/ble_helper.c) defines 4 report
+# items: Report ID 1's keyboard input + LED output, and Report ID 2's
+# vendor-defined keymap-upload input + output. NimBLE's ble_svc_hid caps
+# the number of HID report characteristics per service instance at this
+# Kconfig value (default 3) via a fixed-size stack array in
+# esp_hid/src/nimble_hidd.c's ble_hid_init; leaving it below our real
+# report count silently overflows that array by one element, corrupting
+# the stack and crashing later in unrelated NimBLE code (found via real
+# hardware testing — Guru Meditation Error inside ble_gatts_count_cfg).
+CONFIG_BT_NIMBLE_SVC_HID_MAX_RPTS=4
+
 # Required for macOS (and other hosts) to bond and auto-reconnect instead of
 # re-pairing every time. See Sources/components/ble_helper.c for the matching
 # ble_hs_cfg security setup.
 CONFIG_BT_NIMBLE_SM_LVL=1
 CONFIG_BT_NIMBLE_NVS_PERSIST=y
+
+# BLE HID bring-up (init_ble_hid in ble_helper.c) is a deep call chain —
+# app_main_swift -> init_ble_hid -> esp_hidd_dev_init -> ... -> NimBLE's
+# GATT service registration — with several sizeable stack locals along the
+# way (struct ble_svc_hid_params, ble_hs_adv_fields, ble_hs_cfg). ESP-IDF's
+# 3584-byte default for the main task was tight enough to be worth a
+# margin bump; found while hardware-debugging a separate real crash in this
+# same call chain (see Sources/components/ble_helper.c's nimble_port_init
+# ordering comment).
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
