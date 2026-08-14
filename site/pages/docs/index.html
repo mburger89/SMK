@@ -1,0 +1,21 @@
+<!-- TITLE: Docs -->
+<!-- DESCRIPTION: SMK documentation — per-target build guides, architecture, and keymap reference. -->
+<h1>Documentation</h1>
+<p class="lede">Everything here is reformatted from this repo's <code>README.md</code> and <code>CLAUDE.md</code> — pick a target to get building, or read the architecture/keymap reference pages for how the firmware fits together.</p>
+
+<div class="section-label">Build Guides by Target</div>
+<ul class="docs-index-list">
+  <li><a href="targets/esp32c6.html">ESP32-C6 — the primary, hardware-verified board (BLE + Wired HID)</a></li>
+  <li><a href="targets/rp2040.html">RP2040 / RP2350 (Pico, Pico W, Pico 2, Pico 2 W, smk_kbd_rp2040) — USB HID, BLE on W variants</a></li>
+  <li><a href="targets/nrf52840.html">nRF52840 — USB HID + BLE HID, build-only</a></li>
+  <li><a href="targets/stm32f4.html">STM32F4 (WeAct Black Pill) — USB HID, build-only</a></li>
+  <li><a href="targets/stm32wb.html">STM32WB (NUCLEO-WB55RG) — USB HID + BLE HID, build-only</a></li>
+</ul>
+
+<div class="section-label">Reference</div>
+<ul class="docs-index-list">
+  <li><a href="architecture.html">Architecture — the Swift↔C boundary, shared source layout, and key patterns</a></li>
+  <li><a href="keymap.html">Keymap Reference — the <code>keymap.json</code> schema and key-action syntax</a></li>
+</ul>
+
+<a class="back-link" href="../index.html">← Back to Home</a>
