@@ -1,5 +1,7 @@
 # SMK (Swift Matrix Keyboard)
 
+📖 **[Read the docs and see the full feature list](https://mburger89.github.io/SMK/)**
+
 A keyboard firmware written in **Embedded Swift**, targeting the **ESP32-C6**, **Raspberry Pi Pico / Pico W (RP2040)**, **Raspberry Pi Pico 2 / Pico 2 W (RP2350)**, **Nordic nRF52840**, **STM32F4**, and **STM32WB**. SMK provides a modern development experience for keyboard enthusiasts, featuring Bluetooth (BLE) and Wired (USB/UART) connectivity, and a flexible JSON-based keymap system.
 
 ## Features
