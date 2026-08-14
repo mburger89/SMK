@@ -117,6 +117,19 @@ void init_ble_hid(void) {
     }
     ESP_ERROR_CHECK(ret);
 
+    // Must run before esp_hidd_dev_init(): esp_hidd_dev_init() synchronously
+    // registers GATT services (GAP/GATT/DIS/BAS/HID) via NimBLE's
+    // ble_gatts_count_cfg(), which — under CONFIG_BT_NIMBLE_STATIC_TO_DYNAMIC
+    // (enabled in sdkconfig) — dereferences the host's dynamically-allocated
+    // ble_hs_state_ctx (see ble_hs_priv.h's ble_hs_max_services/max_attrs/
+    // max_client_configs macros). That allocation only happens inside
+    // ble_hs_init(), called from nimble_port_init(). Calling
+    // esp_hidd_dev_init() first (as this function used to) dereferences a
+    // still-NULL ble_hs_state_ctx and crashes — found via real hardware
+    // testing (Guru Meditation Error, Load access fault at address 0x4,
+    // inside ble_gatts_count_cfg <- ble_svc_gap_init <- esp_hidd_dev_init).
+    nimble_port_init();
+
     // Initialize the HID device stack. s_hid_dev is local now (not a
     // persistent file-static) — its address is only needed transiently
     // as esp_hidd_dev_init's out-param; the resulting pointer is handed
@@ -156,9 +169,7 @@ void init_ble_hid(void) {
     ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
     ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
 
-    // Initialize NimBLE port
-    nimble_port_init();
-
-    // Enable the NimBLE stack
+    // Enable the NimBLE stack (nimble_port_init() already ran above, before
+    // esp_hidd_dev_init())
     esp_nimble_enable(ble_hid_host_task);
 }
