@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RP2040 / RP2350 — SMK</title>
+<meta name="description" content="Build and flash SMK for Pico, Pico W, Pico 2, Pico 2 W, and smk_kbd_rp2040 — USB HID, BLE on W variants.">
+<link rel="icon" type="image/svg+xml" href="../../assets/favicon.svg">
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<nav class="site-nav">
+  <a href="../../index.html" class="brand">smk</a>
+  <div class="nav-links">
+    <a href="../../docs/index.html">Docs</a>
+    <a href="../../index.html#targets">Targets</a>
+    <a href="https://github.com/mburger89/SMK">GitHub</a>
+  </div>
+</nav>
+<main class="site-main">
+
+<h1>RP2040 / RP2350</h1>
+<p class="lede">Covers the Raspberry Pi <strong>Pico</strong> (USB HID), <strong>Pico W</strong> (USB HID + BLE scaffolded), their RP2350-based successors <strong>Pico 2</strong> / <strong>Pico 2 W</strong> (build-only, not yet hardware-verified), and the chip-down <strong>smk_kbd_rp2040</strong> board (RP2040 + CYW43439 — USB HID + per-key RGB working, BLE not yet hardware-confirmed). One shared codebase, only the hardware platform layer differs per board.</p>
+
+<h2>Prerequisites</h2>
+<ul>
+  <li><strong>pico-sdk</strong> at <code>~/pico-sdk</code> with submodules initialized (<code>git -C ~/pico-sdk submodule update --init</code>).</li>
+  <li><strong>ARM toolchain with newlib</strong>: <code>brew tap osx-cross/arm &amp;&amp; brew install osx-cross/arm/arm-gcc-bin@14</code>.</li>
+  <li><strong>cmake ≥ 3.29, ninja, picotool</strong>: <code>brew install cmake ninja picotool</code>.</li>
+  <li><strong>Swift ≥ 6.3 Embedded ARM toolchain</strong>, installed in <code>~/Library/Developer/Toolchains/</code>.</li>
+  <li><strong>RP2350 only</strong> (<code>pico2</code>/<code>pico2_w</code>): additionally requires a Swift development-snapshot toolchain (confirmed working: <code>swift-DEVELOPMENT-SNAPSHOT-2026-05-27-a</code> or later) that ships a real Embedded-Swift stdlib for <code>armv8m.main-none-none-eabi</code>. Released <code>swift-6.3.x</code> toolchains report support for that triple but fail an actual compile — they don't ship the stdlib.</li>
+</ul>
+
+<h2>Build &amp; Flash</h2>
+<pre><code>export PICO_SDK_PATH=~/pico-sdk
+
+./build_rp2040.sh pico      # plain Pico — USB HID only
+./build_rp2040.sh pico_w    # Pico W — USB HID + BLE (scaffolded)
+./build_rp2040.sh pico2     # Pico 2 — USB HID only
+./build_rp2040.sh pico2_w   # Pico 2 W — USB HID + BLE
+./build_rp2040.sh smk_kbd_rp2040   # custom PCB — USB HID + RGB + BLE-over-UART
+</code></pre>
+<p>Produces <code>build_rp2040_&lt;board&gt;/smk_rp2040.uf2</code>. Flash by holding <strong>BOOTSEL</strong>, connecting USB, then:</p>
+<pre><code>picotool load -f build_rp2040_pico/smk_rp2040.uf2</code></pre>
+
+<a class="back-link" href="../index.html">← Back to Docs</a>
+
+</main>
+<footer class="site-footer">
+  <span>SMK — GPL-3.0</span>
+  <div class="footer-links">
+    <a href="https://github.com/mburger89/SMK">GitHub</a>
+    <a href="../../docs/index.html">Docs</a>
+  </div>
+</footer>
+</body>
+</html>
+

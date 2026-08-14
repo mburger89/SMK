@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STM32WB — SMK</title>
+<meta name="description" content="Build SMK for the STM32WB NUCLEO-WB55RG — USB HID + BLE HID, build-only, unresolved license conflict on distribution.">
+<link rel="icon" type="image/svg+xml" href="../../assets/favicon.svg">
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<nav class="site-nav">
+  <a href="../../index.html" class="brand">smk</a>
+  <div class="nav-links">
+    <a href="../../docs/index.html">Docs</a>
+    <a href="../../index.html#targets">Targets</a>
+    <a href="https://github.com/mburger89/SMK">GitHub</a>
+  </div>
+</nav>
+<main class="site-main">
+
+<h1>STM32WB</h1>
+<p class="lede">NUCLEO-WB55RG — an Arm Cortex-M4 application core plus an on-chip Cortex-M0+ radio coprocessor running ST's own firmware. USB HID (TinyUSB's <code>fsdev</code> driver) + BLE HID (ST's HCI-Layer wireless coprocessor over a vendored IPCC transport layer, bridged into BTstack). Build-only, not yet verified on real hardware.</p>
+
+<p><strong>⚠ Unresolved license conflict — do not distribute a build of this port.</strong> This repo is GPL-3.0, but the vendored IPCC transport-layer files (<code>tl_mbox.c</code>, <code>shci.c</code>, <code>shci_tl.c</code>, and related headers, sourced from STM32CubeWB) are distributed by ST under the SLA0044 license, whose clause 5 explicitly forbids redistributing SLA0044-licensed software under GPL terms. This was flagged during the port and deliberately deferred rather than resolved — do not release or distribute a build of this port until the maintainer has reviewed and resolved this, via a carve-out, re-licensing, replacing the vendored files, or another approach not yet decided.</p>
+
+<h2>Prerequisites</h2>
+<ul>
+  <li><strong>cmsis-device-wb</strong> at <code>~/cmsis-device-wb</code>: <code>git clone https://github.com/STMicroelectronics/cmsis-device-wb ~/cmsis-device-wb</code>.</li>
+  <li><strong>CMSIS_6</strong> (shared with STM32F4 — no new clone if you already have one).</li>
+  <li><strong>TinyUSB</strong> and <strong>BTstack</strong> (shared with the other ports — no new clone if you already have them).</li>
+  <li><strong>STM32CubeWB, pinned at v1.24.0</strong> (the IPCC transport-layer source plus the prebuilt CPU2 "HCI Layer" firmware binary — later tags moved this to a submodule that no longer covers dual-core WB55): <code>git clone --branch v1.24.0 https://github.com/STMicroelectronics/STM32CubeWB ~/STM32CubeWB</code>.</li>
+  <li><strong>ARM toolchain with newlib</strong> and <strong>Swift Embedded ARM toolchain</strong> — same ones already required for the other ARM ports.</li>
+</ul>
+
+<h2>Build</h2>
+<pre><code>export CMSIS_WB_PATH=~/cmsis-device-wb
+export CMSIS_CORE_PATH=~/CMSIS_6
+export TINYUSB_PATH=~/tinyusb
+export BTSTACK_PATH=~/btstack
+export STM32CUBEWB_PATH=~/STM32CubeWB
+
+./build_stm32wb.sh
+</code></pre>
+<p><strong>Before flashing real hardware</strong>: the GPIO pin map is a bring-up placeholder (5×5 test matrix), factory HSE capacitor trim isn't applied, and CPU2 needs a separate manual flash of ST's "HCI Layer" wireless-coprocessor firmware (e.g. <code>stm32wb5x_BLE_HCILayer_extended_fw.bin</code>) via ST's own tooling — this repo's build only produces the CPU1 application image. Only the "HCI Layer" firmware variant works with this port; the "Full Stack" variant will <strong>not</strong> work, since this port supplies its own BLE host stack over IPCC/HCI rather than running the host on CPU2.</p>
+
+<a class="back-link" href="../index.html">← Back to Docs</a>
+
+</main>
+<footer class="site-footer">
+  <span>SMK — GPL-3.0</span>
+  <div class="footer-links">
+    <a href="https://github.com/mburger89/SMK">GitHub</a>
+    <a href="../../docs/index.html">Docs</a>
+  </div>
+</footer>
+</body>
+</html>
+

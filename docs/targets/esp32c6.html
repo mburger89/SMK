@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32-C6 — SMK</title>
+<meta name="description" content="Build and flash SMK for the ESP32-C6 — BLE and Wired HID, the primary hardware-verified target.">
+<link rel="icon" type="image/svg+xml" href="../../assets/favicon.svg">
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<nav class="site-nav">
+  <a href="../../index.html" class="brand">smk</a>
+  <div class="nav-links">
+    <a href="../../docs/index.html">Docs</a>
+    <a href="../../index.html#targets">Targets</a>
+    <a href="https://github.com/mburger89/SMK">GitHub</a>
+  </div>
+</nav>
+<main class="site-main">
+
+<h1>ESP32-C6</h1>
+<p class="lede">RISC-V, built with ESP-IDF. BLE (NimBLE) + Wired (CH9350 UART) HID. This is SMK's primary, hardware-verified target — the <strong>smk_kbd</strong> board's build.</p>
+
+<h2>Prerequisites</h2>
+<ul>
+  <li><strong>ESP-IDF v6.0.1</strong>, installed via the standard installer (<code>~/.espressif/v6.0.1/esp-idf</code>) and sourced via <code>. ~/.espressif/v6.0.1/esp-idf/export.sh</code> — a top-level <code>~/export-esp-idf.sh</code> alias also works if you've set one up.</li>
+  <li><strong>Swift 6.3.1 Embedded RISC-V toolchain</strong>, installed in <code>~/Library/Developer/Toolchains/</code>.</li>
+  <li><strong>Python 3.11+</strong>, required by ESP-IDF.</li>
+</ul>
+
+<h2>Build &amp; Flash</h2>
+<pre><code># Source ESP-IDF environment first
+. ~/.espressif/v6.0.1/esp-idf/export.sh   # or your own export-esp-idf.sh alias
+
+idf.py set-target esp32c6   # one-time target selection
+idf.py build                 # compile Swift + C and link
+idf.py flash monitor         # flash to device and open serial monitor
+</code></pre>
+<p>The build compiles Swift via a custom command in <code>main/CMakeLists.txt</code>, which auto-discovers the swiftc toolchain from <code>~/Library/Developer/Toolchains/</code> or the <code>SWIFTC_PATH</code> environment variable.</p>
+
+<a class="back-link" href="../index.html">← Back to Docs</a>
+
+</main>
+<footer class="site-footer">
+  <span>SMK — GPL-3.0</span>
+  <div class="footer-links">
+    <a href="https://github.com/mburger89/SMK">GitHub</a>
+    <a href="../../docs/index.html">Docs</a>
+  </div>
+</footer>
+</body>
+</html>
+

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Keymap Reference — SMK</title>
+<meta name="description" content="The keymap.json schema and key-action syntax used to configure SMK's matrix and layers.">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="site-nav">
+  <a href="../index.html" class="brand">smk</a>
+  <div class="nav-links">
+    <a href="../docs/index.html">Docs</a>
+    <a href="../index.html#targets">Targets</a>
+    <a href="https://github.com/mburger89/SMK">GitHub</a>
+  </div>
+</nav>
+<main class="site-main">
+
+<h1>Keymap Reference</h1>
+<p class="lede">The active keymap is the <code>configJson</code> string literal in <code>Sources/smk/Main.swift</code>. The <code>keymap.json</code> at the repo root is a reference copy only — edits there don't affect the firmware until copied into <code>Main.swift</code>.</p>
+
+<h2>Schema</h2>
+<ul>
+  <li><code>matrix</code> — defines <code>rows</code> and <code>cols</code> GPIO pin lists, plus <code>colsAreDriven</code> (0/1): whether columns are the strobed/output side (1) or rows are (0, default). Depends on your diode orientation — see the <a href="architecture.html">Architecture</a> page's matrix scan section.</li>
+  <li><code>layers</code> — an array of layers, each a 2D array of action strings (see below).</li>
+</ul>
+
+<h2>Key Action Syntax</h2>
+<table>
+  <tr><th>Syntax</th><th>Meaning</th></tr>
+  <tr><td><code>key:&lt;char&gt;</code></td><td>Standard keycode, e.g. <code>key:a</code>, <code>key:enter</code></td></tr>
+  <tr><td><code>mod:&lt;name&gt;</code></td><td>Modifier, e.g. <code>mod:leftShift</code></td></tr>
+  <tr><td><code>mo:&lt;n&gt;</code></td><td>Momentary layer <code>n</code> — active while held</td></tr>
+  <tr><td><code>tg:&lt;n&gt;</code></td><td>Toggle layer <code>n</code></td></tr>
+  <tr><td><code>trans</code></td><td>Transparent — falls through to the layer below</td></tr>
+  <tr><td><code>toggle_conn</code></td><td>Switch between BLE and wired modes</td></tr>
+  <tr><td><code>none</code></td><td>No action</td></tr>
+</table>
+
+<a class="back-link" href="index.html">← Back to Docs</a>
+
+</main>
+<footer class="site-footer">
+  <span>SMK — GPL-3.0</span>
+  <div class="footer-links">
+    <a href="https://github.com/mburger89/SMK">GitHub</a>
+    <a href="../docs/index.html">Docs</a>
+  </div>
+</footer>
+</body>
+</html>
+

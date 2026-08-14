@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Home — SMK</title>
+<meta name="description" content="SMK is keyboard firmware written in Embedded Swift, targeting six hardware platforms with BLE and USB HID.">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<nav class="site-nav">
+  <a href="index.html" class="brand">smk</a>
+  <div class="nav-links">
+    <a href="docs/index.html">Docs</a>
+    <a href="index.html#targets">Targets</a>
+    <a href="https://github.com/mburger89/SMK">GitHub</a>
+  </div>
+</nav>
+<main class="site-main">
+
+<section class="hero">
+  <div class="hero-card glass-card">
+    <div class="hero-eyebrow">$ swiftc -target riscv32-none-none-eabi</div>
+    <h1>A keyboard firmware written in <span class="accent">Embedded Swift</span>.</h1>
+    <p class="subhead">Eight boards across six MCU families. One codebase. BLE + USB HID.</p>
+    <div class="btn-row">
+      <a href="docs/index.html" class="btn-accent">Get Started</a>
+      <a href="https://github.com/mburger89/SMK" class="btn-glass">View on GitHub</a>
+    </div>
+  </div>
+</section>
+
+<section class="page-section">
+  <div class="section-label">Why SMK</div>
+  <div class="features-grid">
+    <div class="feature-card">🧬 Real Embedded Swift on bare metal — safety and modern syntax, no VM or GC.</div>
+    <div class="feature-card">🧩 Layer engine with JSON keymaps — momentary layers, toggles, transparent keys.</div>
+    <div class="feature-card">🔗 BLE + Wired HID, switchable at runtime with a single dual-mode firmware.</div>
+    <div class="feature-card">💡 Per-key RGB backlight, opt-in — off by default, on when you wire it up.</div>
+  </div>
+</section>
+
+<section class="page-section" id="targets">
+  <div class="section-label">Supported Targets</div>
+  <div class="chip-row">
+    <div class="chip">ESP32-C6 <span class="status">✅ BLE + Wired</span></div>
+    <div class="chip">RP2040 (Pico) <span class="status">✅ USB HID</span></div>
+    <div class="chip">RP2040 (Pico W) <span class="status">✅ USB + BLE scaffolded</span></div>
+    <div class="chip">RP2350 (Pico 2 / 2 W) <span class="status">🚧 build-only</span></div>
+    <div class="chip">smk_kbd_rp2040 <span class="status">✅ USB + RGB</span></div>
+    <div class="chip">nRF52840 <span class="status">🚧 build-only</span></div>
+    <div class="chip">STM32F4 <span class="status">🚧 build-only</span></div>
+    <div class="chip">STM32WB <span class="status">🚧 build-only</span></div>
+  </div>
+</section>
+
+<section class="page-section">
+  <div class="section-label">Quick Start</div>
+  <pre><code>idf.py set-target esp32c6 &amp;&amp; idf.py build &amp;&amp; idf.py flash monitor</code></pre>
+  <p class="quickstart-note">That's the ESP32-C6 path — SMK's primary, hardware-verified board. <a href="docs/index.html">See the full docs</a> for every target's prerequisites and build commands.</p>
+</section>
+
+</main>
+<footer class="site-footer">
+  <span>SMK — GPL-3.0</span>
+  <div class="footer-links">
+    <a href="https://github.com/mburger89/SMK">GitHub</a>
+    <a href="docs/index.html">Docs</a>
+  </div>
+</footer>
+</body>
+</html>
+
