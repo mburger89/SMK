@@ -14,6 +14,7 @@ A keyboard firmware written in **Embedded Swift**, targeting the **ESP32-C6**, *
 - **Per-Key RGB (opt-in)**: SK6812MINI-E/WS2812 backlight driver (ESP32-C6 only), off by default.
 - **Battery-Level Reporting (ESP32-C6/smk_kbd only)**: reads the board's VBAT divider and reports an estimated percentage via the BLE HID Battery Service — approximate (uncalibrated ADC + linear voltage curve), not yet checked against real hardware.
 - **Kconfig Board Options**: `idf.py menuconfig` toggles wired-bridge presence, default connection mode, and RGB backlight per board without touching source.
+- **Runtime Keymap Upload**: a transport-agnostic BEGIN/CHUNK/COMMIT/ERASE protocol (`Sources/SMKCore/KeymapProtocol.swift`) lets a keymap be uploaded over USB HID without reflashing, persisted to NVS on ESP32-C6 or flash on RP2040/RP2350 (nRF52840/STM32WB currently stub the write).
 
 ## Prerequisites
 
@@ -76,16 +77,17 @@ idf.py flash monitor
 
 ## Project Structure
 
-- `Sources/smk/`: Swift source files.
-  - `Main.swift`: Entry point and main loop.
-  - `LayerEngine.swift`: Logic for handling layers and key actions.
-  - `KeyMatrix.swift`: Hardware scanning and debouncing logic.
-  - `GPIORegisters.swift`: Low-level Swift-friendly GPIO access.
-- `Sources/components/`: C helper files for Bluetooth, UART, and hardware initialization.
-- `main/`: ESP-IDF component configuration and bridging.
-  - `CMakeLists.txt`: Orchestrates the Swift and C compilation.
-  - `Bridging.h`: C-to-Swift bridging header.
+- `Sources/smk/`: Swift sources shared by every target, plus the ESP32-C6-only Swift files (`GPIOInit.swift`, `SmkConfig.swift`, `BatteryMonitor.swift`, `BleHelper.swift`, `WiredHidUart.swift`, `KeymapStoreNVS.swift`, `LedStripDriverRMT.swift`, `RGBLighting.swift`).
+  - `Main.swift`: Entry point, board config JSON, main scan loop.
+  - `KeyMatrix.swift`: GPIO matrix scanning.
+  - `GPIORegisters.swift`: ESP32-C6 GPIO register access.
+- `Sources/SMKCore/`: hardware-independent, host-testable logic shared across all targets — `LayerEngine.swift`, `KeyEventProcessing.swift`, `Debounce.swift`, `HIDReport.swift`, `Config.swift`, `ConnectionMode.swift`, `Modifier.swift`, `LEDChainMapping.swift`, `KeymapFrame.swift`, `KeymapProtocol.swift`, etc.
+- `Sources/components/`: remaining ESP32-C6 C sources — `ble_helper.c`, `kb_main.c`, `battery_adc.c`, `led_strip_encoder.c`.
+- `Tests/SMKCoreTests/`: Swift Testing suite for `Sources/SMKCore/` (host-only, no embedded toolchain required).
+- `main/`: ESP-IDF component configuration and bridging (`CMakeLists.txt`, `Bridging.h`, `Kconfig.projbuild`).
+- `ports/`: per-target platform layers (`rp2040/`, `nrf52840/`, `stm32f4/`, `stm32wb/`), each with its own `GPIORegisters.swift`, GPIO/USB/BLE glue, and build config — see `CLAUDE.md` for the full per-file breakdown.
 - `managed_components/`: External dependencies handled by the ESP-IDF component manager (e.g., `cJSON`).
+- `site/`: source for the [docs site](https://mburger89.github.io/SMK/) (built via `site/build.py`, deployed by `.github/workflows/`).
 
 ## Scripts & Environment Variables
 
@@ -221,10 +223,10 @@ not by an automated test suite. None of these targets have been exercised on rea
 this repo's CI.
 
 ## Known Issues / TODOs
-- **Battery-level reporting is unverified on real hardware**: the smk_kbd board's VBAT divider (IO4/ADC1_CH4) is now read and reported via the BLE HID Battery Service, but the voltage-to-percentage curve is a rough linear approximation, not a calibrated discharge curve, and the ADC reading itself isn't calibrated either — treat the reported percentage as approximate until checked against a real board with a multimeter. See `CLAUDE.md`'s smk_kbd board section for details.
+- **Battery-level reporting is unverified on real hardware**: the smk_kbd board's VBAT divider (IO4/ADC1_CH4) is now read and reported via the BLE HID Battery Service. The ADC reading itself is calibrated (ESP-IDF's `adc_cali_*` curve-fitting scheme, using the chip's factory eFuse constants), but the voltage-to-percentage curve is still a rough linear approximation, not a real Li-ion discharge curve — that needs charge/discharge data logged from a physical board. See `CLAUDE.md`'s smk_kbd board section for details.
 - **nRF52840 port is build-only**: no hardware verification yet, and the board's GPIO pin map in `Sources/smk/Main.swift` is an explicit placeholder that must be replaced before flashing a real board. See [`CLAUDE.md`'s nRF52840 section](CLAUDE.md#nrf52840) (Prerequisites through the "read before flashing real hardware" caveat) for the full list of known gaps (no LE bonding persistence, keymap upload accepted but not yet persisted, uncalibrated software timers).
 - **STM32F4 port is build-only, USB HID only, and its bring-up matrix isn't a real keyboard**: no WeAct Black Pill hardware verification yet, and `Sources/smk/Main.swift`'s STM32F4 board branch is a placeholder 5x5 test matrix on GPIOB, not a real layout — no board schematic exists yet (this targets the bare dev board). BLE is out of scope for this pass (a future STM32WB cycle), and the matrix is single-GPIO-port-only for now (`ports/stm32f4/GPIORegisters.swift`'s own header comment explains why). See `CLAUDE.md`'s STM32F4 Prerequisites subsection and `docs/superpowers/specs/2026-08-10-stm32f4-support-design.md`'s Future Work section.
-- **STM32WB port has an unresolved license conflict — do not distribute a build.** This repo is GPL-3.0, but the vendored IPCC transport-layer files in `ports/stm32wb/platform/` (`tl_mbox.c`, `shci.c`, `shci_tl.c`, etc., sourced from STM32CubeWB) are licensed under ST's SLA0044, which forbids GPL redistribution. This was flagged during the port and deliberately deferred rather than resolved — see `CLAUDE.md`'s STM32WB board section. The port is also build-only (no NUCLEO-WB55RG hardware verification yet), its GPIO pin map is a placeholder 5x5 test matrix, factory HSE capacitor trim isn't applied (an RF accuracy concern), and CPU2 requires a separate manual flash of ST's "HCI Layer" wireless-coprocessor firmware that this project's build does not perform.
+- **STM32WB port has an unresolved license conflict — do not distribute a build.** This repo is GPL-3.0, but the vendored IPCC transport-layer files in `ports/stm32wb/platform/` (`tl_mbox.c`, `shci.c`, `shci_tl.c`, etc., sourced from STM32CubeWB) are licensed under ST's SLA0044, which forbids GPL redistribution. This was flagged during the port and deliberately deferred rather than resolved — see `CLAUDE.md`'s STM32WB board section. The port is also build-only (no NUCLEO-WB55RG hardware verification yet), and its GPIO pin map is a placeholder 5x5 test matrix. Factory HSE capacitor trim is now read from OTP and applied (see `CLAUDE.md`), though unverified against a real board's RF accuracy; CPU2 still requires a separate manual flash of ST's "HCI Layer" wireless-coprocessor firmware that this project's build does not perform.
 
 ## IDE Support
 To enable code completion and syntax highlighting in VS Code or Xcode:

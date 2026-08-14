@@ -4,20 +4,30 @@
 // (adc_oneshot_unit_init_cfg_t, adc_oneshot_chan_cfg_t) — the same
 // "constructing C-ABI structs as literals" exception this project
 // documents elsewhere (e.g. BTstack's hci_transport_t in the nRF52840
-// port) rather than hand-rolling a matching Swift struct layout that
-// can't be build-verified on this machine (idf.py build has a known
-// pre-existing toolchain break unrelated to this file — see memory:
-// project-esp32-build-env). Everything downstream of the raw reading —
-// mV conversion, percentage curve, periodic scheduling, BLE reporting —
-// lives in Swift (Sources/smk/BatteryMonitor.swift), per this project's
-// Swift-first preference; this file only does the unavoidable struct-heavy
-// driver setup and exposes plain scalar functions to Swift.
+// port) rather than hand-rolling a matching Swift struct layout.
+// Everything downstream of the reading —
+// percentage curve, periodic scheduling, BLE reporting — lives in Swift
+// (Sources/smk/BatteryMonitor.swift), per this project's Swift-first
+// preference; this file only does the unavoidable struct-heavy driver
+// setup and exposes plain scalar functions to Swift.
+//
+// mV conversion uses ESP-IDF's adc_cali (curve-fitting scheme), which
+// applies this specific chip's factory eFuse-burnt calibration constants —
+// no per-board multimeter measurement needed, unlike the percentage curve
+// itself (see BatteryMonitor.swift). Falls back to the nominal
+// raw/4095*3300mV conversion if calibration isn't available (e.g. an older
+// chip revision with the calibration eFuse bits unburnt).
 
 #include "esp_adc/adc_oneshot.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
 
 #define SMK_BATTERY_ADC_CHANNEL ADC_CHANNEL_4 // IO4
+#define SMK_BATTERY_ADC_ATTEN ADC_ATTEN_DB_12
+#define SMK_BATTERY_ADC_BITWIDTH ADC_BITWIDTH_DEFAULT
 
 static adc_oneshot_unit_handle_t s_adc_handle = NULL;
+static adc_cali_handle_t s_cali_handle = NULL;
 
 // Returns 0 on success, a negative esp_err_t on failure.
 int smk_battery_adc_init(void) {
@@ -35,8 +45,8 @@ int smk_battery_adc_init(void) {
     }
 
     adc_oneshot_chan_cfg_t chan_config = {
-        .atten = ADC_ATTEN_DB_12,
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
+        .atten = SMK_BATTERY_ADC_ATTEN,
+        .bitwidth = SMK_BATTERY_ADC_BITWIDTH,
     };
     err = adc_oneshot_config_channel(s_adc_handle, SMK_BATTERY_ADC_CHANNEL, &chan_config);
     if (err != ESP_OK) {
@@ -44,12 +54,27 @@ int smk_battery_adc_init(void) {
         return (int)err;
     }
 
+    adc_cali_curve_fitting_config_t cali_config = {
+        .unit_id = ADC_UNIT_1,
+        .chan = SMK_BATTERY_ADC_CHANNEL,
+        .atten = SMK_BATTERY_ADC_ATTEN,
+        .bitwidth = SMK_BATTERY_ADC_BITWIDTH,
+    };
+    // Not fatal if this fails (e.g. ESP_ERR_NOT_SUPPORTED on a chip without
+    // the calibration eFuse burnt) — smk_battery_adc_read_mv() falls back
+    // to an uncalibrated nominal conversion when s_cali_handle is NULL.
+    if (adc_cali_create_scheme_curve_fitting(&cali_config, &s_cali_handle) != ESP_OK) {
+        s_cali_handle = NULL;
+    }
+
     return 0;
 }
 
-// Returns the raw ADC conversion result (0-4095 at the default 12-bit
-// width), or -1 if the ADC isn't initialized or the read failed.
-int smk_battery_adc_read_raw(void) {
+// Returns the VBAT-pin voltage in mV (calibrated if the eFuse scheme was
+// available, otherwise a nominal-full-scale approximation), or -1 if the
+// ADC isn't initialized or the read failed. This is the pin voltage only —
+// the caller (BatteryMonitor.swift) applies the board's ÷2 divider ratio.
+int smk_battery_adc_read_mv(void) {
     if (s_adc_handle == NULL) {
         return -1;
     }
@@ -58,5 +83,15 @@ int smk_battery_adc_read_raw(void) {
     if (err != ESP_OK) {
         return -1;
     }
-    return raw;
+
+    if (s_cali_handle != NULL) {
+        int mv = 0;
+        if (adc_cali_raw_to_voltage(s_cali_handle, raw, &mv) == ESP_OK) {
+            return mv;
+        }
+    }
+
+    // Uncalibrated fallback: ADC_ATTEN_DB_12's nominal ~3300mV full-scale
+    // at the default 12-bit width.
+    return raw * 3300 / 4095;
 }

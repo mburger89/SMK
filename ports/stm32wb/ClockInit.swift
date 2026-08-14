@@ -72,6 +72,51 @@ private let crsBase: UInt32 = 0x4000_6000
 private let crsCr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(crsBase + 0x00))!
 private let crsCfgr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(crsBase + 0x04))!
 
+// --- RCC_HSECR (HSE capacitor tuning) -------------------------------------
+// Offset 0x9C confirmed via stm32wb55xx.h's RCC_TypeDef layout comment
+// ("RCC HSE Clock Register, Address offset: 0x9C"). HSETUNE is a 6-bit
+// field at bits [13:8] (RCC_HSECR_HSETUNE_Msk = 0x3F00), confirmed via the
+// same header's RCC_HSECR bit-definition block. The unlock key and the
+// unlock-then-modify write sequence match ST's own
+// LL_RCC_HSE_SetCapacitorTuning (stm32wbxx_ll_rcc.h): writing this key
+// value un-write-protects HSECR for the following write; the register does
+// not retain the key itself.
+private let rccHsecr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(rccBase + 0x9C))!
+private let rccHsecrUnlockKey: UInt32 = 0xCAFE_CAFE
+private let rccHsecrHseTuneMask: UInt32 = 0x3F << 8
+private let rccHsecrHseTunePos: UInt32 = 8
+
+// --- Factory HSE trim (OTP) ------------------------------------------------
+// The WB55's 1KB OTP area (0x1FFF7000-0x1FFF73FF, confirmed via
+// stm32wb55xx.h's OTP_AREA_BASE/OTP_AREA_END_ADDR) is plain memory-mapped
+// flash, readable without any driver. ST's OTP manager (Middlewares/ST/
+// STM32_WPAN/utilities/otp.c — not vendored into this project, since it's
+// SLA0044-licensed like the IPCC transport files; see CLAUDE.md's STM32WB
+// license note) packs 8-byte records back-to-front from the top of the
+// area: 6 bytes of payload, then a 1-byte "hse_tuning" field, then a
+// 1-byte id at the very end of each record. Record id 0 (OTP_ID0, ST's
+// factory-programmed board-identity record) is what carries the per-die
+// HSE trim value; this walks the same 8-byte-record layout independently
+// re-derived from the public register/memory-map facts above, not copied
+// from ST's implementation.
+private let otpAreaBase: UInt32 = 0x1FFF_7000
+private let otpAreaEnd: UInt32 = 0x1FFF_73FF
+private let otpRecordSize: UInt32 = 8
+private let otpId0: UInt8 = 0
+
+private func readFactoryHseTuning() -> UInt8? {
+    var recordAddr = otpAreaEnd - (otpRecordSize - 1)
+    while recordAddr >= otpAreaBase {
+        let record = UnsafePointer<UInt8>(bitPattern: UInt(recordAddr))!
+        if record[7] == otpId0 {
+            return record[6]
+        }
+        if recordAddr < otpAreaBase + otpRecordSize { break }
+        recordAddr -= otpRecordSize
+    }
+    return nil
+}
+
 // --- RCC_CR ------------------------------------------------------------
 // HSEON/HSERDY happen to sit at the same bit positions as STM32F4 (16/17),
 // but this was independently confirmed against stm32wb55xx.h's RCC_CR bit
@@ -154,6 +199,20 @@ func smk_clock_init() {
     // 1. Start HSE and wait for it to stabilize.
     rccCr.pointee |= rccCrHseOn
     while (rccCr.pointee & rccCrHseRdy) == 0 { smk_cpu_nop() }
+
+    // 1b. Apply the factory-programmed HSE capacitor trim, if OTP has one.
+    //     Matches ST's own Config_HSE()/LL_RCC_HSE_SetCapacitorTuning
+    //     sequence: unlock, then read-modify-write just the HSETUNE field.
+    //     Silently left at HSECR's power-on-reset trim value if OTP wasn't
+    //     programmed (e.g. some dev boards) — same fallback ST's own code
+    //     has, since OTP_Read returning null there just skips the call.
+    if let hseTuning = readFactoryHseTuning() {
+        // HSETUNE is a 6-bit field; mask defensively so an out-of-range OTP
+        // byte can't bleed into HSECR's adjacent HSEGMC bits.
+        let tuneBits = (UInt32(hseTuning) << rccHsecrHseTunePos) & rccHsecrHseTuneMask
+        rccHsecr.pointee = rccHsecrUnlockKey
+        rccHsecr.pointee = (rccHsecr.pointee & ~rccHsecrHseTuneMask) | tuneBits
+    }
 
     // 2. Select Voltage Scale Range 1 (required for SYSCLK > 16MHz) and
     //    wait for the regulator to settle.

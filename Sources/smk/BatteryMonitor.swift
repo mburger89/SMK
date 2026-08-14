@@ -11,31 +11,27 @@
 // ADC unit/channel setup stays in C (Sources/components/battery_adc.c) —
 // see that file's header comment for why (struct-heavy driver config,
 // same "constructing C-ABI structs" exception as BTstack's hci_transport_t
-// elsewhere in this project). Everything downstream — mV conversion,
-// percentage curve, periodic scheduling — is plain Swift, per this
-// project's Swift-first preference. No @_cdecl needed here: nothing
-// outside this Swift module calls these functions, matching GPIOInit.swift/
-// SmkConfig.swift's precedent for ESP32-C6-only files.
+// elsewhere in this project). Everything downstream — percentage curve,
+// periodic scheduling — is plain Swift, per this project's Swift-first
+// preference. No @_cdecl needed here: nothing outside this Swift module
+// calls these functions, matching GPIOInit.swift/SmkConfig.swift's
+// precedent for ESP32-C6-only files.
 //
-// UNVERIFIED END TO END: this machine's idf.py build has a known
-// pre-existing toolchain break unrelated to this change (error building
-// module '_Builtin_inttypes' during the Swift bridging-header compile —
-// see memory: project-esp32-build-env), so this hasn't been build-verified
-// as part of the full firmware image, only checked field-by-field against
-// the real ESP-IDF v6.0.1 headers installed at ~/.espressif/v6.0.1/esp-idf.
-// The voltage-to-percentage curve below is a rough single-cell Li-ion
-// linear approximation, not a calibrated discharge curve or a calibrated
-// ADC reading (ADC_ATTEN_DB_12's ~3300mV nominal full-scale is used
-// as-is, no adc_cali_* calibration handle) — good enough for a rough
-// battery icon, not fuel-gauge accuracy. Revisit both the calibration and
-// the curve once real hardware is available to check readings against a
-// multimeter.
+// smk_battery_adc_read_mv() uses ESP-IDF's adc_cali curve-fitting scheme
+// (this chip's factory eFuse calibration constants), so the mV reading
+// itself no longer needs a multimeter to be roughly trustworthy. The
+// voltage-to-percentage curve below is still a rough single-cell Li-ion
+// linear approximation, not a calibrated discharge curve — real Li-ion
+// voltage-vs-charge is nonlinear, and getting a true discharge curve
+// requires logging real board data over a full charge/discharge cycle, not
+// just an accurate instantaneous voltage. Revisit the curve once real
+// hardware is available to log that data.
 
 @_extern(c, "smk_battery_adc_init")
 func smk_battery_adc_init() -> Int32
 
-@_extern(c, "smk_battery_adc_read_raw")
-func smk_battery_adc_read_raw() -> Int32
+@_extern(c, "smk_battery_adc_read_mv")
+func smk_battery_adc_read_mv() -> Int32
 
 // smk_ble_set_battery_level: no @_extern here anymore — Task 11 ported it
 // directly to Swift (BleHelper.swift, same module as this file), so this
@@ -43,10 +39,6 @@ func smk_battery_adc_read_raw() -> Int32
 
 private var batteryMonitorReady = false
 
-// ADC_ATTEN_DB_12's nominal full-scale at the default (12-bit) width on
-// ESP32-C6 — uncalibrated, see file header.
-private let adcFullScaleMv: Int32 = 3300
-private let adcMaxRaw: Int32 = 4095
 // The board halves VBAT before it reaches the ADC pin (see CLAUDE.md's
 // GPIO map: "VBAT sense (÷2 divider)"), so the true battery voltage is 2x
 // the measured pin voltage.
@@ -71,10 +63,9 @@ func initBatteryMonitor() {
 // every single iteration. See Main.swift's call site for the interval.
 func pollBatteryLevel() {
     guard batteryMonitorReady else { return }
-    let raw = smk_battery_adc_read_raw()
-    guard raw >= 0 else { return }
+    let pinMv = smk_battery_adc_read_mv()
+    guard pinMv >= 0 else { return }
 
-    let pinMv = raw * adcFullScaleMv / adcMaxRaw
     let vbatMv = pinMv * vbatDividerRatio
 
     let clampedMv = min(max(vbatMv, batteryEmptyMv), batteryFullMv)
