@@ -460,6 +460,14 @@ func app_main_swift() {
             scansSinceLastBatteryPoll = 0
             pollBatteryLevel()
         }
+        // Services a keymap-upload packet queued by ble_hidd_event_callback
+        // (BleHelper.swift), if any — called every iteration (cheap: a
+        // single flag check when nothing is pending), same as
+        // ports/rp2040/UsbHid.swift's kb_usb_task() calling
+        // smk_keymap_usb_service() unconditionally every loop. See
+        // BleHelper.swift's pendingKeymapPacket comment for why the actual
+        // dispatch can't happen inside the BLE callback itself.
+        smk_keymap_ble_service()
         #endif
 
         vTaskDelay(1)

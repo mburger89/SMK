@@ -135,6 +135,34 @@ let espHiddConnectEvent = ESP_HIDD_CONNECT_EVENT.rawValue
 let espHiddOutputEvent = ESP_HIDD_OUTPUT_EVENT.rawValue
 let espHiddDisconnectEvent = ESP_HIDD_DISCONNECT_EVENT.rawValue
 
+// Keymap-upload packet handoff from the NimBLE host task (this callback's
+// caller) to the main scan loop's smk_keymap_ble_service() poll — mirrors
+// ports/rp2040/platform/usb_descriptors.c's tud_hid_set_report_cb ->
+// s_pending_packet/s_packet_pending -> smk_keymap_usb_service() split
+// (also used as-is by the nRF52840/STM32F4/STM32WB USB targets), which
+// exists for exactly this reason: smk_keymap_dispatch_packet's COMMIT
+// opcode can trigger a multi-ms flash/NVS erase+program
+// (KeymapStoreNVS.swift's smk_keymap_commit), and calling that directly
+// from inside a BLE stack callback blocks the NimBLE host task from
+// servicing any other BLE event (connection-interval housekeeping, other
+// GATT traffic, disconnects) for that whole duration — a real starvation
+// risk, not just a style preference. This was flagged as a known gap when
+// the runtime-keymap-updates feature shipped (the RP2040/USB path got this
+// fix during that feature's final review; the BLE path did not) and is
+// fixed here the same way: the callback only copies the packet and sets a
+// flag; the actual dispatch (and the flash/NVS write it may trigger) moves
+// to the main loop, which has no BLE-timing obligations to violate.
+//
+// Plain (non-atomic) Swift globals, matching the C sides' own
+// `static volatile bool` — not a stronger guarantee, deliberately: ESP32-C6
+// is single-core RISC-V, so there's no cross-core visibility hazard, only
+// a single-word write/read pair between two FreeRTOS tasks (NimBLE host
+// task, main scan-loop task) that never runs concurrently with itself on
+// one core. This is the same level of rigor the existing C ports already
+// rely on for the identical problem, not a weaker one.
+private var pendingKeymapPacket = [UInt8](repeating: 0, count: 32)
+private var keymapPacketPending = false
+
 @_cdecl("ble_hidd_event_callback")
 func ble_hidd_event_callback(_ handlerArgs: UnsafeMutableRawPointer?, _ base: UnsafeRawPointer?, _ id: Int32, _ eventData: UnsafeMutableRawPointer?) {
     switch id {
@@ -156,14 +184,15 @@ func ble_hidd_event_callback(_ handlerArgs: UnsafeMutableRawPointer?, _ base: Un
         guard let eventData = eventData else { break }
         let output = eventData.assumingMemoryBound(to: esp_hidd_event_data_t.self).pointee.output
         if output.report_id == 2 && output.length >= 32 {
-            if let dataPtr = output.data, let dev = hidDev {
-                var response = [UInt8](repeating: 0, count: 32)
-                response.withUnsafeMutableBufferPointer { respBuf in
-                    smk_keymap_dispatch_packet(dataPtr, respBuf.baseAddress!)
+            if let dataPtr = output.data {
+                // Fast path only: copy the 32 bytes and set the flag.
+                // smk_keymap_ble_service() (called from the main scan
+                // loop) does the actual dispatch — see the comment above
+                // pendingKeymapPacket for why this can't happen here.
+                for i in 0..<32 {
+                    pendingKeymapPacket[i] = dataPtr[i]
                 }
-                _ = response.withUnsafeMutableBufferPointer {
-                    esp_hidd_dev_input_set(dev, 0, 2, $0.baseAddress!, 32)
-                }
+                keymapPacketPending = true
             }
         }
     case espHiddDisconnectEvent:
@@ -171,6 +200,23 @@ func ble_hidd_event_callback(_ handlerArgs: UnsafeMutableRawPointer?, _ base: Un
         start_advertising()
     default:
         break
+    }
+}
+
+// Services a pending keymap-upload packet — called every iteration of the
+// main scan loop (Main.swift), never from ble_hidd_event_callback itself.
+// See pendingKeymapPacket's comment above for why this split exists.
+func smk_keymap_ble_service() {
+    guard keymapPacketPending, let dev = hidDev else { return }
+    keymapPacketPending = false
+    var response = [UInt8](repeating: 0, count: 32)
+    pendingKeymapPacket.withUnsafeBufferPointer { pktBuf in
+        response.withUnsafeMutableBufferPointer { respBuf in
+            smk_keymap_dispatch_packet(pktBuf.baseAddress!, respBuf.baseAddress!)
+        }
+    }
+    _ = response.withUnsafeMutableBufferPointer {
+        esp_hidd_dev_input_set(dev, 0, 2, $0.baseAddress!, 32)
     }
 }
 
