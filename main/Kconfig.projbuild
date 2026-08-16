@@ -1,5 +1,33 @@
 menu "SMK Keyboard Configuration"
 
+    choice SMK_BOARD
+        prompt "Board variant"
+        default SMK_BOARD_SMK_KBD
+        help
+            Which physical ESP32-C6 board this build targets. Selects the
+            matching #if SMK_BOARD_* branch in Sources/smk/Main.swift for
+            the matrix pin map and default keymap, and gates this menu's
+            other board-specific defaults (RGB backlight, its GPIO) below.
+            Unlike RP2040/nRF52840/STM32, which each get a distinct board
+            purely via a hardcoded -DSMK_BOARD_* CMake define per port
+            (see e.g. ports/rp2040/CMakeLists.txt), the ESP32-C6 build is
+            the one target where more than one physical board shares the
+            same main/CMakeLists.txt, so Kconfig is what picks among them.
+
+        config SMK_BOARD_SMK_KBD
+            bool "smk_kbd (ESP32-C6-MINI-1, reference board)"
+
+        config SMK_BOARD_TEST_BOARD
+            bool "SMK test board (Seeed XIAO ESP32-C6, 3x3 macropad bring-up board)"
+            help
+                3x3 macropad built to exercise hardware the smk_kbd board
+                never has: the RMT LED driver (9x SK6812MINI-E on GPIO20)
+                and BatteryMonitor (VBAT on GPIO0/ADC1_CH0, see
+                Sources/components/battery_adc.c). Pin map is a contract
+                shared with the PCB generator and the smk_configurator app
+                — see docs/superpowers/specs for this board's design doc.
+    endchoice
+
     config SMK_HAS_WIRED_BRIDGE
         bool "Board has a CH9350 UART-to-USB HID bridge chip"
         default n
@@ -30,12 +58,15 @@ menu "SMK Keyboard Configuration"
 
     config SMK_HAS_RGB_BACKLIGHT
         bool "Board has a per-key RGB LED chain (SK6812MINI-E/WS2812)"
+        default y if SMK_BOARD_TEST_BOARD
         default n
         help
             The stock smk_kbd PCB has no addressable LED chain — only
             a single fixed charge-status LED — so this defaults off. Enable
             it only if you've wired one up yourself (e.g. to the spare pad
             at IO16) or are building a future board revision that has one.
+            The SMK test board has a real 9-LED SK6812MINI-E chain
+            (GPIO20), so it defaults this on.
             Firmware validates SMK_RGB_GPIO against the matrix pins at boot
             and disables the chain (with a log warning) rather than
             initializing it on a pin already used for row/column scanning.
@@ -43,11 +74,13 @@ menu "SMK Keyboard Configuration"
     config SMK_RGB_GPIO
         int "GPIO driving the RGB LED chain"
         depends on SMK_HAS_RGB_BACKLIGHT
+        default 20 if SMK_BOARD_TEST_BOARD
         default 16
         help
             Defaults to IO16 — the one pin the smk_kbd PCB's README
             documents as spare/unconnected (broken out as "TXD0, spare/UART
-            log"). Change this to match wherever you actually wired the
+            log"). The SMK test board's LED data line is wired to GPIO20
+            instead. Change this to match wherever you actually wired the
             chain's data line.
 
 endmenu

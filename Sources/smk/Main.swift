@@ -91,13 +91,18 @@ func app_main_swift() {
     // Board pin maps. Exactly one of these is compiled in, selected by the
     // build (SMK_BOARD_NRF52840DK / SMK_BOARD_KBD_RP2040 in
     // ports/nrf52840/CMakeLists.txt / ports/rp2040/CMakeLists.txt
-    // respectively; the ESP32 main/CMakeLists.txt always defines neither,
-    // falling into the #else branch below). All three boards share the same
-    // keymap layout, but NOT the same matrix topology: smk_kbd_rp2040 and
-    // the ESP32-C6 smk_kbd board are both COL2ROW (`colsAreDriven: true` —
-    // diode anode at the column/switch side), while the nRF52840DK board
-    // below is the opposite (`colsAreDriven: false`) — see KeyMatrix.swift
-    // for what that flag actually changes about the scan direction.
+    // respectively; the ESP32 main/CMakeLists.txt defines SMK_BOARD_TEST_BOARD
+    // when Kconfig's SMK_BOARD choice selects the test board, and otherwise
+    // defines neither, falling into the #else branch below for the
+    // reference smk_kbd board — see main/Kconfig.projbuild's SMK_BOARD
+    // choice for why the ESP32-C6 build alone picks its board via Kconfig
+    // rather than a hardcoded CMake define like every other target here).
+    // All boards share the same keymap-cell vocabulary, but NOT the same
+    // matrix topology: smk_kbd_rp2040, the ESP32-C6 smk_kbd board, and the
+    // SMK test board are all COL2ROW (`colsAreDriven: true` — diode anode
+    // at the column/switch side), while the nRF52840DK board below is the
+    // opposite (`colsAreDriven: false`) — see KeyMatrix.swift for what that
+    // flag actually changes about the scan direction.
 #if SMK_BOARD_NRF52840DK
     // nrf52840dk board (Nordic PCA10056) — GPIO map deferred to hardware
     // bring-up (no board schematic consulted in this pass, per
@@ -229,6 +234,40 @@ func app_main_swift() {
                 ["trans", "trans", "trans", "trans", "trans", "trans", "key:left", "key:down", "key:up", "key:right", "trans", "trans"],
                 ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
                 ["trans", "trans", "trans", "trans", "trans", "trans", "none", "trans", "trans", "trans", "trans", "trans"]
+            ]
+        ]
+    }
+    """
+#elseif SMK_BOARD_TEST_BOARD
+    // SMK test board (Seeed XIAO ESP32-C6) — 3x3 macropad bring-up board
+    // built to exercise hardware the smk_kbd board below never has: the
+    // RMT LED driver and BatteryMonitor. Pin map is a contract shared with
+    // the PCB generator and the smk_configurator app — all three must
+    // agree or the firmware scans pins that aren't wired:
+    //   ROW0-2 = GPIO1, 2, 21 (sense inputs, pull-down)
+    //   COL0-2 = GPIO22, 23, 16 (strobe outputs, push-pull)
+    //   LED data (9x SK6812MINI-E) = GPIO20 (SMK_RGB_GPIO default for this
+    //   board, see main/Kconfig.projbuild)
+    //   VBAT sense = GPIO0/ADC1_CH0 (Sources/components/battery_adc.c)
+    //   Encoder A/B = GPIO17, 19 — wired but unread. This firmware cannot
+    //   decode quadrature; those pins are simply not referenced here.
+    // colsAreDriven:1 — same COL2ROW wiring as every other board in this
+    // file (diode anode at the column/switch side) — see KeyMatrix.swift.
+    //
+    // The 3x3 matrix's ninth position (row 0, col 2) is the rotary
+    // encoder's push switch, wired as an ordinary matrix key.
+    let configJson = """
+    {
+        "matrix": {
+            "rows": [1, 2, 21],
+            "cols": [22, 23, 16],
+            "colsAreDriven": 1
+        },
+        "layers": [
+            [
+                ["key:1", "key:2", "key:3"],
+                ["key:4", "key:5", "key:6"],
+                ["key:7", "key:8", "key:9"]
             ]
         ]
     }

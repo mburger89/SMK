@@ -216,6 +216,9 @@ endif()
 if(CONFIG_SMK_HAS_RGB_BACKLIGHT)
     list(APPEND smk_config_swift_defs "-DSMK_HAS_RGB_BACKLIGHT")
 endif()
+if(CONFIG_SMK_BOARD_TEST_BOARD)
+    list(APPEND smk_config_swift_defs "-DSMK_BOARD_TEST_BOARD")
+endif()
 
 # Custom command to compile Swift files
 add_custom_command(
