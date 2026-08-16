@@ -1,5 +1,9 @@
-// VBAT sense on IO4/ADC1_CH4 (÷2 resistor divider on the smk_kbd board —
-// see CLAUDE.md's GPIO map). Kept in C rather than Swift: ESP-IDF's
+// VBAT sense (÷2 resistor divider) — IO4/ADC1_CH4 on the smk_kbd board (see
+// CLAUDE.md's GPIO map), GPIO0/ADC1_CH0 on the SMK test board. Which
+// channel is compiled in is picked below by CONFIG_SMK_BOARD_TEST_BOARD
+// (Kconfig's SMK_BOARD choice, main/Kconfig.projbuild) — the smk_kbd board
+// is the default (that Kconfig option absent/0), so its behavior is
+// unchanged. Kept in C rather than Swift: ESP-IDF's
 // adc_oneshot driver configures itself via structs passed by pointer
 // (adc_oneshot_unit_init_cfg_t, adc_oneshot_chan_cfg_t) — the same
 // "constructing C-ABI structs as literals" exception this project
@@ -18,11 +22,16 @@
 // raw/4095*3300mV conversion if calibration isn't available (e.g. an older
 // chip revision with the calibration eFuse bits unburnt).
 
+#include "sdkconfig.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 
-#define SMK_BATTERY_ADC_CHANNEL ADC_CHANNEL_4 // IO4
+#if CONFIG_SMK_BOARD_TEST_BOARD
+#define SMK_BATTERY_ADC_CHANNEL ADC_CHANNEL_0 // GPIO0, SMK test board
+#else
+#define SMK_BATTERY_ADC_CHANNEL ADC_CHANNEL_4 // IO4, smk_kbd board
+#endif
 #define SMK_BATTERY_ADC_ATTEN ADC_ATTEN_DB_12
 #define SMK_BATTERY_ADC_BITWIDTH ADC_BITWIDTH_DEFAULT
 

@@ -19,10 +19,11 @@
 // definition — same reasoning as init_wired_link/send_wired_report below.
 void init_ble_hid(void);
 
-// VBAT battery ADC (Sources/components/battery_adc.c, ESP32-C6/smk_kbd
-// board only — IO4/ADC1_CH4, see CLAUDE.md's GPIO map). Returns 0/negative
-// esp_err_t and a raw 0-4095 reading respectively; see BatteryMonitor.swift
-// for the mV/percentage conversion.
+// VBAT battery ADC (Sources/components/battery_adc.c, ESP32-C6 only —
+// IO4/ADC1_CH4 on the smk_kbd board (see CLAUDE.md's GPIO map),
+// GPIO0/ADC1_CH0 on the SMK test board, picked at compile time by Kconfig's
+// SMK_BOARD choice). Returns 0/negative esp_err_t and a raw 0-4095 reading
+// respectively; see BatteryMonitor.swift for the mV/percentage conversion.
 int smk_battery_adc_init(void);
 int smk_battery_adc_read_raw(void);
 
