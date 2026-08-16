@@ -1,13 +1,13 @@
-// USB descriptors for the SMK STM32F4 HID keyboard.
+// USB descriptors for the SMK HID keyboard — shared by every TinyUSB port
+// (rp2040 family, nrf52840, stm32f4, stm32wb). Nothing here is
+// target-specific: pure TinyUSB descriptor tables/macros plus HID callbacks
+// operating on smk_keymap_dispatch_packet, a cross-platform Swift function
+// (Sources/SMKCore/KeymapProtocol.swift). This file used to exist as four
+// byte-identical per-port copies under ports/*/platform/.
 //
 // Reuses the same VID/PID and product name as the ESP32 BLE config
 // (Sources/components/ble_helper.c) so the device presents consistently:
 //   VID 0x16C0, PID 0x05DF, "SMK Keyboard" by "Swift".
-//
-// Identical to ports/rp2040/platform/usb_descriptors.c — none of it is
-// RP2040-specific (pure TinyUSB descriptor tables/macros and callbacks
-// operating on smk_keymap_dispatch_packet, a cross-platform Swift function
-// via Sources/SMKCore/KeymapProtocol.swift), so this is a straight copy.
 
 #include "tusb.h"
 #include <string.h>
@@ -171,11 +171,11 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
 }
 
 // Services a keymap-upload packet received by tud_hid_set_report_cb, called
-// from the main loop (kb_usb_task, now @_cdecl'd Swift in UsbHid.swift)
-// rather than from inside the USB callback itself -- smk_keymap_dispatch_packet
-// can trigger a multi-ms flash erase+program (see smk_keymap_commit in
-// KeymapStoreFlash.swift), which must not block the USB stack's own
-// callback context.
+// from the main loop (kb_usb_task, @_cdecl'd Swift in each port's
+// UsbHid.swift) rather than from inside the USB callback itself --
+// smk_keymap_dispatch_packet can trigger a multi-ms flash erase+program
+// (e.g. smk_keymap_commit in the RP2040 KeymapStoreFlash.swift), which must
+// not block the USB stack's own callback context.
 void smk_keymap_usb_service(void) {
     if (!s_packet_pending) {
         return;

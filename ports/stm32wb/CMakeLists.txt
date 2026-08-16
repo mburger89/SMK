@@ -171,6 +171,10 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyEventProcessing.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapFrame.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapProtocol.swift"
+    # Shared BTstack HID-over-GATT logic (GATT/SM/adv setup, packet handler,
+    # send_keyboard_report) — platform/ble_hid_wb.c keeps only the
+    # IPCC/CPU2 transport bring-up and calls smk_ble_hid_gatt_setup().
+    "${CMAKE_CURRENT_SOURCE_DIR}/../common/BleHidGatt.swift"
 )
 
 # cJSON (portable, no ESP-IDF dependency) — LayerEngine.swift/Config.swift
@@ -193,6 +197,9 @@ add_custom_command(
             -DSMK_BOARD_STM32WB_NUCLEO
             -import-objc-header "${CMAKE_CURRENT_SOURCE_DIR}/BridgingHeader.h"
             -wmo
+            # One section per function, so the -Wl,--gc-sections link can
+            # strip unused Swift (SMKCore compiles in whole, flat).
+            -Xfrontend -function-sections
             -Xcc -mfloat-abi=soft
             -Xcc -mcpu=cortex-m4
             -Xcc -mthumb
@@ -258,7 +265,12 @@ set(stm32wb_ipcc_srcs
 
 set(c_srcs
     platform/platform_glue.c
-    platform/usb_descriptors.c
+    # Shared across all TinyUSB/Embedded-Swift ports — see ports/common/
+    ../common/usb_descriptors.c
+    ../common/embedded_swift_glue.c
+    # Instantiates profile_data[] from the generated smk_hid.h for the
+    # shared BleHidGatt.swift's @_extern binding — see that file's comment.
+    ../common/smk_hid_gatt_data.c
     ${stm32wb_ipcc_srcs}
     "${STM32WB_CJSON_DIR}/cJSON.c"
 )

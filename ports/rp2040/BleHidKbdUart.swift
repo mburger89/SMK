@@ -59,14 +59,11 @@
 // send_keyboard_report() degrades gracefully either way (no-ops without a
 // connection), so USB HID keeps working regardless of BLE's state.
 //
-// The HID-over-GATT half below (from `l2cap_init()` down through
-// `send_keyboard_report`) is copied directly from
-// ports/rp2040/BleHidPicoW.swift (Task 12), not re-derived — see that
-// file for the shared shape/reasoning, including the permanent-copy fix
-// for two BTstack-retained buffers (hidDescriptorKeyboardBytes/
-// advDataBytes) that file's own review round landed on. Only the
-// transport bring-up above it (this board's dedicated UART link to a
-// CYW43439, vs. Pico W's onboard cyw43_arch) differs.
+// The HID-over-GATT half (GATT/SM/advertising setup, packet handler,
+// send_keyboard_report) is the shared ports/common/BleHidGatt.swift,
+// compiled into this build alongside this file — only the transport
+// bring-up here (this board's dedicated UART link to a CYW43439, vs. Pico
+// W's onboard cyw43_arch) is board-specific.
 //
 // Every numeric constant/type below was cross-checked against the real
 // vendored pico-sdk (~/pico-sdk) during this port. Two placeholders in
@@ -169,26 +166,48 @@ func hci_set_chipset(_ chipset: UnsafeMutableRawPointer?)
 @_extern(c, "btstack_chipset_bcm_instance")
 func btstack_chipset_bcm_instance() -> UnsafeMutableRawPointer?
 
-// smk_uart_driver — the `const btstack_uart_block_t` struct literal in
-// uart_driver_vtable.c, needed here as the argument to
-// hci_transport_h4_instance. Empirically verified (standalone compile +
-// disassemble probe, armv6m-none-none-eabi + Embedded + Extern, matching
-// this project's toolchain/flags) that declaring the extern as a scalar
-// placeholder type and recovering the REAL struct's address via
-// `withUnsafePointer(to:)` produces the correct address-of codegen
-// (R_ARM_GOT_PREL relocation against the C symbol, loaded once to yield
-// the struct's base address) — this is the exact same pattern
-// BleHidPicoW.swift's `profile_data` extern already uses successfully in
-// this codebase. The alternative of declaring the extern var's TYPE
-// directly as a pointer (`var smk_uart_driver: UnsafeMutableRawPointer`)
-// and using its VALUE was also probed and found to be wrong: that
-// generates a DEREFERENCE of the struct's first bytes (reinterpreting
-// `smk_uart_driver.init`'s first few bytes as if they were a pointer
-// value), not an address-of — confirmed by comparing disassembly of both
-// patterns against a real multi-field struct global. See
-// uart_driver_vtable.c for the C-side struct literal.
-@_extern(c, "smk_uart_driver")
-var smk_uart_driver: UInt8
+// btstack_uart_t (a.k.a. btstack_uart_block_t) — the UART driver vtable
+// BTstack reads by address, now a Swift mirror instead of a C struct
+// literal. Field order verified against the real vendored header
+// (~/pico-sdk/lib/btstack/src/btstack_uart.h): the 10 H4-relevant function
+// pointers below in declaration order, then 7 sleep-/H5-frame-mode fields
+// this plain-H4 transport leaves NULL (mirrored as untyped nil pointers —
+// BTstack null-checks before calling any of them). 17 same-size pointer
+// fields in declaration order — the same verified mirror class as
+// BtstackPacketCallbackRegistration (ports/common/BleHidGatt.swift).
+struct BtstackUartVtable {
+    var initFn: (@convention(c) (UnsafeRawPointer?) -> Int32)? // init(const btstack_uart_config_t *)
+    var open: (@convention(c) () -> Int32)?
+    var close: (@convention(c) () -> Int32)?
+    var setBlockReceived: (@convention(c) ((@convention(c) () -> Void)?) -> Void)?
+    var setBlockSent: (@convention(c) ((@convention(c) () -> Void)?) -> Void)?
+    var setBaudrate: (@convention(c) (UInt32) -> Int32)?
+    var setParity: (@convention(c) (Int32) -> Int32)?
+    var setFlowcontrol: (@convention(c) (Int32) -> Int32)?
+    var receiveBlock: (@convention(c) (UnsafeMutablePointer<UInt8>?, UInt16) -> Void)?
+    var sendBlock: (@convention(c) (UnsafePointer<UInt8>?, UInt16) -> Void)?
+    // Sleep-mode + H5/SLIP frame fields, all unused by H4 — kept for layout.
+    var getSupportedSleepModes: UnsafeRawPointer? = nil
+    var setSleep: UnsafeRawPointer? = nil
+    var setWakeupHandler: UnsafeRawPointer? = nil
+    var setFrameReceived: UnsafeRawPointer? = nil
+    var setFrameSent: UnsafeRawPointer? = nil
+    var receiveFrame: UnsafeRawPointer? = nil
+    var sendFrame: UnsafeRawPointer? = nil
+}
+
+private var smkUartDriver = BtstackUartVtable(
+    initFn: uart_driver_init,
+    open: uart_driver_open,
+    close: uart_driver_close,
+    setBlockReceived: uart_driver_set_block_received,
+    setBlockSent: uart_driver_set_block_sent,
+    setBaudrate: uart_driver_set_baudrate,
+    setParity: uart_driver_set_parity,
+    setFlowcontrol: uart_driver_set_flowcontrol,
+    receiveBlock: uart_driver_receive_block,
+    sendBlock: uart_driver_send_block
+)
 
 // --- btstack_uart_block_t callback bodies -----------------------------------
 // Polling/blocking implementation (simplest correct thing to reason about
@@ -205,7 +224,6 @@ private var rxBuffer: UnsafeMutablePointer<UInt8>? = nil
 private var rxLen: UInt16 = 0
 private var rxHave: UInt16 = 0
 
-@_cdecl("uart_driver_init")
 func uart_driver_init(_ config: UnsafeRawPointer?) -> Int32 {
     let uart = bt_uart_instance()
     _ = uart_init(uart, btUartBaudBoot)
@@ -219,29 +237,23 @@ func uart_driver_init(_ config: UnsafeRawPointer?) -> Int32 {
     return 0
 }
 
-@_cdecl("uart_driver_open")
 func uart_driver_open() -> Int32 { 0 }
 
-@_cdecl("uart_driver_close")
 func uart_driver_close() -> Int32 { 0 }
 
-@_cdecl("uart_driver_set_block_received")
 func uart_driver_set_block_received(_ handler: (@convention(c) () -> Void)?) {
     blockReceivedCb = handler
 }
 
-@_cdecl("uart_driver_set_block_sent")
 func uart_driver_set_block_sent(_ handler: (@convention(c) () -> Void)?) {
     blockSentCb = handler
 }
 
-@_cdecl("uart_driver_set_baudrate")
 func uart_driver_set_baudrate(_ baudrate: UInt32) -> Int32 {
     _ = uart_set_baudrate(bt_uart_instance(), baudrate)
     return 0
 }
 
-@_cdecl("uart_driver_set_parity")
 func uart_driver_set_parity(_ parity: Int32) -> Int32 {
     // UART_PARITY_NONE=0, UART_PARITY_EVEN=1 (hardware/uart.h's
     // uart_parity_t: NONE, EVEN, ODD) — verified; the plan's placeholder
@@ -250,20 +262,17 @@ func uart_driver_set_parity(_ parity: Int32) -> Int32 {
     return 0
 }
 
-@_cdecl("uart_driver_set_flowcontrol")
 func uart_driver_set_flowcontrol(_ flowcontrol: Int32) -> Int32 {
     smk_uart_set_hw_flow(bt_uart_instance(), flowcontrol != 0, flowcontrol != 0)
     return 0
 }
 
-@_cdecl("uart_driver_receive_block")
 func uart_driver_receive_block(_ buffer: UnsafeMutablePointer<UInt8>?, _ len: UInt16) {
     rxBuffer = buffer
     rxLen = len
     rxHave = 0
 }
 
-@_cdecl("uart_driver_send_block")
 func uart_driver_send_block(_ buffer: UnsafePointer<UInt8>?, _ length: UInt16) {
     // The original C always called uart_write_blocking(buffer, length) then
     // fired block_sent_cb unconditionally, regardless of buffer. This path
@@ -364,181 +373,11 @@ func ble_kbd_uart_poll() {
 }
 
 // =============================================================================
-// --- HID-over-GATT (copied directly from BleHidPicoW.swift's init_ble_hid/
-// send_keyboard_report — see that file for the shared reasoning; only the
-// transport bring-up above differs) -------------------------------------------
+// --- HID-over-GATT: shared ports/common/BleHidGatt.swift (compiled into
+// this build too — see CMakeLists.txt). Only the transport bring-up below
+// is this board's own. send_keyboard_report() also lives in the shared
+// file.
 // =============================================================================
-
-@_extern(c, "l2cap_init")
-func l2cap_init()
-
-@_extern(c, "sm_init")
-func sm_init()
-
-// sm_set_io_capabilities takes io_capability_t (a C enum) — UInt8 under
-// this project's -fshort-enums RP2040 build (verified in BleHidPicoW.swift).
-@_extern(c, "sm_set_io_capabilities")
-func sm_set_io_capabilities(_ ioCapability: UInt8)
-
-@_extern(c, "sm_set_authentication_requirements")
-func sm_set_authentication_requirements(_ authReq: UInt8)
-
-@_extern(c, "att_server_init")
-func att_server_init(_ dbData: UnsafePointer<UInt8>?, _ readCallback: UnsafeRawPointer?, _ writeCallback: UnsafeRawPointer?)
-
-@_extern(c, "battery_service_server_init")
-func battery_service_server_init(_ battery: UInt8)
-
-@_extern(c, "device_information_service_server_init")
-func device_information_service_server_init()
-
-@_extern(c, "hids_device_init")
-func hids_device_init(_ hidCountryCode: UInt8, _ descriptor: UnsafePointer<UInt8>, _ descriptorSize: UInt16)
-
-@_extern(c, "gap_advertisements_set_params")
-func gap_advertisements_set_params(_ advIntMin: UInt16, _ advIntMax: UInt16, _ advType: UInt8, _ ownAddrType: UInt8, _ directAddr: UnsafePointer<UInt8>, _ channelMap: UInt8, _ filterPolicy: UInt8)
-
-@_extern(c, "gap_advertisements_set_data")
-func gap_advertisements_set_data(_ advDataLen: UInt8, _ advData: UnsafeMutablePointer<UInt8>)
-
-@_extern(c, "gap_advertisements_enable")
-func gap_advertisements_enable(_ enabled: Int32)
-
-@_extern(c, "hci_add_event_handler")
-func hci_add_event_handler(_ registration: UnsafeMutableRawPointer)
-
-@_extern(c, "sm_add_event_handler")
-func sm_add_event_handler(_ registration: UnsafeMutableRawPointer)
-
-@_extern(c, "hids_device_register_packet_handler")
-func hids_device_register_packet_handler(_ handler: @convention(c) (UInt8, UInt16, UnsafeMutablePointer<UInt8>?, UInt16) -> Void)
-
-@_extern(c, "hci_power_control")
-func hci_power_control(_ mode: UInt8) -> Int32
-
-@_extern(c, "hids_device_send_input_report")
-func hids_device_send_input_report(_ conHandle: UInt16, _ report: UnsafePointer<UInt8>, _ reportLen: UInt16) -> UInt8
-
-@_extern(c, "hids_device_request_can_send_now_event")
-func hids_device_request_can_send_now_event(_ conHandle: UInt16) -> UInt8
-
-// btstack_packet_callback_registration_t — see BleHidPicoW.swift for the
-// full verification note on why this mirror struct (not a one-field
-// guess) is required.
-struct BtstackLinkedItem {
-    var next: UnsafeMutableRawPointer?
-}
-
-struct BtstackPacketCallbackRegistration {
-    var item = BtstackLinkedItem()
-    var callback: (@convention(c) (UInt8, UInt16, UnsafeMutablePointer<UInt8>?, UInt16) -> Void)?
-}
-
-// profile_data — generated by pico_btstack_make_gatt_header() from
-// smk_hid.gatt into the build directory's smk_hid.h. Same GATT profile as
-// Pico W's (the HID-over-GATT service doesn't depend on transport); the
-// generated symbol is instantiated into a real translation unit by
-// platform/smk_hid_gatt_data.c, now compiled in for this board too (see
-// CMakeLists.txt — it used to be needed only by the pico_w/pico2_w branch
-// because the deleted ble_hid_kbd_uart.c supplied its own
-// `#include "smk_hid.h"`).
-@_extern(c, "profile_data")
-var profile_data: UInt8
-
-// HCI_CON_HANDLE_INVALID (btstack_defines.h) — verified 0xffffu.
-private let hciConHandleInvalid: UInt16 = 0xFFFF
-
-// hidDescriptorKeyboard / advData are handed to BTstack calls that store
-// the raw pointer LONG-TERM, not just for the duration of the call — see
-// BleHidPicoW.swift for the full verification note (hids_device.c:420,
-// hci.c's le_advertisements_data). Fixed the same way here: copied into
-// permanently allocated, intentionally-never-freed storage once in
-// init_ble_hid() below.
-private let hidDescriptorKeyboardBytes: [UInt8] = [
-    0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, 0x85, 0x01, 0x05, 0x07, 0x19, 0xe0, 0x29, 0xe7, 0x15, 0x00,
-    0x25, 0x01, 0x75, 0x01, 0x95, 0x08, 0x81, 0x02, 0x95, 0x01, 0x75, 0x08, 0x81, 0x03, 0x95, 0x05,
-    0x75, 0x01, 0x05, 0x08, 0x19, 0x01, 0x29, 0x05, 0x91, 0x02, 0x95, 0x01, 0x75, 0x03, 0x91, 0x03,
-    0x95, 0x06, 0x75, 0x08, 0x15, 0x00, 0x25, 0x65, 0x05, 0x07, 0x19, 0x00, 0x29, 0x65, 0x81, 0x00,
-    0xc0
-]
-
-// Advertisement: flags, appearance (keyboard), 16-bit HID service UUID,
-// name. All BLUETOOTH_DATA_TYPE_* type bytes verified against
-// bluetooth_data_types.h (see BleHidPicoW.swift).
-private let advDataBytes: [UInt8] = [
-    0x02, 0x01, 0x06,       // len=2, BLUETOOTH_DATA_TYPE_FLAGS(0x01); General Discoverable + BR/EDR Not Supported
-    0x03, 0x19, 0xC1, 0x03, // len=3, BLUETOOTH_DATA_TYPE_APPEARANCE(0x19); 0x03C1 = Keyboard
-    0x03, 0x02, 0x12, 0x18, // len=3, BLUETOOTH_DATA_TYPE_INCOMPLETE_LIST_OF_16_BIT_SERVICE_CLASS_UUIDS(0x02); HID service UUID 0x1812
-    0x0d, 0x09, 0x53, 0x4D, 0x4B, 0x20, 0x4B, 0x65, 0x79, 0x62, 0x6F, 0x61, 0x72, 0x64, // len=13, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME(0x09); "SMK Keyboard"
-]
-
-// Permanent copies of the two buffers above — see BleHidPicoW.swift's
-// permanentCopy()/hidDescriptorKeyboardStorage comment for the full
-// pointer-escape-bug reasoning this carries forward.
-private var hidDescriptorKeyboardStorage: UnsafeMutableBufferPointer<UInt8>?
-private var advDataStorage: UnsafeMutableBufferPointer<UInt8>?
-
-private func permanentCopy(_ bytes: [UInt8]) -> UnsafeMutableBufferPointer<UInt8> {
-    let storage = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: bytes.count)
-    _ = storage.initialize(from: bytes)
-    return storage
-}
-
-private var hciEventCallbackRegistration = BtstackPacketCallbackRegistration()
-private var smEventCallbackRegistration = BtstackPacketCallbackRegistration()
-private let battery: UInt8 = 100
-private var conHandle: UInt16 = hciConHandleInvalid
-private var protocolMode: UInt8 = 1
-private var pendingReport = [UInt8](repeating: 0, count: 8)
-private var reportDirty = false
-
-private func sendPending() {
-    guard conHandle != hciConHandleInvalid else { return }
-    reportDirty = false
-    pendingReport.withUnsafeBufferPointer { _ = hids_device_send_input_report(conHandle, $0.baseAddress!, 8) }
-}
-
-// hci_event_packet_get_type / hci_event_hids_meta_get_subevent_code /
-// hids_subevent_protocol_mode_get_protocol_mode /
-// hids_subevent_input_report_enable_get_con_handle are all `static inline`
-// in btstack_event.h with no linkable symbol — reimplemented as direct
-// byte reads, copied exactly from BleHidPicoW.swift.
-private func hciEventPacketGetType(_ event: UnsafePointer<UInt8>) -> UInt8 {
-    event[0]
-}
-
-private func hciEventHidsMetaGetSubeventCode(_ event: UnsafePointer<UInt8>) -> UInt8 {
-    event[2]
-}
-
-private func hidsSubeventProtocolModeGetProtocolMode(_ event: UnsafePointer<UInt8>) -> UInt8 {
-    event[5]
-}
-
-private func hidsSubeventInputReportEnableGetConHandle(_ event: UnsafePointer<UInt8>) -> UInt16 {
-    UInt16(event[3]) | (UInt16(event[4]) << 8) // little_endian_read_16(event, 3)
-}
-
-@_cdecl("smk_ble_hid_packet_handler")
-private func packetHandler(_ packetType: UInt8, _ channel: UInt16, _ packet: UnsafeMutablePointer<UInt8>?, _ size: UInt16) {
-    guard packetType == 0x04, let packet = packet else { return } // HCI_EVENT_PACKET
-    let eventType = hciEventPacketGetType(packet)
-    if eventType == 0x05 { // HCI_EVENT_DISCONNECTION_COMPLETE
-        conHandle = hciConHandleInvalid
-    } else if eventType == 0xF1 { // HCI_EVENT_HIDS_META
-        let subevent = hciEventHidsMetaGetSubeventCode(packet)
-        switch subevent {
-        case 0x05: // HIDS_SUBEVENT_INPUT_REPORT_ENABLE
-            conHandle = hidsSubeventInputReportEnableGetConHandle(packet)
-        case 0x02: // HIDS_SUBEVENT_PROTOCOL_MODE
-            protocolMode = hidsSubeventProtocolModeGetProtocolMode(packet)
-        case 0x01: // HIDS_SUBEVENT_CAN_SEND_NOW
-            if reportDirty { sendPending() }
-        default:
-            break
-        }
-    }
-}
 
 func init_ble_hid() {
     // BTstack's run loop must exist before hci_init(): hci.c registers
@@ -549,69 +388,18 @@ func init_ble_hid() {
 
     cyw43439PowerUp()
 
-    let transport = withUnsafePointer(to: &smk_uart_driver) { ptr in
-        hci_transport_h4_instance(UnsafeMutableRawPointer(mutating: ptr))
+    let transport = withUnsafeMutablePointer(to: &smkUartDriver) { ptr in
+        hci_transport_h4_instance(UnsafeMutableRawPointer(ptr))
     }
     hci_init(transport, nil)
     cyw43439BtInit() // wires btstack_chipset_bcm; see its comment above
 
-    l2cap_init()
-    sm_init()
-    sm_set_io_capabilities(3) // IO_CAPABILITY_NO_INPUT_NO_OUTPUT — verified (BleHidPicoW.swift)
-    sm_set_authentication_requirements(0x09) // SM_AUTHREQ_BONDING | SM_AUTHREQ_SECURE_CONNECTION — verified
-
-    // Same as BleHidPicoW.swift: profile_data doesn't need permanentCopy()
-    // despite att_server_init retaining this pointer long-term — it's a C
-    // `.rodata` global with static storage duration, not a Swift
-    // `let`/`var` array that could be reallocated, so its address is
-    // already stable for the life of the process.
-    withUnsafePointer(to: &profile_data) {
-        att_server_init($0, nil, nil)
-    }
-
-    battery_service_server_init(battery)
-    device_information_service_server_init()
-    // hids_device_init stores this pointer long-term — must be the
-    // permanent copy, not a withUnsafeBufferPointer-scoped one.
-    let hidDescStorage = permanentCopy(hidDescriptorKeyboardBytes)
-    hidDescriptorKeyboardStorage = hidDescStorage
-    hids_device_init(0, hidDescStorage.baseAddress!, UInt16(hidDescStorage.count))
-
-    // gap_advertisements_set_params's direct_address is memcpy'd into
-    // hci_stack's own storage synchronously — BTstack does NOT retain this
-    // pointer, so a withUnsafeBufferPointer-scoped one is fine here.
-    let nullAddr = [UInt8](repeating: 0, count: 6)
-    nullAddr.withUnsafeBufferPointer { addrPtr in
-        gap_advertisements_set_params(0x0030, 0x0030, 0, 0, addrPtr.baseAddress!, 0x07, 0x00)
-    }
-    // gap_advertisements_set_data stores this pointer long-term too — must
-    // be the permanent copy.
-    let advStorage = permanentCopy(advDataBytes)
-    advDataStorage = advStorage
-    gap_advertisements_set_data(UInt8(advStorage.count), advStorage.baseAddress!)
-    gap_advertisements_enable(1)
-
-    hciEventCallbackRegistration.callback = packetHandler
-    withUnsafeMutablePointer(to: &hciEventCallbackRegistration) { hci_add_event_handler(UnsafeMutableRawPointer($0)) }
-    smEventCallbackRegistration.callback = packetHandler
-    withUnsafeMutablePointer(to: &smEventCallbackRegistration) { sm_add_event_handler(UnsafeMutableRawPointer($0)) }
-    hids_device_register_packet_handler(packetHandler)
-
-    // Triggers hci.c's internal power-on state machine, which now includes
-    // the chipset init sequence wired up in cyw43439BtInit() above. With
+    // GATT/SM/advertising setup, ending in hci_power_control(HCI_POWER_ON)
+    // — which triggers hci.c's power-on state machine, including the
+    // chipset init sequence wired up in cyw43439BtInit() above. With
     // cyw43439_patchram_data_len == 0 (placeholder — see
     // cyw43439_patchram.c) this reaches HCI_STATE_WORKING using only the
     // chip's ROM HCI command set; advertising will not actually start until
     // real patch data is supplied there.
-    _ = hci_power_control(1) // HCI_POWER_ON — verified (BleHidPicoW.swift)
-}
-
-func send_keyboard_report(_ modifier: UInt8, _ keys: UnsafePointer<UInt8>) {
-    pendingReport[0] = modifier
-    pendingReport[1] = 0
-    for i in 0..<6 { pendingReport[2 + i] = keys[i] }
-    reportDirty = true
-    if conHandle != hciConHandleInvalid {
-        _ = hids_device_request_can_send_now_event(conHandle)
-    }
+    smk_ble_hid_gatt_setup()
 }

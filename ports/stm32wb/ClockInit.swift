@@ -168,6 +168,23 @@ private let flashAcrPrften: UInt32 = 1 << 8
 private let flashAcrIcen: UInt32 = 1 << 9
 private let flashAcrDcen: UInt32 = 1 << 10
 
+// --- RCC_BDCR / RCC_CSR (LSE + RF wakeup clock, used by BLE bring-up) ------
+// BDCR at 0x90 / CSR at 0x94, confirmed via stm32wb55xx.h's RCC_TypeDef.
+// Bit positions confirmed via the same header's bit-definition blocks:
+// RCC_BDCR_LSEON_Pos (0), RCC_BDCR_LSERDY_Pos (1), RCC_BDCR_LSEDRV_Pos (3,
+// 2-bit field), RCC_CSR_RFWKPSEL_Pos (14, 2-bit field; RCC_CSR_RFWKPSEL_0 ==
+// 0x4000 == "LSE selected"), RCC_APB1ENR1_RTCAPBEN_Pos (10), PWR_CR1_DBP_Pos
+// (8).
+private let rccBdcr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(rccBase + 0x90))!
+private let rccCsr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(rccBase + 0x94))!
+private let rccApb1Enr1RtcApbEn: UInt32 = 1 << 10
+private let pwrCr1Dbp: UInt32 = 1 << 8
+private let rccBdcrLseOn: UInt32 = 1 << 0
+private let rccBdcrLseRdy: UInt32 = 1 << 1
+private let rccBdcrLseDrvMask: UInt32 = 0b11 << 3
+private let rccCsrRfwkpselMask: UInt32 = 0b11 << 14
+private let rccCsrRfwkpselLse: UInt32 = 0b01 << 14
+
 // --- CRS_CR ----------------------------------------------------------------
 // Confirmed via CRS_CR_CEN_Pos (5) / CRS_CR_AUTOTRIMEN_Pos (6) in
 // stm32wb55xx.h.
@@ -193,6 +210,18 @@ private let crsCfgrSyncSrcUsb: UInt32 = 0b10 << 28
 // delete it — see this file's header comment.
 @_extern(c, "smk_cpu_nop")
 func smk_cpu_nop()
+
+// Guaranteed-issued, guaranteed-ordered MMIO read (also in
+// platform/cortex_m_intrinsics.c). smk_cpu_nop() keeps a loop alive, but a
+// `.pointee` load can still be folded away entirely (store-to-load
+// forwarding of a bit this code just set) or hoisted above unrelated MMIO
+// writes — both observed in smk_enable_lse_and_rf_wakeup_clock()'s first
+// build. Use this for any read whose *existence or position* matters:
+// post-clock-enable read-backs, and reads ordered against other registers'
+// writes. Hardware-status polls that only re-read one register (HSERDY etc.)
+// are safe with the smk_cpu_nop() pattern above.
+@_extern(c, "smk_mmio_read32")
+func smk_mmio_read32(_ addr: UInt32) -> UInt32
 
 @_cdecl("smk_clock_init")
 func smk_clock_init() {
@@ -241,4 +270,42 @@ func smk_clock_init() {
     rccApb1Enr1.pointee |= rccApb1Enr1CrsEn
     crsCfgr.pointee = crsCfgrReloadDefault | crsCfgrFelimDefault | crsCfgrSyncSrcUsb
     crsCr.pointee |= crsCrCen | crsCrAutotrimen
+}
+
+// The radio's low-speed/wakeup clock, needed only by the BLE path — called
+// from platform/ble_hid_wb.c's init_ble_hid() before anything can release
+// CPU2, not from smk_clock_init() (nothing before BLE needs the backup
+// domain). Ported from that file's former C implementation; mirrors ST's own
+// SystemClock_Config for this board (BLE_HeartRate/Core/Src/main.c:
+// __HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW), RCC_OSCILLATORTYPE_LSE,
+// RFWakeUpClockSelection = RCC_RFWKPCLKSOURCE_LSE).
+//
+// NUCLEO-WB55RG (MB1355) is fitted with a 32.768kHz LSE crystal (X3), so
+// this is expected to succeed on real hardware; like smk_clock_init() above
+// this is a fail-stop busy-wait with no timeout.
+@_cdecl("smk_enable_lse_and_rf_wakeup_clock")
+func smk_enable_lse_and_rf_wakeup_clock() {
+    // RTCAPB clock gates access to the backup-domain registers (BDCR). The
+    // C original followed the |= with `(void)RCC->APB1ENR1;` — a volatile
+    // read-back ensuring the clock-enable has propagated before the
+    // backup-domain accesses below. Every read in this function goes through
+    // the opaque smk_mmio_read32() because the first build of this function
+    // proved plain `.pointee` reads here get folded away or hoisted (see
+    // that declaration's comment).
+    rccApb1Enr1.pointee |= rccApb1Enr1RtcApbEn
+    _ = smk_mmio_read32(rccBase + 0x58)
+
+    // Backup-domain writes are protected out of reset.
+    pwrCr1.pointee |= pwrCr1Dbp
+    while (smk_mmio_read32(pwrBase + 0x00) & pwrCr1Dbp) == 0 { }
+
+    if (smk_mmio_read32(rccBase + 0x90) & rccBdcrLseRdy) == 0 {
+        // RCC_LSEDRIVE_LOW, ST's choice for this board.
+        rccBdcr.pointee = smk_mmio_read32(rccBase + 0x90) & ~rccBdcrLseDrvMask
+        rccBdcr.pointee = smk_mmio_read32(rccBase + 0x90) | rccBdcrLseOn
+        while (smk_mmio_read32(rccBase + 0x90) & rccBdcrLseRdy) == 0 { }
+    }
+
+    // RFWKPSEL[1:0] = 01 -> LSE feeds the RF wakeup logic.
+    rccCsr.pointee = (smk_mmio_read32(rccBase + 0x94) & ~rccCsrRfwkpselMask) | rccCsrRfwkpselLse
 }

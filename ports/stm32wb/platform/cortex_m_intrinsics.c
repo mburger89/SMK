@@ -67,3 +67,18 @@ void smk_cpu_wfe(void) {
 void smk_cpu_nop(void) {
     __NOP();
 }
+
+// Guaranteed-issued, guaranteed-ordered 32-bit MMIO read for Swift callers.
+//
+// smk_cpu_nop() keeps a *loop* alive, but it can't force an individual read
+// to happen (or happen in order): Swift's `.pointee` loads are ordinary
+// non-volatile loads, so LLVM freely forwards a just-stored value into them
+// (deleting a read-back entirely) or hoists them above unrelated MMIO
+// writes. Found by disassembling smk_enable_lse_and_rf_wakeup_clock()'s
+// first Swift build: both "read back the enable bit" polls were folded away
+// and the BDCR read was hoisted above the DBP write. Routing the read
+// through an opaque C call with a volatile access makes it a real, ordered
+// bus read the optimizer must leave where it is.
+uint32_t smk_mmio_read32(uint32_t addr) {
+    return *(volatile const uint32_t *)addr;
+}

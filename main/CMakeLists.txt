@@ -24,10 +24,7 @@ set(swift_srcs
 )
 
 set(c_srcs
-    "../Sources/components/ble_helper.c"
     "../Sources/components/kb_main.c"
-    "../Sources/components/led_strip_encoder.c"
-    "../Sources/components/battery_adc.c"
 )
 
 # Register C sources and linker fragment
@@ -163,6 +160,29 @@ set(include_dirs
     "${idf_p}/components/esp_driver_uart/include"
     "${idf_p}/components/esp_driver_gpio/include"
     "${idf_p}/components/esp_timer/include"
+    "${idf_p}/components/esp_adc/include"
+    "${idf_p}/components/esp_adc/esp32c6/include"
+    "${idf_p}/components/esp_hal_ana_conv/include"
+    # NimBLE + NVS — Bridging.h imports host/ble_hs.h, services/gap/
+    # ble_svc_gap.h, nimble/nimble_port.h and nvs_flash.h so BleHelper.swift
+    # can construct the adv/security config through real imported types
+    # (the former ble_helper.c is deleted). Paths match what ESP-IDF's bt
+    # component puts on ble_helper.c's own compile line.
+    "${idf_p}/components/bt/host/nimble/nimble/nimble/include"
+    "${idf_p}/components/bt/host/nimble/nimble/nimble/host/include"
+    "${idf_p}/components/bt/host/nimble/nimble/nimble/host/services/gap/include"
+    "${idf_p}/components/bt/host/nimble/nimble/nimble/transport/include"
+    "${idf_p}/components/bt/host/nimble/nimble/porting/nimble/include"
+    "${idf_p}/components/bt/host/nimble/nimble/porting/npl/freertos/include"
+    "${idf_p}/components/bt/host/nimble/port/include"
+    "${idf_p}/components/bt/porting/include"
+    "${idf_p}/components/bt/porting/npl/freertos/include"
+    "${idf_p}/components/bt/porting/transport/include"
+    "${idf_p}/components/bt/include/esp32c6/include"
+    "${idf_p}/components/nvs_flash/include"
+    "${idf_p}/components/esp_partition/include"
+    "${idf_p}/components/esp_blockdev/include"
+    "${idf_p}/components/esp_hw_support/etm/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../managed_components/espressif__cjson/cJSON"
 )
 
@@ -229,13 +249,23 @@ add_custom_command(
             -static
             -enable-experimental-feature Embedded
             -enable-experimental-feature Extern
+            # @_section(".iram1.*") on LedStripDriverRMT.swift's RMT encoder
+            # callbacks — reproduces the C IRAM_ATTR placement
+            # CONFIG_RMT_ENCODER_FUNC_IN_IRAM expects.
+            -enable-experimental-feature SymbolLinkageMarkers
             -wmo
+            # One section per function, so ESP-IDF's --gc-sections link can
+            # strip unused Swift (SMKCore compiles in whole, flat).
+            -Xfrontend -function-sections
             -import-objc-header "${bridging_header}"
             -DSMK_RGB_AVAILABLE
             -DSMK_TARGET_ESP32C6
             ${smk_config_swift_defs}
             ${swift_flags}
             "-Xcc" "-fno-pic"
+            # ESP-IDF defines this on every C compile line; NimBLE's
+            # syscfg.h keys its ESP-IDF configuration include on it.
+            "-Xcc" "-DESP_PLATFORM"
             -emit-object
             -o "${swift_obj}"
             ${swift_srcs}

@@ -18,9 +18,6 @@
 //     (Task 5) claims ownership of the relevant peripherals — this must be
 //     coordinated with that init, not implemented independently here.
 
-#include <errno.h>
-#include <malloc.h>
-#include <stddef.h>
 #include <stdint.h>
 
 extern void app_main_swift(void); // shared entry point (Sources/smk/Main.swift)
@@ -119,26 +116,5 @@ int main(void) {
     return 0;
 }
 
-// --- posix_memalign (not in newlib; needed by Swift's swift_allocObject) ----
-// Swift's Embedded runtime allocates heap objects with posix_memalign for
-// alignment guarantees. Newlib doesn't provide it, so we bridge via memalign.
-int posix_memalign(void **memptr, size_t alignment, size_t size) {
-    if (alignment == 0 || (alignment & (alignment - 1)) != 0) return EINVAL;
-    if (size == 0) { *memptr = NULL; return 0; }
-    void *p = memalign(alignment, size);
-    if (p == NULL) return ENOMEM;
-    *memptr = p;
-    return 0;
-}
-
-// --- Embedded-Swift linker stubs -------------------------------------------
-// Swift's String / Unicode support references these symbols. The shared
-// code only uses ASCII JSON, so stubs are sufficient (mirrors RP2040's
-// platform_glue.c and ESP32's kb_main.c).
-void _swift_stdlib_getNormData(void) {}
-void _swift_stdlib_getComposition(void) {}
-void _swift_stdlib_getDecompositionEntry(void) {}
-uint8_t *_swift_stdlib_nfd_decompositions = 0;
-void _swift_stdlib_isExtendedPictographic(void) {}
-void _swift_stdlib_isInCB_Consonant(void) {}
-void _swift_stdlib_getGraphemeBreakProperty(void) {}
+// posix_memalign and the Embedded-Swift Unicode linker stubs moved to the
+// shared ports/common/embedded_swift_glue.c (identical across all ARM ports).

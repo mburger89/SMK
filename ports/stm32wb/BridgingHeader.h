@@ -41,11 +41,13 @@ void kb_log(const char *msg);
 void vTaskDelay(uint32_t ticks); // shim: pumps USB then delays ~ticks ms
 
 // BLE HID: Sources/smk/Main.swift calls init_ble_hid()/send_keyboard_report()
-// unconditionally regardless of board. platform/ble_hid_wb.c defines both for
-// real; platform_glue.c keeps #ifndef SMK_HAS_REAL_BLE_HID_WB stub bodies that
-// CMakeLists.txt's target_compile_definitions now compiles out.
+// unconditionally regardless of board. platform/ble_hid_wb.c defines the
+// transport bring-up (init_ble_hid); send_keyboard_report is deliberately
+// NOT declared here anymore — it's backed directly in Swift now (the shared
+// ports/common/BleHidGatt.swift, same-module resolution). platform_glue.c
+// keeps #ifndef SMK_HAS_REAL_BLE_HID_WB stub bodies that CMakeLists.txt's
+// target_compile_definitions now compiles out.
 void init_ble_hid(void);
-void send_keyboard_report(uint8_t modifier, uint8_t *keycodes);
 
 // Runtime keymap store (ports/stm32wb/KeymapStoreStub.swift, build-only
 // no-op stub — no flash layout designed yet, same status as

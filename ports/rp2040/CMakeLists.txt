@@ -183,7 +183,9 @@ set(SHARED_SWIFT_SRCS
 set(PLATFORM_C_SRCS
     platform/gpio_init_wrappers.c
     platform/flash_irq_wrappers.c
-    platform/usb_descriptors.c
+    # Shared across all TinyUSB/Embedded-Swift ports — see ports/common/
+    ../common/usb_descriptors.c
+    ../common/embedded_swift_glue.c
     platform/platform_glue.c
     # Portable cJSON (no ESP-IDF dependency)
     "${CMAKE_CURRENT_SOURCE_DIR}/../../managed_components/espressif__cjson/cJSON/cJSON.c"
@@ -201,18 +203,20 @@ if(SMK_IS_KBD_RP2040)
         "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LEDChainMapping.swift"
         "${CMAKE_CURRENT_SOURCE_DIR}/LedStripDriverPIO.swift"
         "${CMAKE_CURRENT_SOURCE_DIR}/BleHidKbdUart.swift"
+        # Shared HID-over-GATT logic (GATT/SM/adv setup, packet handler,
+        # send_keyboard_report) — BleHidKbdUart.swift keeps only this
+        # board's UART/CYW43439 transport bring-up.
+        "${CMAKE_CURRENT_SOURCE_DIR}/../common/BleHidGatt.swift"
     )
     list(APPEND PLATFORM_C_SRCS
         platform/ws2812_pio_shim.c
         platform/uart_driver_vtable.c
         platform/cyw43439_patchram.c
         # profile_data[] (from smk_hid.h, generated below) needs a real
-        # translation unit to be instantiated in — the deleted
-        # ble_hid_kbd_uart.c used to supply this via its own
-        # `#include "smk_hid.h"`; now shared with the pico_w/pico2_w branch's
-        # copy of the same requirement (see smk_hid_gatt_data.c's own header
-        # comment).
-        platform/smk_hid_gatt_data.c
+        # translation unit to be instantiated in — shared with the
+        # pico_w/pico2_w, nrf52840 and stm32wb builds (see that file's own
+        # header comment).
+        ../common/smk_hid_gatt_data.c
     )
 else()
     # Plain Pico / Pico W / Pico 2 / Pico 2 W: BLE HID glue is now Swift
@@ -221,6 +225,13 @@ else()
     # #if SMK_ENABLE_BLE / #else split providing the plain-Pico no-op
     # stubs (see SMK_ENABLE_BLE swiftc -D below).
     list(APPEND SHARED_SWIFT_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/BleHidPicoW.swift")
+    # The shared HID-over-GATT logic references BTstack symbols
+    # unconditionally (its @_cdecl entry points are link roots), so it is
+    # only in the source list for the boards that actually link BTstack —
+    # BleHidPicoW.swift's #else branch supplies the plain-Pico stubs.
+    if(PICO_BOARD STREQUAL "pico_w" OR PICO_BOARD STREQUAL "pico2_w")
+        list(APPEND SHARED_SWIFT_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/../common/BleHidGatt.swift")
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------
@@ -286,9 +297,9 @@ if((PICO_BOARD STREQUAL "pico_w" OR PICO_BOARD STREQUAL "pico2_w") AND NOT SMK_I
     # smk_hid.h only *declares* the profile_data[] GATT literal as C
     # source text; something must #include it into a real translation
     # unit for the array to exist as a linkable symbol
-    # (BleHidPicoW.swift's `@_extern(c, "profile_data")` only binds to an
+    # (BleHidGatt.swift's `@_extern(c, "profile_data")` only binds to an
     # existing one). The deleted ble_hid.c used to do this implicitly.
-    target_sources(smk_rp2040 PRIVATE platform/smk_hid_gatt_data.c)
+    target_sources(smk_rp2040 PRIVATE ../common/smk_hid_gatt_data.c)
 
     target_link_libraries(smk_rp2040
         pico_cyw43_arch_none      # CYW43 driver (no lwIP/network)
@@ -436,7 +447,7 @@ endforeach()
 # RGBLighting.swift) — passed as bare swiftc `-D` (Swift's own conditional-
 # compilation flag), distinct from ${_compile_defs} above which is C-level
 # `-Xcc -D...` for the Clang importer. target_compile_definitions() also sets
-# these for the remaining C sources (platform/usb_descriptors.c etc. see
+# these for the remaining C sources (../common/usb_descriptors.c etc. see
 # them as normal #ifdef macros);
 # this is the belt-and-suspenders explicit form so Main.swift's own `#if`
 # definitely sees them too, regardless of how CMake's native Swift-language

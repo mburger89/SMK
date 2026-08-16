@@ -6,26 +6,32 @@
 #include <stdlib.h>
 #include "cJSON.h"
 
-// BLE HID Functions
-//
-// init_ble_hid stays a real C prototype: init_ble_hid() itself stays
-// implemented in Sources/components/ble_helper.c (it mutates
-// struct ble_hs_cfg, a bitfield-heavy NimBLE global — see
-// Sources/smk/BleHelper.swift's header comment for the full rationale).
-//
-// send_keyboard_report/smk_ble_set_battery_level are NOT declared here
-// anymore: both are now implemented directly in Swift (BleHelper.swift).
-// A C prototype here would conflict with that same-module Swift
-// definition — same reasoning as init_wired_link/send_wired_report below.
-void init_ble_hid(void);
+// BLE HID — fully Swift now (BleHelper.swift; the former
+// Sources/components/ble_helper.c is deleted). These includes give Swift
+// the real NimBLE types it constructs — struct ble_hs_adv_fields and
+// struct ble_hs_cfg's bitfields come across as ClangImporter computed
+// properties with header-derived packing, so no hand-mirrored layouts are
+// involved — plus nvs_flash for the NVS init that must precede NimBLE.
+// No C prototype for init_ble_hid here anymore: it's a same-module Swift
+// definition (a prototype would conflict), same reasoning as
+// init_wired_link/send_wired_report below.
+#include "nvs_flash.h"
+#include "nimble/nimble_port.h"
+#include "nimble/nimble_port_freertos.h" // esp_nimble_enable / nimble_port_freertos_deinit
+#include "host/ble_hs.h"
+#include "host/ble_hs_mbuf.h"            // ble_hs_mbuf_to_flat/from_flat (upload GATT service)
+#include "services/gap/ble_svc_gap.h"
+#include "smk_ble_uuids.h"               // generated upload-service UUIDs (Sources/components)
 
-// VBAT battery ADC (Sources/components/battery_adc.c, ESP32-C6 only —
-// IO4/ADC1_CH4 on the smk_kbd board (see CLAUDE.md's GPIO map),
-// GPIO0/ADC1_CH0 on the SMK test board, picked at compile time by Kconfig's
-// SMK_BOARD choice). Returns 0/negative esp_err_t and a raw 0-4095 reading
-// respectively; see BatteryMonitor.swift for the mV/percentage conversion.
-int smk_battery_adc_init(void);
-int smk_battery_adc_read_raw(void);
+// VBAT battery ADC — the adc_oneshot/adc_cali driver setup is now Swift
+// too (BatteryMonitor.swift constructs the imported config structs
+// directly; the former Sources/components/battery_adc.c is deleted). These
+// includes are what make the driver's types and functions visible to
+// Swift via the ClangImporter — which handles C structs/enums natively, so
+// no hand-mirrored layouts are involved on this target.
+#include "esp_adc/adc_oneshot.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
 
 // Wired HID (UART1 -> CH9350L bridge, smk_kbd board) is implemented
 // directly in Swift for this target — see WiredHidUart.swift. No C
