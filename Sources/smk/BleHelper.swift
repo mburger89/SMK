@@ -91,11 +91,6 @@ func nimble_port_run()
 @_extern(c, "nimble_port_freertos_deinit")
 func nimble_port_freertos_deinit()
 
-// smk_keymap_dispatch_packet is @_cdecl'd Swift
-// (Sources/SMKCore/KeymapProtocol.swift, part of this same module/build —
-// Task 4 already landed per this plan's task ordering) — no @_extern
-// needed here, this is a same-module Swift-to-Swift call.
-
 // Single source of truth for the HID device handle — see file header
 // comment. Populated exactly once by smk_ble_set_hid_dev(), called from
 // ble_helper.c's init_ble_hid() right after esp_hidd_dev_init() succeeds.
@@ -144,28 +139,13 @@ func ble_hidd_event_callback(_ handlerArgs: UnsafeMutableRawPointer?, _ base: Un
     case espHiddConnectEvent:
         kb_log("BLE HID Connected")
     case espHiddOutputEvent:
-        // esp_hidd_event_data_t is a real C union (esp_hidd.h), imported
-        // by ClangImporter (Bridging.h already `#include`s esp_hidd.h) as
-        // a Swift type with a computed `.output` property backed by the
-        // same underlying storage — reading `.report_id`/`.length`/`.data`
-        // through it uses the header-derived field offsets directly,
-        // rather than hand-copied byte offsets that would silently go
-        // stale if a future ESP-IDF upgrade reordered `output`'s fields.
-        // rebind via assumingMemoryBound since event_data arrives as an
-        // untyped `void *` from the C callback signature.
-        guard let eventData = eventData else { break }
-        let output = eventData.assumingMemoryBound(to: esp_hidd_event_data_t.self).pointee.output
-        if output.report_id == 2 && output.length >= 32 {
-            if let dataPtr = output.data, let dev = hidDev {
-                var response = [UInt8](repeating: 0, count: 32)
-                response.withUnsafeMutableBufferPointer { respBuf in
-                    smk_keymap_dispatch_packet(dataPtr, respBuf.baseAddress!)
-                }
-                _ = response.withUnsafeMutableBufferPointer {
-                    esp_hidd_dev_input_set(dev, 0, 2, $0.baseAddress!, 32)
-                }
-            }
-        }
+        // Still fires: the report map in ble_helper.c keeps Report ID 1's
+        // LED output items (`0x91 0x02` / `0x91 0x03`), so a host setting
+        // caps/num/scroll lock lands here. This build simply has nothing to
+        // do with those — there are no indicator LEDs wired up — and keymap
+        // upload no longer arrives on a HID output report at all; it moved
+        // to the custom GATT service in ble_helper.c.
+        break
     case espHiddDisconnectEvent:
         kb_log("BLE HID Disconnected")
         start_advertising()

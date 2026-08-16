@@ -75,6 +75,11 @@ Connect your ESP32-C6 via USB and run:
 idf.py flash monitor
 ```
 
+BLE bonds live in NVS. `idf.py flash` preserves them, so paired hosts survive
+a firmware update; `idf.py erase_flash` wipes them and every host must be
+re-paired. `CONFIG_BT_NIMBLE_MAX_BONDS` (4) caps how many hosts can stay
+paired at once — a 5th pairing evicts the oldest.
+
 ## Project Structure
 
 - `Sources/smk/`: Swift sources shared by every target, plus the ESP32-C6-only Swift files (`GPIOInit.swift`, `SmkConfig.swift`, `BatteryMonitor.swift`, `BleHelper.swift`, `WiredHidUart.swift`, `KeymapStoreNVS.swift`, `LedStripDriverRMT.swift`, `RGBLighting.swift`).

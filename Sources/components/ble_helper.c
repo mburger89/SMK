@@ -5,6 +5,9 @@
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
 #include "services/gap/ble_svc_gap.h"
+#include "host/ble_hs_mbuf.h"
+#include "services/gatt/ble_svc_gatt.h"
+#include "smk_ble_uuids.h"
 #include <string.h>
 
 // This file is a trimmed remainder of the former ble_helper.c — see
@@ -19,21 +22,18 @@
 
 static const char *TAG = "SMK_BLE";
 
-// HID Report Map: a standard keyboard (Report ID 1) plus a 32-byte
-// vendor-defined channel (Report ID 2) used only for keymap upload — see
-// Sources/SMKCore/KeymapProtocol.swift for what rides over it.
+// HID Report Map: a standard keyboard (Report ID 1). Keymap upload used to
+// ride a second, vendor-defined Report ID 2 channel here; that's gone now —
+// macOS hides the HID service from Core Bluetooth apps entirely, so it was
+// unreachable from the configurator. Upload moved to a custom GATT service
+// (smk_upload_svcs below) — see
+// smk_configurator/docs/superpowers/specs/2026-08-15-ble-custom-gatt-upload-design.md
 static const uint8_t hid_report_map[] = {
     0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, 0x85, 0x01, 0x05, 0x07, 0x19, 0xe0, 0x29, 0xe7, 0x15, 0x00,
     0x25, 0x01, 0x75, 0x01, 0x95, 0x08, 0x81, 0x02, 0x95, 0x01, 0x75, 0x08, 0x81, 0x03, 0x95, 0x05,
     0x75, 0x01, 0x05, 0x08, 0x19, 0x01, 0x29, 0x05, 0x91, 0x02, 0x95, 0x01, 0x75, 0x03, 0x91, 0x03,
     0x95, 0x06, 0x75, 0x08, 0x15, 0x00, 0x25, 0x65, 0x05, 0x07, 0x19, 0x00, 0x29, 0x65, 0x81, 0x00,
-    0xc0,
-    // Keymap upload channel — Usage Page (Vendor Defined 0xFF00), Report ID 2
-    0x06, 0x00, 0xFF, 0x09, 0x01, 0xA1, 0x01, 0x85, 0x02,
-    0x75, 0x08, 0x95, 0x20, 0x15, 0x00, 0x26, 0xFF, 0x00,
-    0x09, 0x01, 0x81, 0x02,
-    0x09, 0x01, 0x91, 0x02,
-    0xC0
+    0xc0
 };
 
 static esp_hid_raw_report_map_t ble_report_maps[] = {
@@ -70,15 +70,30 @@ void start_advertising(void) {
 
     memset(&fields, 0, sizeof(fields));
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-    fields.name = (uint8_t *)ble_hid_config.device_name;
-    fields.name_len = strlen(ble_hid_config.device_name);
-    fields.name_is_complete = 1;
     fields.appearance = 0x03C1; // Keyboard
     fields.appearance_is_present = 1;
+    // The upload service UUID goes in the *primary* advertisement so the
+    // configurator's scan filter matches it directly, without depending on
+    // how a host merges scan-response data. Name moves to the scan response
+    // below: all three would overrun the 31-byte budget.
+    fields.uuids128 = (ble_uuid128_t *)&smk_upload_svc_uuid;
+    fields.num_uuids128 = 1;
+    fields.uuids128_is_complete = 1;
 
     rc = ble_gap_adv_set_fields(&fields);
     if (rc != 0) {
         ESP_LOGE(TAG, "error setting advertisement data; rc=%d", rc);
+        return;
+    }
+
+    struct ble_hs_adv_fields rsp_fields;
+    memset(&rsp_fields, 0, sizeof(rsp_fields));
+    rsp_fields.name = (uint8_t *)ble_hid_config.device_name;
+    rsp_fields.name_len = strlen(ble_hid_config.device_name);
+    rsp_fields.name_is_complete = 1;
+    rc = ble_gap_adv_rsp_set_fields(&rsp_fields);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "error setting scan response data; rc=%d", rc);
         return;
     }
 
@@ -109,6 +124,75 @@ extern void ble_hid_host_task(void *param);
 // from that point on; this file keeps no persistent copy.
 extern void smk_ble_set_hid_dev(void *dev);
 
+#define SMK_UPLOAD_PACKET_LEN 32
+
+// Defined in Sources/SMKCore/KeymapProtocol.swift as
+// @_cdecl("smk_keymap_dispatch_packet"). Same transport-agnostic entry
+// point the RP2040/nRF52840/STM32 USB paths call -- this file is now just
+// one more transport in front of it.
+extern void smk_keymap_dispatch_packet(const uint8_t *packet, uint8_t *response);
+
+// Value handle of the response characteristic, filled in by
+// ble_gatts_add_svcs() during registration and used to address
+// notifications back to the host.
+static uint16_t smk_upload_response_handle;
+
+// Host writes a 32-byte upload packet; we dispatch it and notify the
+// 32-byte reply. conn_handle comes in as an argument, so this needs no GAP
+// callback of its own to know who to answer.
+static int smk_upload_access_cb(uint16_t conn_handle, uint16_t attr_handle,
+                                struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    (void)attr_handle;
+    (void)arg;
+
+    if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+
+    uint8_t packet[SMK_UPLOAD_PACKET_LEN];
+    uint16_t len = 0;
+    if (ble_hs_mbuf_to_flat(ctxt->om, packet, sizeof(packet), &len) != 0) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+    if (len != SMK_UPLOAD_PACKET_LEN) {
+        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    }
+
+    // Runs on the NimBLE host task. COMMIT writes NVS and briefly blocks the
+    // stack -- same as the Report ID 2 path this replaces.
+    uint8_t response[SMK_UPLOAD_PACKET_LEN];
+    smk_keymap_dispatch_packet(packet, response);
+
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(response, sizeof(response));
+    if (om == NULL) {
+        return BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+    ble_gatts_notify_custom(conn_handle, smk_upload_response_handle, om);
+    return 0;
+}
+
+static const struct ble_gatt_svc_def smk_upload_svcs[] = {
+    {
+        .type = BLE_GATT_SVC_TYPE_PRIMARY,
+        .uuid = &smk_upload_svc_uuid.u,
+        .characteristics = (struct ble_gatt_chr_def[]) {
+            {
+                .uuid = &smk_upload_packet_chr_uuid.u,
+                .access_cb = smk_upload_access_cb,
+                .flags = BLE_GATT_CHR_F_WRITE,
+            },
+            {
+                .uuid = &smk_upload_response_chr_uuid.u,
+                .access_cb = smk_upload_access_cb,
+                .flags = BLE_GATT_CHR_F_NOTIFY,
+                .val_handle = &smk_upload_response_handle,
+            },
+            { 0 },
+        },
+    },
+    { 0 },
+};
+
 void init_ble_hid(void) {
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -137,6 +221,19 @@ void init_ble_hid(void) {
     esp_hidd_dev_t *s_hid_dev = NULL;
     ESP_ERROR_CHECK(esp_hidd_dev_init(&ble_hid_config, ESP_HID_TRANSPORT_BLE, ble_hidd_event_callback, &s_hid_dev));
     smk_ble_set_hid_dev(s_hid_dev);
+
+    // Custom keymap-upload service. Registered here rather than as HID
+    // Report ID 2 because macOS hides the HID service (0x1812) from Core
+    // Bluetooth apps entirely -- see
+    // smk_configurator/docs/superpowers/specs/2026-08-15-ble-custom-gatt-upload-design.md
+    //
+    // ble_gatts_count_cfg()/ble_gatts_add_svcs() return NimBLE host error
+    // codes (int), not esp_err_t -- cast before handing to ESP_ERROR_CHECK,
+    // same as every other critical call in this function, so a registration
+    // failure aborts boot instead of falling through to advertise with the
+    // upload service silently missing or malformed.
+    ESP_ERROR_CHECK((esp_err_t)ble_gatts_count_cfg(smk_upload_svcs));
+    ESP_ERROR_CHECK((esp_err_t)ble_gatts_add_svcs(smk_upload_svcs));
 
     // Make the advertised/GATT device name match what we broadcast in
     // start_advertising() (esp_hidd_dev_init leaves the GAP service with the
