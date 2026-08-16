@@ -214,14 +214,14 @@ void init_ble_hid(void) {
     // Report ID 2 because macOS hides the HID service (0x1812) from Core
     // Bluetooth apps entirely -- see
     // smk_configurator/docs/superpowers/specs/2026-08-15-ble-custom-gatt-upload-design.md
-    int upload_rc = ble_gatts_count_cfg(smk_upload_svcs);
-    if (upload_rc != 0) {
-        ESP_LOGE(TAG, "ble_gatts_count_cfg failed; rc=%d", upload_rc);
-    }
-    upload_rc = ble_gatts_add_svcs(smk_upload_svcs);
-    if (upload_rc != 0) {
-        ESP_LOGE(TAG, "ble_gatts_add_svcs failed; rc=%d", upload_rc);
-    }
+    //
+    // ble_gatts_count_cfg()/ble_gatts_add_svcs() return NimBLE host error
+    // codes (int), not esp_err_t -- cast before handing to ESP_ERROR_CHECK,
+    // same as every other critical call in this function, so a registration
+    // failure aborts boot instead of falling through to advertise with the
+    // upload service silently missing or malformed.
+    ESP_ERROR_CHECK((esp_err_t)ble_gatts_count_cfg(smk_upload_svcs));
+    ESP_ERROR_CHECK((esp_err_t)ble_gatts_add_svcs(smk_upload_svcs));
 
     // Make the advertised/GATT device name match what we broadcast in
     // start_advertising() (esp_hidd_dev_init leaves the GAP service with the
