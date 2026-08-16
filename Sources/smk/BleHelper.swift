@@ -144,28 +144,9 @@ func ble_hidd_event_callback(_ handlerArgs: UnsafeMutableRawPointer?, _ base: Un
     case espHiddConnectEvent:
         kb_log("BLE HID Connected")
     case espHiddOutputEvent:
-        // esp_hidd_event_data_t is a real C union (esp_hidd.h), imported
-        // by ClangImporter (Bridging.h already `#include`s esp_hidd.h) as
-        // a Swift type with a computed `.output` property backed by the
-        // same underlying storage — reading `.report_id`/`.length`/`.data`
-        // through it uses the header-derived field offsets directly,
-        // rather than hand-copied byte offsets that would silently go
-        // stale if a future ESP-IDF upgrade reordered `output`'s fields.
-        // rebind via assumingMemoryBound since event_data arrives as an
-        // untyped `void *` from the C callback signature.
-        guard let eventData = eventData else { break }
-        let output = eventData.assumingMemoryBound(to: esp_hidd_event_data_t.self).pointee.output
-        if output.report_id == 2 && output.length >= 32 {
-            if let dataPtr = output.data, let dev = hidDev {
-                var response = [UInt8](repeating: 0, count: 32)
-                response.withUnsafeMutableBufferPointer { respBuf in
-                    smk_keymap_dispatch_packet(dataPtr, respBuf.baseAddress!)
-                }
-                _ = response.withUnsafeMutableBufferPointer {
-                    esp_hidd_dev_input_set(dev, 0, 2, $0.baseAddress!, 32)
-                }
-            }
-        }
+        // Nothing to do: keymap upload moved to the custom GATT service in
+        // ble_helper.c, and this build's report map has no output reports.
+        break
     case espHiddDisconnectEvent:
         kb_log("BLE HID Disconnected")
         start_advertising()
