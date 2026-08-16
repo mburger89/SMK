@@ -91,11 +91,6 @@ func nimble_port_run()
 @_extern(c, "nimble_port_freertos_deinit")
 func nimble_port_freertos_deinit()
 
-// smk_keymap_dispatch_packet is @_cdecl'd Swift
-// (Sources/SMKCore/KeymapProtocol.swift, part of this same module/build —
-// Task 4 already landed per this plan's task ordering) — no @_extern
-// needed here, this is a same-module Swift-to-Swift call.
-
 // Single source of truth for the HID device handle — see file header
 // comment. Populated exactly once by smk_ble_set_hid_dev(), called from
 // ble_helper.c's init_ble_hid() right after esp_hidd_dev_init() succeeds.
@@ -144,8 +139,12 @@ func ble_hidd_event_callback(_ handlerArgs: UnsafeMutableRawPointer?, _ base: Un
     case espHiddConnectEvent:
         kb_log("BLE HID Connected")
     case espHiddOutputEvent:
-        // Nothing to do: keymap upload moved to the custom GATT service in
-        // ble_helper.c, and this build's report map has no output reports.
+        // Still fires: the report map in ble_helper.c keeps Report ID 1's
+        // LED output items (`0x91 0x02` / `0x91 0x03`), so a host setting
+        // caps/num/scroll lock lands here. This build simply has nothing to
+        // do with those — there are no indicator LEDs wired up — and keymap
+        // upload no longer arrives on a HID output report at all; it moved
+        // to the custom GATT service in ble_helper.c.
         break
     case espHiddDisconnectEvent:
         kb_log("BLE HID Disconnected")
