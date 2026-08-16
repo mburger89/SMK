@@ -73,15 +73,30 @@ void start_advertising(void) {
 
     memset(&fields, 0, sizeof(fields));
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-    fields.name = (uint8_t *)ble_hid_config.device_name;
-    fields.name_len = strlen(ble_hid_config.device_name);
-    fields.name_is_complete = 1;
     fields.appearance = 0x03C1; // Keyboard
     fields.appearance_is_present = 1;
+    // The upload service UUID goes in the *primary* advertisement so the
+    // configurator's scan filter matches it directly, without depending on
+    // how a host merges scan-response data. Name moves to the scan response
+    // below: all three would overrun the 31-byte budget.
+    fields.uuids128 = (ble_uuid128_t *)&smk_upload_svc_uuid;
+    fields.num_uuids128 = 1;
+    fields.uuids128_is_complete = 1;
 
     rc = ble_gap_adv_set_fields(&fields);
     if (rc != 0) {
         ESP_LOGE(TAG, "error setting advertisement data; rc=%d", rc);
+        return;
+    }
+
+    struct ble_hs_adv_fields rsp_fields;
+    memset(&rsp_fields, 0, sizeof(rsp_fields));
+    rsp_fields.name = (uint8_t *)ble_hid_config.device_name;
+    rsp_fields.name_len = strlen(ble_hid_config.device_name);
+    rsp_fields.name_is_complete = 1;
+    rc = ble_gap_adv_rsp_set_fields(&rsp_fields);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "error setting scan response data; rc=%d", rc);
         return;
     }
 
