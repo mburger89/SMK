@@ -5,16 +5,16 @@
 A keyboard firmware written in **Embedded Swift**, targeting the **ESP32-C6**, **Raspberry Pi Pico / Pico W (RP2040)**, **Raspberry Pi Pico 2 / Pico 2 W (RP2350)**, **Nordic nRF52840**, **STM32F4**, and **STM32WB**. SMK provides a modern development experience for keyboard enthusiasts, featuring Bluetooth (BLE) and Wired (USB/UART) connectivity, and a flexible JSON-based keymap system.
 
 ## Features
-- **Embedded Swift**: Leverages Swift's safety and modern syntax on bare-metal hardware.
+- **Embedded Swift**: Leverages Swift's safety and modern syntax on bare-metal hardware. Virtually all firmware logic — drivers, BLE stacks' glue, scan loop, protocol handling — is Swift; the remaining C is confined to what Swift can't express (inline-asm intrinsics, macros, C `main()`/runtime glue) plus vendored third-party sources. The ESP32-C6 target's entire C surface is a 17-line `kb_main.c`.
 - **Multi-target**: Supports ESP32-C6 (RISC-V via ESP-IDF), RP2040/RP2350 (ARM via pico-sdk), nRF52840 (ARM via a vendored nRF5 SDK + CMake), STM32F4 (ARM via vendored CMSIS + CMake), and STM32WB (ARM via vendored CMSIS + CMake + BTstack + a vendored IPCC transport layer). See [`CLAUDE.md`'s Supported Targets table](CLAUDE.md#supported-targets) for the full matrix of what's working vs. build-only-so-far per target.
 - **Dual Mode**: Switch between Bluetooth and Wired (USB HID / CH9350 bridge) modes.
 - **Dynamic Matrix**: Configurable GPIO pins for rows and columns.
 - **Layer Engine**: Supports momentary layers, toggled layers, and transparent keys (similar to QMK).
 - **JSON Configuration**: Keymaps and hardware settings defined via JSON.
 - **Per-Key RGB (opt-in)**: SK6812MINI-E/WS2812 backlight driver (ESP32-C6 only), off by default.
-- **Battery-Level Reporting (ESP32-C6/smk_kbd only)**: reads the board's VBAT divider and reports an estimated percentage via the BLE HID Battery Service — approximate (uncalibrated ADC + linear voltage curve), not yet checked against real hardware.
+- **Battery-Level Reporting (ESP32-C6/smk_kbd only)**: reads the board's VBAT divider and reports an estimated percentage via the BLE HID Battery Service — the ADC reading is calibrated (factory eFuse curve-fitting constants), but the voltage-to-percentage conversion is still a rough linear approximation, not yet checked against real hardware.
 - **Kconfig Board Options**: `idf.py menuconfig` toggles wired-bridge presence, default connection mode, and RGB backlight per board without touching source.
-- **Runtime Keymap Upload**: a transport-agnostic BEGIN/CHUNK/COMMIT/ERASE protocol (`Sources/SMKCore/KeymapProtocol.swift`) lets a keymap be uploaded over USB HID without reflashing, persisted to NVS on ESP32-C6 or flash on RP2040/RP2350 (nRF52840/STM32WB currently stub the write).
+- **Runtime Keymap Upload**: a transport-agnostic BEGIN/CHUNK/COMMIT/ERASE protocol (`Sources/SMKCore/KeymapProtocol.swift`) lets a keymap be uploaded without reflashing — over a vendor-defined USB HID interface on the USB targets, or over a custom BLE GATT service on ESP32-C6 (macOS hides the HID service from Core Bluetooth apps, so BLE upload rides its own service; see `Sources/components/smk_ble_uuids.h`). Persisted to NVS on ESP32-C6 or flash on RP2040/RP2350 (nRF52840/STM32WB currently stub the write).
 
 ## Prerequisites
 
@@ -87,10 +87,10 @@ paired at once — a 5th pairing evicts the oldest.
   - `KeyMatrix.swift`: GPIO matrix scanning.
   - `GPIORegisters.swift`: ESP32-C6 GPIO register access.
 - `Sources/SMKCore/`: hardware-independent, host-testable logic shared across all targets — `LayerEngine.swift`, `KeyEventProcessing.swift`, `Debounce.swift`, `HIDReport.swift`, `Config.swift`, `ConnectionMode.swift`, `Modifier.swift`, `LEDChainMapping.swift`, `KeymapFrame.swift`, `KeymapProtocol.swift`, etc.
-- `Sources/components/`: remaining ESP32-C6 C sources — `ble_helper.c`, `kb_main.c`, `battery_adc.c`, `led_strip_encoder.c`.
+- `Sources/components/`: remaining ESP32-C6 C — just `kb_main.c` (the `app_main()` entry point + Embedded-Swift linker stubs) and the generated `smk_ble_uuids.h`. The former `ble_helper.c`/`battery_adc.c`/`led_strip_encoder.c` are all Swift now (`BleHelper.swift`, `BatteryMonitor.swift`, `LedStripDriverRMT.swift`).
 - `Tests/SMKCoreTests/`: Swift Testing suite for `Sources/SMKCore/` (host-only, no embedded toolchain required).
 - `main/`: ESP-IDF component configuration and bridging (`CMakeLists.txt`, `Bridging.h`, `Kconfig.projbuild`).
-- `ports/`: per-target platform layers (`rp2040/`, `nrf52840/`, `stm32f4/`, `stm32wb/`), each with its own `GPIORegisters.swift`, GPIO/USB/BLE glue, and build config — see `CLAUDE.md` for the full per-file breakdown.
+- `ports/`: per-target platform layers (`rp2040/`, `nrf52840/`, `stm32f4/`, `stm32wb/`), each with its own `GPIORegisters.swift`, GPIO/USB/BLE glue, and build config, plus `ports/common/` — sources shared by every ARM port (the BTstack HID-over-GATT logic `BleHidGatt.swift`, TinyUSB descriptors, Embedded-Swift heap/stdlib glue) — see `CLAUDE.md` for the full per-file breakdown.
 - `managed_components/`: External dependencies handled by the ESP-IDF component manager (e.g., `cJSON`).
 - `site/`: source for the [docs site](https://mburger89.github.io/SMK/) (built via `site/build.py`, deployed by `.github/workflows/`).
 
@@ -101,12 +101,15 @@ paired at once — a 5th pairing evicts the oldest.
 
 ## RP2040 / RP2350 (Pico / Pico W / Pico 2 / Pico 2 W) Support
 
-SMK also targets the **Raspberry Pi Pico** (USB HID), **Pico W** (USB HID + BLE scaffolded), and
-their RP2350-based successors **Pico 2** / **Pico 2 W** (build-only for now — not yet verified on
-real hardware), plus a dedicated chip-down board, **smk_kbd_rp2040** (RP2040 QFN-56 + CYW43439,
-`SMK_TARGET_BOARD=smk_kbd_rp2040` — USB HID + per-key RGB, working; BLE over a dedicated UART to the
-CYW43439, not yet hardware-confirmed). The keyboard logic (`Sources/smk/`) is shared single-source
-across all of these targets; only the hardware platform layer differs.
+SMK also targets the **Raspberry Pi Pico** (USB HID — boot + USB HID enumeration hardware-verified
+on a third-party RP2040 board, both HID interfaces registering; matrix scan still needs real
+switches wired), **Pico W** (USB HID + BLE scaffolded), and their RP2350-based successors
+**Pico 2** (boot + USB HID enumeration hardware-verified on a Seeed XIAO RP2350) / **Pico 2 W**
+(build-only — not yet verified on real hardware), plus a dedicated chip-down board,
+**smk_kbd_rp2040** (RP2040 QFN-56 + CYW43439, `SMK_TARGET_BOARD=smk_kbd_rp2040` — USB HID +
+per-key RGB, working; BLE over a dedicated UART to the CYW43439, not yet hardware-confirmed). The
+keyboard logic (`Sources/smk/`) is shared single-source across all of these targets; only the
+hardware platform layer differs.
 
 ### Prerequisites (RP2040)
 ```bash
@@ -137,9 +140,11 @@ export PICO_SDK_PATH=~/pico-sdk
 ./build_rp2040.sh pico2_w   # Pico 2 W (RP2350)     — USB HID + BLE
 ```
 
-Flash by holding **BOOTSEL**, connecting USB, then:
+Flash by holding **BOOTSEL**, connecting USB, then either drag the `.uf2` onto the mounted
+`RPI-RP2`/`RP2350` drive (the board auto-reboots into the new firmware), or:
 ```bash
 picotool load -f build_rp2040_pico/smk_rp2040.uf2
+picotool reboot   # load -f does not auto-reboot
 ```
 
 See [`ports/rp2040/README.md`](ports/rp2040/README.md) for full details.
@@ -190,8 +195,9 @@ single-source; only the hardware platform layer (`ports/stm32wb/`) differs.
 **Read [`CLAUDE.md`'s STM32WB board section](CLAUDE.md#stm32wb-board-nucleo-wb55rg--read-before-flashing-real-hardware-and-before-distributing-a-build)
 before flashing real hardware or distributing a build of this port** — it covers an unresolved
 license conflict between this repo's GPL-3.0 license and the vendored SLA0044-licensed IPCC
-transport files, plus hardware bring-up caveats (placeholder GPIO map, unapplied HSE trim, and the
-separate manual CPU2 firmware flashing step).
+transport files, plus hardware bring-up caveats (placeholder GPIO map and the separate manual CPU2
+firmware flashing step; the factory HSE capacitor trim is now read from OTP and applied, though
+unverified against a real board's RF accuracy).
 
 ```bash
 export CMSIS_WB_PATH=~/cmsis-device-wb
