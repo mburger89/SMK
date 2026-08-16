@@ -55,7 +55,15 @@ var packageTargets: [Target] = [
     .target(
         name: "SMKCore",
         dependencies: ["CJSON"],
-        path: "Sources/SMKCore"
+        path: "Sources/SMKCore",
+        swiftSettings: [
+            // These files also compile flat into every embedded target's
+            // build. The host build is full Swift, so without this a
+            // non-embeddable construct (weak, Codable, Mirror, ...) slips
+            // through `swift test` and only fails days later in one of the
+            // five cross builds. EmbeddedRestrictions surfaces it here.
+            .unsafeFlags(["-Wwarning", "EmbeddedRestrictions"])
+        ]
     ),
     .testTarget(
         name: "SMKCoreTests",

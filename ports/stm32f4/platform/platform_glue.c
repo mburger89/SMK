@@ -22,9 +22,6 @@
 // instead. The rest of newlib's syscall stubs (_exit/_sbrk/_write/_read/
 // etc.) are satisfied by CMakeLists.txt's --specs=nosys.specs link flag.
 
-#include <errno.h>
-#include <malloc.h>
-#include <stddef.h>
 #include <stdint.h>
 
 extern void smk_clock_init(void); // RCC/PLL bring-up (Task 2, ports/stm32f4/ClockInit.swift)
@@ -72,27 +69,8 @@ int main(void) {
     return 0;
 }
 
-// --- posix_memalign (not in newlib; needed by Swift's swift_allocObject) ----
-int posix_memalign(void **memptr, size_t alignment, size_t size) {
-    if (alignment == 0 || (alignment & (alignment - 1)) != 0) return EINVAL;
-    if (size == 0) { *memptr = NULL; return 0; }
-    void *p = memalign(alignment, size);
-    if (p == NULL) return ENOMEM;
-    *memptr = p;
-    return 0;
-}
+// posix_memalign and the Embedded-Swift Unicode linker stubs moved to the
+// shared ports/common/embedded_swift_glue.c (identical across all ARM ports).
 
 // --- _init (crti.o/crtn.o normally provide this; excluded by -nostartfiles) ---
 void _init(void) {}
-
-// --- Embedded-Swift linker stubs -------------------------------------------
-// Swift's String / Unicode support references these symbols. The shared
-// code only uses ASCII JSON, so stubs are sufficient (mirrors RP2040's and
-// nRF52840's platform_glue.c).
-void _swift_stdlib_getNormData(void) {}
-void _swift_stdlib_getComposition(void) {}
-void _swift_stdlib_getDecompositionEntry(void) {}
-uint8_t *_swift_stdlib_nfd_decompositions = 0;
-void _swift_stdlib_isExtendedPictographic(void) {}
-void _swift_stdlib_isInCB_Consonant(void) {}
-void _swift_stdlib_getGraphemeBreakProperty(void) {}

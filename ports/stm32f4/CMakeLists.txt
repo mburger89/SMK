@@ -179,6 +179,9 @@ add_custom_command(
             -DSMK_BOARD_STM32F4_BLACKPILL
             -import-objc-header "${CMAKE_CURRENT_SOURCE_DIR}/BridgingHeader.h"
             -wmo
+            # One section per function, so the -Wl,--gc-sections link can
+            # strip unused Swift (SMKCore compiles in whole, flat).
+            -Xfrontend -function-sections
             -Xcc -mfloat-abi=soft
             -Xcc -mcpu=cortex-m4
             -Xcc -mthumb
@@ -194,7 +197,9 @@ add_custom_command(
 
 set(c_srcs
     platform/platform_glue.c
-    platform/usb_descriptors.c
+    # Shared across all TinyUSB/Embedded-Swift ports — see ports/common/
+    ../common/usb_descriptors.c
+    ../common/embedded_swift_glue.c
     # smk_cpu_nop() — the opaque call ClockInit.swift's register-poll loops
     # need so LLVM can't delete them. See that file's header comment.
     platform/cortex_m_intrinsics.c

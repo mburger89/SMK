@@ -35,9 +35,11 @@
 // so a C declaration here would be redundant with — and could shadow —
 // the real one.
 
-// BLE HID (MPSL/SDC + BTstack GATT HID, ports/nrf52840/platform/ble_hid_sdc.c).
+// BLE HID transport bring-up (MPSL/SDC, ports/nrf52840/platform/ble_hid_sdc.c).
+// send_keyboard_report is deliberately NOT declared here anymore: it's
+// backed directly in Swift now (the shared ports/common/BleHidGatt.swift,
+// same-module resolution) — same reasoning as init_wired_link above.
 void init_ble_hid(void);
-void send_keyboard_report(uint8_t modifier, uint8_t *keycodes);
 
 // Board/connection-mode config (platform_glue.c). This board always has
 // real native-USB wired HID, so this is hardcoded true/wired-default here

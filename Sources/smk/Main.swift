@@ -1,31 +1,31 @@
 // The Swift Programming Language
 // https://docs.swift.org/swift-book
 
-// init_ble_hid — ESP32-C6 stays C-backed (Sources/components/ble_helper.c,
-// trimmed remainder — see Sources/smk/BleHelper.swift's header comment for
-// why: it mutates NimBLE's bitfield-heavy struct ble_hs_cfg and owns the
-// esp_hid_device_config_t construction). nRF52840 also still backs this
-// with C (ports/nrf52840/platform/ble_hid_sdc.c). Every RP2040 board now
-// backs it natively in Swift — plain Pico/Pico W/Pico 2/Pico 2 W via
-// ports/rp2040/BleHidPicoW.swift (Task 12), and smk_kbd_rp2040 (its own
-// CYW43439-over-UART transport) via ports/rp2040/BleHidKbdUart.swift
-// (Task 13) — both same module as this file, so no @_extern permitted
-// there, that would be a same-module redeclaration conflict.
-#if !SMK_TARGET_RP2040
+// init_ble_hid — ESP32-C6 now backs this natively in Swift too
+// (BleHelper.swift, full port — NimBLE's bitfield-heavy structs come in
+// through Bridging.h's imported types), joining every RP2040 board
+// (BleHidPicoW.swift / BleHidKbdUart.swift). All of those are plain Swift
+// funcs named `init_ble_hid` in the same module as this file, so no
+// @_extern permitted for them — that would be a same-module redeclaration
+// conflict. The targets that still need this extern: nRF52840 (Swift too,
+// but as @_cdecl("init_ble_hid") with a different Swift name —
+// ports/nrf52840/BleHidSdc.swift — so the C symbol must be bound here),
+// STM32WB (C transport bring-up, ble_hid_wb.c), and STM32F4 (C no-op stub
+// in its platform_glue.c).
+#if !SMK_TARGET_RP2040 && !SMK_TARGET_ESP32C6
 @_extern(c, "init_ble_hid")
 func init_ble_hid()
 #endif
 
-// send_keyboard_report — ESP32-C6 now backs this natively in Swift
-// (BleHelper.swift, same module as this file — no @_extern permitted
-// here anymore, that would be a same-module redeclaration conflict).
-// Every RP2040 board now backs this natively in Swift too, same reasoning
-// as init_ble_hid above (BleHidPicoW.swift / BleHidKbdUart.swift). Only
-// nRF52840 still backs this with C (ports/nrf52840/platform/ble_hid_sdc.c
-// — NOT UsbHid.swift, which only covers send_wired_report/init_wired_link
-// for that board), so it's the only remaining target needing this
-// declared as an extern symbol.
-#if !SMK_TARGET_ESP32C6 && !SMK_TARGET_RP2040
+// send_keyboard_report — every BLE-capable target now backs this natively
+// in Swift, same module as this file, so no @_extern is permitted for them
+// (that would be a same-module redeclaration conflict): ESP32-C6 via
+// BleHelper.swift, every RP2040 board via BleHidPicoW.swift's stub branch
+// or the shared ports/common/BleHidGatt.swift, and nRF52840/STM32WB via
+// that same shared file. Only STM32F4 (no BLE hardware; C no-op stub in
+// ports/stm32f4/platform/platform_glue.c) still needs this declared as an
+// extern symbol.
+#if SMK_TARGET_STM32F4
 @_extern(c, "send_keyboard_report")
 func send_keyboard_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
 #endif

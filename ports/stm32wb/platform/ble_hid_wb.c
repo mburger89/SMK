@@ -69,10 +69,30 @@
 #include "hal_time_ms.h"             // hal_time_ms() — implemented below
 #include "hal_cpu.h"                 // hal_cpu_* — implemented below
 #include "hci_transport.h"
-#include "ble/gatt-service/hids_device.h"
-#include "ble/gatt-service/battery_service_server.h"
-#include "ble/gatt-service/device_information_service_server.h"
-#include "smk_hid.h"                 // generated from platform/smk_hid.gatt at build time
+
+// The HID-over-GATT half of this port (GATT/SM/advertising setup, HID event
+// handling, send_keyboard_report) is the shared ports/common/BleHidGatt.swift
+// — this file keeps only the CPU2/IPCC transport bring-up. The Swift setup
+// ends with hci_power_control(HCI_POWER_ON), so it must run last in
+// init_ble_hid() below.
+//
+// Why the transport itself deliberately stays C (the documented
+// mirror-fallback case, unlike the nRF52840 port whose transport is now
+// Swift — ports/nrf52840/BleHidSdc.swift): nearly every function below
+// reads or writes fields of the VENDORED transport layer's types —
+// TL_EvtPacket_t/TL_AclDataPacket_t payload unions, tListNode intrusive
+// links, TL_BLE_InitConf_t/TL_MM_Config_t/SHCI_TL_HciInitConf_t configs,
+// and the 30-field SHCI_C2_Ble_Init_Cmd_Packet_t. Mirroring those in Swift
+// would (a) hand-replicate layouts of structs that ST revises between
+// CubeWB releases, and (b) silently break this project's vendoring policy
+// that a CubeWB re-sync is a straight file copy — the C compiler checks
+// this file's designated initializers against the refreshed headers at
+// every build, which a Swift mirror can't. The SRAM2A PLACE_IN_SECTION
+// mailbox buffers additionally need exact section attributes matched to
+// the linker script. The genuinely ST-independent register work that used
+// to live here (LSE/RF-wakeup clock, IPCC reset) is Swift
+// (ClockInit.swift/HwIpcc.swift).
+extern void smk_ble_hid_gatt_setup(void);
 
 // --- CMSIS device (RCC/PWR/SysTick register definitions) -------------------
 #include "stm32wbxx.h"
@@ -121,7 +141,8 @@
 
 // LsSource bit field, shci.h:706-711. NOCALIB | OTHER_DEV (this is a plain
 // WB55 SoC, not a WB5M module) | CLK_LSE — matches ST's own non-STM32WB5Mxx
-// branch. enable_lse_and_rf_wakeup_clock() below actually starts that LSE.
+// branch. ClockInit.swift's smk_enable_lse_and_rf_wakeup_clock() (called
+// from init_ble_hid below) actually starts that LSE.
 #define SMK_BLE_LS_SOURCE  (SHCI_C2_BLE_INIT_CFG_BLE_LS_NOCALIB   \
                           | SHCI_C2_BLE_INIT_CFG_BLE_LS_OTHER_DEV \
                           | SHCI_C2_BLE_INIT_CFG_BLE_LS_CLK_LSE)
@@ -230,57 +251,16 @@ void hal_cpu_enable_irqs_and_sleep(void) {
 // HSE/HSI48/CRS but deliberately never touches the backup domain — nothing
 // before this task needed LSE. CPU2's link layer does: SMK_BLE_LS_SOURCE
 // above tells it CLK_LSE, and RCC_CSR's RFWKPSEL field selects which clock
-// actually feeds the RF wakeup logic. Mirrors ST's own SystemClock_Config
-// for this board (BLE_HeartRate/Core/Src/main.c:169 __HAL_RCC_LSEDRIVE_CONFIG
-// (RCC_LSEDRIVE_LOW), :179 RCC_OSCILLATORTYPE_LSE, :220
-// PeriphClkInitStruct.RFWakeUpClockSelection = RCC_RFWKPCLKSOURCE_LSE).
-// Register/bit names come from cmsis-device-wb's Include/stm32wb55xx.h
-// (RCC_TypeDef BDCR at 0x90 / CSR at 0x94, RCC_CSR_RFWKPSEL_0 == 0x4000 ==
-// "LSE selected").
-//
-// NUCLEO-WB55RG (MB1355) is fitted with a 32.768kHz LSE crystal (X3), so
-// this is expected to succeed on real hardware; like the rest of
-// ClockInit.swift this is a fail-stop busy-wait with no timeout.
-static void enable_lse_and_rf_wakeup_clock(void) {
-    // RTCAPB clock gates access to the backup-domain registers (BDCR).
-    RCC->APB1ENR1 |= RCC_APB1ENR1_RTCAPBEN;
-    (void)RCC->APB1ENR1;
+// actually feeds the RF wakeup logic. Implemented in Swift alongside the
+// rest of this port's clock bring-up — see ClockInit.swift's
+// smk_enable_lse_and_rf_wakeup_clock() for the register-level details.
+extern void smk_enable_lse_and_rf_wakeup_clock(void);
 
-    // Backup-domain writes are protected out of reset.
-    PWR->CR1 |= PWR_CR1_DBP;
-    while ((PWR->CR1 & PWR_CR1_DBP) == 0U) { }
-
-    if ((RCC->BDCR & RCC_BDCR_LSERDY) == 0U) {
-        RCC->BDCR &= ~RCC_BDCR_LSEDRV;            // RCC_LSEDRIVE_LOW, ST's choice for this board
-        RCC->BDCR |= RCC_BDCR_LSEON;
-        while ((RCC->BDCR & RCC_BDCR_LSERDY) == 0U) { }
-    }
-
-    // RFWKPSEL[1:0] = 01 -> LSE.
-    RCC->CSR = (RCC->CSR & ~RCC_CSR_RFWKPSEL) | RCC_CSR_RFWKPSEL_0;
-}
-
-// BTstack's WB55 port calls this "ipcc_reset" (btstack_port.c:260-294) and
-// runs it before TL_Init(). On a cold boot the IPCC is already at its reset
-// values, but CPU1 can be reset independently of CPU2 (a debugger attach, a
-// CPU1-only software reset) and then the leftover channel flags would make
-// TL_Init()/TL_Enable() see phantom traffic. Reproduced here with direct
-// register writes rather than ST's LL driver, which this build does not link
-// — semantics per stm32wbxx_ll_ipcc.h: C1SCR/C2SCR bits 0-5 are
-// write-1-to-clear receive flags, C1MR/C2MR bits 0-5 mask receive and bits
-// 16-21 mask transmit (a *set* mask bit disables). This is the same register
-// model ports/stm32wb/HwIpcc.swift documents in detail.
-#define SMK_IPCC_ALL_CHANNELS 0x3FU  /* LL_IPCC_CHANNEL_1..6 == (1<<0)..(1<<5) */
-
-static void ipcc_reset(void) {
-    RCC->AHB3ENR |= RCC_AHB3ENR_IPCCEN;
-    (void)RCC->AHB3ENR;
-
-    IPCC->C1SCR = SMK_IPCC_ALL_CHANNELS;                 // clear CPU1's receive flags
-    IPCC->C2SCR = SMK_IPCC_ALL_CHANNELS;                 // clear CPU2's receive flags
-    IPCC->C1MR  = (SMK_IPCC_ALL_CHANNELS << 16) | SMK_IPCC_ALL_CHANNELS; // mask everything off
-    IPCC->C2MR  = (SMK_IPCC_ALL_CHANNELS << 16) | SMK_IPCC_ALL_CHANNELS;
-}
+// "ipcc_reset" per BTstack's WB55 port (btstack_port.c:260-294), run before
+// TL_Init() so leftover channel flags from a CPU1-only reset can't present
+// as phantom traffic. Implemented in Swift alongside the rest of the IPCC
+// hardware layer — see HwIpcc.swift's smk_ipcc_reset().
+extern void smk_ipcc_reset(void);
 
 typedef enum {
     CPU2_STATE_RESET,
@@ -498,7 +478,7 @@ static void transport_init(const void *transport_config) {
     hci_acl_can_send_now = 1;
     cpu2_state = CPU2_STATE_WAIT_FOR_STARTED;
 
-    ipcc_reset();
+    smk_ipcc_reset();
 
     // --- the CPU2 boot sequence proper, in the order tl.h/shci_tl.h document ---
 
@@ -672,71 +652,12 @@ void shci_notify_asynch_evt(void *pdata) {
 }
 
 // ===========================================================================
-// Step 3: HID-over-GATT (identical shape to ble_hid_sdc.c's)
+// Step 3: HID-over-GATT — shared ports/common/BleHidGatt.swift
 // ===========================================================================
-
-static const uint8_t hid_descriptor_keyboard[] = {
-    0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, 0x85, 0x01, 0x05, 0x07, 0x19, 0xe0, 0x29, 0xe7, 0x15, 0x00,
-    0x25, 0x01, 0x75, 0x01, 0x95, 0x08, 0x81, 0x02, 0x95, 0x01, 0x75, 0x08, 0x81, 0x03, 0x95, 0x05,
-    0x75, 0x01, 0x05, 0x08, 0x19, 0x01, 0x29, 0x05, 0x91, 0x02, 0x95, 0x01, 0x75, 0x03, 0x91, 0x03,
-    0x95, 0x06, 0x75, 0x08, 0x15, 0x00, 0x25, 0x65, 0x05, 0x07, 0x19, 0x00, 0x29, 0x65, 0x81, 0x00,
-    0xc0
-};
-
-static const uint8_t adv_data[] = {
-    0x02, BLUETOOTH_DATA_TYPE_FLAGS, 0x06,
-    0x03, BLUETOOTH_DATA_TYPE_APPEARANCE, 0xC1, 0x03,
-    0x03, BLUETOOTH_DATA_TYPE_INCOMPLETE_LIST_OF_16_BIT_SERVICE_CLASS_UUIDS, 0x12, 0x18,
-    0x0d, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME,
-        'S','M','K',' ','K','e','y','b','o','a','r','d',
-};
-
-static btstack_packet_callback_registration_t hci_event_callback_registration;
-static btstack_packet_callback_registration_t sm_event_callback_registration;
-static uint8_t battery = 100;
-static hci_con_handle_t con_handle = HCI_CON_HANDLE_INVALID;
-static uint8_t protocol_mode = 1;
-
-static uint8_t pending_report[8];
-static int report_dirty = 0;
-
-static void send_pending(void) {
-    if (con_handle == HCI_CON_HANDLE_INVALID) return;
-    report_dirty = 0;
-    hids_device_send_input_report(con_handle, pending_report, sizeof(pending_report));
-}
-
-static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
-    (void)channel; (void)size;
-    if (packet_type != HCI_EVENT_PACKET) return;
-
-    switch (hci_event_packet_get_type(packet)) {
-        case HCI_EVENT_DISCONNECTION_COMPLETE:
-            con_handle = HCI_CON_HANDLE_INVALID;
-            break;
-        case HCI_EVENT_HIDS_META:
-            switch (hci_event_hids_meta_get_subevent_code(packet)) {
-                case HIDS_SUBEVENT_INPUT_REPORT_ENABLE:
-                    con_handle = hids_subevent_input_report_enable_get_con_handle(packet);
-                    break;
-                case HIDS_SUBEVENT_PROTOCOL_MODE:
-                    protocol_mode = hids_subevent_protocol_mode_get_protocol_mode(packet);
-                    break;
-                case HIDS_SUBEVENT_CAN_SEND_NOW:
-                    if (report_dirty) send_pending();
-                    break;
-                default:
-                    break;
-            }
-            break;
-        default:
-            break;
-    }
-}
 
 void init_ble_hid(void) {
     // Clocks CPU2's radio needs, before anything can release CPU2.
-    enable_lse_and_rf_wakeup_clock();
+    smk_enable_lse_and_rf_wakeup_clock();
 
     // Real 1ms time base for BTstack's run loop / HCI timeouts. Placed here
     // rather than in ClockInit.swift because nothing before BLE needed it
@@ -756,43 +677,11 @@ void init_ble_hid(void) {
 
     hci_init(&transport, NULL);
 
-    l2cap_init();
-    sm_init();
-    sm_set_io_capabilities(IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
-    sm_set_authentication_requirements(SM_AUTHREQ_BONDING | SM_AUTHREQ_SECURE_CONNECTION);
-
-    att_server_init(profile_data, NULL, NULL);
-
-    battery_service_server_init(battery);
-    device_information_service_server_init();
-    hids_device_init(0, hid_descriptor_keyboard, sizeof(hid_descriptor_keyboard));
-
-    uint16_t adv_int_min = 0x0030, adv_int_max = 0x0030;
-    bd_addr_t null_addr;
-    memset(null_addr, 0, sizeof(null_addr));
-    gap_advertisements_set_params(adv_int_min, adv_int_max, 0, 0, null_addr, 0x07, 0x00);
-    gap_advertisements_set_data(sizeof(adv_data), (uint8_t *)adv_data);
-    gap_advertisements_enable(1);
-
-    hci_event_callback_registration.callback = &packet_handler;
-    hci_add_event_handler(&hci_event_callback_registration);
-    sm_event_callback_registration.callback = &packet_handler;
-    sm_add_event_handler(&sm_event_callback_registration);
-    hids_device_register_packet_handler(packet_handler);
-
-    // Triggers transport_init() above (and therefore the CPU2 boot sequence)
-    // as hci.c transitions to INITIALIZING.
-    hci_power_control(HCI_POWER_ON);
-}
-
-void send_keyboard_report(uint8_t modifier, uint8_t *keys) {
-    pending_report[0] = modifier;
-    pending_report[1] = 0;
-    memcpy(&pending_report[2], keys, 6);
-    report_dirty = 1;
-    if (con_handle != HCI_CON_HANDLE_INVALID) {
-        hids_device_request_can_send_now_event(con_handle);
-    }
+    // GATT/SM/advertising setup + hci_power_control(HCI_POWER_ON), shared
+    // Swift (ports/common/BleHidGatt.swift). The power-on at its end is
+    // what triggers transport_init() above (and therefore the CPU2 boot
+    // sequence) as hci.c transitions to INITIALIZING.
+    smk_ble_hid_gatt_setup();
 }
 
 // Called every scan tick from platform_glue.c's vTaskDelay. One call drives

@@ -61,6 +61,12 @@ private let ipccC1mr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(ipccBase + 
 private let ipccC1scr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(ipccBase + 0x08))!
 private let ipccC1toc2sr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(ipccBase + 0x0C))!
 private let ipccC2toc1sr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(ipccBase + 0x1C))!
+// CPU2's mask/status-set-clear registers — normally CPU2's side and left
+// alone; touched only by smk_ipcc_reset() below, which runs while CPU2 is
+// still held in reset. Offsets confirmed via IPCC_TypeDef: C2MR 0x14,
+// C2SCR 0x18.
+private let ipccC2mr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(ipccBase + 0x14))!
+private let ipccC2scr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(ipccBase + 0x18))!
 
 // RCC: same 0x5800_0000 base ports/stm32wb/ClockInit.swift and
 // ports/stm32wb/UsbHid.swift already use (their copies are file-private).
@@ -317,6 +323,34 @@ func HW_IPCC_Enable() {
     // needs SHCI_C2_Reinit() plus the event above instead. Setting both (as
     // here, and as ST does) is the configuration-independent default.
     pwrCr4.pointee |= pwrCr4C2Boot
+}
+
+// BTstack's WB55 port calls this "ipcc_reset" (btstack_port.c:260-294) and
+// runs it before TL_Init(). On a cold boot the IPCC is already at its reset
+// values, but CPU1 can be reset independently of CPU2 (a debugger attach, a
+// CPU1-only software reset) and then the leftover channel flags would make
+// TL_Init()/TL_Enable() see phantom traffic. Ported from
+// platform/ble_hid_wb.c's former C implementation — semantics per
+// stm32wbxx_ll_ipcc.h: C1SCR/C2SCR bits 0-5 are write-1-to-clear receive
+// flags, C1MR/C2MR bits 0-5 mask receive and bits 16-21 mask transmit (a
+// *set* mask bit disables). Called from ble_hid_wb.c's transport_init()
+// before TL_Init().
+private let ipccAllChannels: UInt32 = 0x3F // LL_IPCC_CHANNEL_1..6 == (1<<0)..(1<<5)
+
+@_cdecl("smk_ipcc_reset")
+func smk_ipcc_reset() {
+    // The C original followed the |= with `(void)RCC->AHB3ENR;` so the
+    // clock-enable takes effect before the IPCC register writes below. A
+    // `.pointee` read-back gets folded away by the optimizer (see
+    // ClockInit.swift's smk_mmio_read32 comment), so the read goes through
+    // that opaque C helper instead.
+    rccAhb3Enr.pointee |= rccAhb3EnrIpccEn
+    _ = smk_mmio_read32(rccBase + 0x050)
+
+    ipccC1scr.pointee = ipccAllChannels                             // clear CPU1's receive flags
+    ipccC2scr.pointee = ipccAllChannels                             // clear CPU2's receive flags
+    ipccC1mr.pointee = (ipccAllChannels << 16) | ipccAllChannels    // mask everything off
+    ipccC2mr.pointee = (ipccAllChannels << 16) | ipccAllChannels
 }
 
 @_cdecl("HW_IPCC_Init")

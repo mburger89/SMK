@@ -145,6 +145,12 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/UsbHid.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/MpslGlue.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/KeymapStoreStub.swift"
+    # Shared BTstack HID-over-GATT logic (GATT/SM/adv setup, packet handler,
+    # send_keyboard_report) + this port's SDC transport bring-up
+    # (BleHidSdc.swift) — platform/ble_hid_sdc.c keeps only the
+    # asm-intrinsic HAL, the NRF_RNG entropy source, and the fault handler.
+    "${CMAKE_CURRENT_SOURCE_DIR}/../common/BleHidGatt.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/BleHidSdc.swift"
 )
 
 # cJSON (portable, no ESP-IDF dependency) — LayerEngine.swift/Config.swift
@@ -199,6 +205,9 @@ add_custom_command(
             -DSMK_BOARD_NRF52840DK
             -import-objc-header "${CMAKE_CURRENT_SOURCE_DIR}/BridgingHeader.h"
             -wmo
+            # One section per function, so the -Wl,--gc-sections link can
+            # strip unused Swift (SMKCore compiles in whole, flat).
+            -Xfrontend -function-sections
             -Xcc -mfloat-abi=soft
             -Xcc -mcpu=cortex-m4
             -Xcc -mthumb
@@ -214,7 +223,12 @@ add_custom_command(
 
 set(c_srcs
     platform/platform_glue.c
-    platform/usb_descriptors.c
+    # Shared across all TinyUSB/Embedded-Swift ports — see ports/common/
+    ../common/usb_descriptors.c
+    ../common/embedded_swift_glue.c
+    # Instantiates profile_data[] from the generated smk_hid.h for the
+    # shared BleHidGatt.swift's @_extern binding — see that file's comment.
+    ../common/smk_hid_gatt_data.c
     "${NRF52840_CJSON_DIR}/cJSON.c"
 )
 
