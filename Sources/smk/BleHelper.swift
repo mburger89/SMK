@@ -46,6 +46,15 @@ import Glibc
 @_extern(c, "printf")
 func printf(_ format: UnsafePointer<CChar>, _ arg: UnsafePointer<CChar>) -> Int32
 
+// Interpolating log helper (numeric values ride Swift string interpolation,
+// emitted through the single-string printf binding above).
+private func kbLogDbg(_ s: String) {
+    var bytes = Array(s.utf8) + [0]
+    bytes.withUnsafeBufferPointer { p in
+        _ = printf("[SMK] %s\n", UnsafeRawPointer(p.baseAddress!).assumingMemoryBound(to: CChar.self))
+    }
+}
+
 func kb_log(_ msg: UnsafePointer<CChar>) {
     _ = printf("[SMK] %s\n", msg)
 }
@@ -97,9 +106,10 @@ private func blePermanentCopy(_ bytes: [UInt8]) -> UnsafeMutableBufferPointer<UI
 }
 
 // Set once by init_ble_hid(); read by start-advertising (device name, the
-// advertised upload-service UUID).
+// advertised upload-service UUID, the 16-bit HID service UUID).
 private var deviceNameStorage: UnsafeMutableBufferPointer<UInt8>?
 private var uploadSvcUuidStorage: UnsafeMutablePointer<ble_uuid128_t>?
+private var hidSvcUuid16Storage: UnsafeMutablePointer<ble_uuid16_t>?
 
 // Single source of truth for the HID device handle — populated exactly
 // once by init_ble_hid() below, directly from esp_hidd_dev_init()'s
@@ -241,6 +251,15 @@ private func buildUploadServiceTable() -> UnsafePointer<ble_gatt_svc_def> {
     let svcUuid = UnsafeMutablePointer<ble_uuid128_t>.allocate(capacity: 1)
     svcUuid.pointee = smk_upload_svc_uuid
     uploadSvcUuidStorage = svcUuid
+
+    // 16-bit HID service UUID (0x1812) for the primary advertisement —
+    // constructed here (BLE_UUID16_INIT is a macro the importer can't
+    // surface) and kept permanently for the advertiser.
+    let hidUuid16 = UnsafeMutablePointer<ble_uuid16_t>.allocate(capacity: 1)
+    hidUuid16.pointee = ble_uuid16_t()
+    hidUuid16.pointee.u.type = UInt8(BLE_UUID_TYPE_16)
+    hidUuid16.pointee.value = 0x1812
+    hidSvcUuid16Storage = hidUuid16
     let packetUuid = UnsafeMutablePointer<ble_uuid128_t>.allocate(capacity: 1)
     packetUuid.pointee = smk_upload_packet_chr_uuid
     let responseUuid = UnsafeMutablePointer<ble_uuid128_t>.allocate(capacity: 1)
@@ -279,34 +298,50 @@ private func buildUploadServiceTable() -> UnsafePointer<ble_gatt_svc_def> {
 // Constructs `struct ble_hs_adv_fields` through the imported NimBLE type —
 // its 1-bit presence flags are ClangImporter computed properties over the
 // real header's bitfield layout. Called on stack start and on every
-// disconnect. The upload service UUID goes in the *primary* advertisement
-// so the configurator's scan filter matches it directly, without depending
-// on how a host merges scan-response data; the name moves to the scan
-// response — all three would overrun the 31-byte budget.
+// disconnect.
+//
+// Advertising layout (31-byte budget each side):
+//   PRIMARY (25 bytes): flags + keyboard appearance + 16-bit HID service
+//   UUID (0x1812) + complete name. Everything a PASSIVE scanner needs —
+//   macOS System Settings never sends scan requests, and with the earlier
+//   layout (upload UUID in primary, name in scan response) it listed the
+//   board as an anonymous, unconnectable "Bluetooth device". Verified
+//   empirically: Chrome's active scan saw the name fine while Settings
+//   didn't.
+//   SCAN RESPONSE (18 bytes): the 128-bit keymap-upload service UUID. The
+//   configurator's CoreBluetooth scan filter still matches — CoreBluetooth
+//   actively scans and merges scan-response service UUIDs into
+//   kCBAdvDataServiceUUIDs (documented behavior).
+// All four fields in one PDU would overrun 31 bytes, hence the split.
 private func startAdvertising() {
     guard let nameStorage = deviceNameStorage, let namePtr = nameStorage.baseAddress,
-          let svcUuid = uploadSvcUuidStorage else { return }
+          let svcUuid = uploadSvcUuidStorage, let hidUuid16 = hidSvcUuid16Storage else { return }
     let nameLen = nameStorage.count - 1 // trailing NUL not advertised
 
     var fields = ble_hs_adv_fields()
     fields.flags = UInt8(BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP)
     fields.appearance = 0x03C1 // Keyboard
     fields.appearance_is_present = 1
-    fields.uuids128 = UnsafePointer(svcUuid)
-    fields.num_uuids128 = 1
-    fields.uuids128_is_complete = 1
+    fields.uuids16 = UnsafePointer(hidUuid16)
+    fields.num_uuids16 = 1
+    fields.uuids16_is_complete = 1
+    fields.name = UnsafePointer(namePtr)
+    fields.name_len = UInt8(nameLen)
+    fields.name_is_complete = 1
 
-    guard ble_gap_adv_set_fields(&fields) == 0 else {
-        kb_log("error setting advertisement data")
+    let rc1 = ble_gap_adv_set_fields(&fields)
+    guard rc1 == 0 else {
+        kbLogDbg("error setting advertisement data rc=\(rc1)")
         return
     }
 
     var rspFields = ble_hs_adv_fields()
-    rspFields.name = UnsafePointer(namePtr)
-    rspFields.name_len = UInt8(nameLen)
-    rspFields.name_is_complete = 1
-    guard ble_gap_adv_rsp_set_fields(&rspFields) == 0 else {
-        kb_log("error setting scan response data")
+    rspFields.uuids128 = UnsafePointer(svcUuid)
+    rspFields.num_uuids128 = 1
+    rspFields.uuids128_is_complete = 1
+    let rc2 = ble_gap_adv_rsp_set_fields(&rspFields)
+    guard rc2 == 0 else {
+        kbLogDbg("error setting scan response data rc=\(rc2)")
         return
     }
 
@@ -317,8 +352,9 @@ private func startAdvertising() {
     // own_addr_type 0 = BLE_OWN_ADDR_PUBLIC; BLE_HS_FOREVER is INT32_MAX
     // (host/ble_hs.h — a chained macro the importer doesn't surface, so the
     // value is spelled directly).
-    guard ble_gap_adv_start(0, nil, Int32.max, &advParams, nil, nil) == 0 else {
-        kb_log("error enabling advertisement")
+    let rc3 = ble_gap_adv_start(0, nil, Int32.max, &advParams, nil, nil)
+    guard rc3 == 0 else {
+        kbLogDbg("error enabling advertisement rc=\(rc3)")
         return
     }
     kb_log("Advertising started")

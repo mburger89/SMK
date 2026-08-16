@@ -57,7 +57,32 @@ private let GPIO_MODE_OUTPUT: Int32 = 2 // hal/gpio_types.h
 // reads HIGH). This board's matrix is COL2ROW (diode anode at the
 // switch/column side, cathode at the row side), so the driven line must be
 // the column, not the row, for current to flow when a key closes.
+#if SMK_BOARD_TEST_BOARD
+// Seeed XIAO ESP32-C6 RF switch — the antenna is routed through a switch IC
+// the firmware must configure: GPIO3 LOW enables the switch (active low),
+// GPIO14 LOW selects the built-in ceramic antenna (HIGH would select the
+// external U.FL). Neither pin is broken out on the XIAO header, so they're
+// exclusively the RF switch's. Without this, the radio runs with a degraded
+// antenna path — empirically strong enough for advertisements to be seen at
+// desk range but too deaf to receive a CONNECT_IND, i.e. the board shows up
+// in scans yet every connection attempt times out. Per Seeed's own wiki
+// setup snippet (WIFI_ENABLE=3, WIFI_ANT_CONFIG=14).
+private func configureXiaoRfSwitch() {
+    let rfSwitchEnable: Int32 = 3
+    let antennaSelect: Int32 = 14
+    _ = gpio_reset_pin(rfSwitchEnable)
+    _ = gpio_set_direction(rfSwitchEnable, GPIO_MODE_OUTPUT)
+    _ = gpio_set_level(rfSwitchEnable, 0) // enable RF switch (active low)
+    _ = gpio_reset_pin(antennaSelect)
+    _ = gpio_set_direction(antennaSelect, GPIO_MODE_OUTPUT)
+    _ = gpio_set_level(antennaSelect, 0) // built-in ceramic antenna
+}
+#endif
+
 func init_keyboard_pins(_ rows: UnsafePointer<Int32>, _ rowCount: Int32, _ cols: UnsafePointer<Int32>, _ colCount: Int32, _ colsAreDriven: Int32) {
+#if SMK_BOARD_TEST_BOARD
+    configureXiaoRfSwitch()
+#endif
     if colsAreDriven != 0 {
         // Rows: inputs with pull-downs (sense lines)
         for i in 0..<Int(rowCount) {

@@ -1,4 +1,4 @@
-struct HIDReport {
+struct HIDReport: Equatable {
     var modifier: UInt8 = 0
     var keys: [UInt8] = [0, 0, 0, 0, 0, 0]
 

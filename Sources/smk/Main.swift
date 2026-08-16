@@ -434,6 +434,10 @@ func app_main_swift() {
     let totalKeys = cfg.rowPins.count * cfg.colPins.count
     let colCount = cfg.colPins.count
     var lastScan = [Bool](repeating: false, count: totalKeys)
+    // Last report/mode actually handed to a transport — the send-on-change
+    // gate at the bottom of the scan loop compares against these.
+    var lastSentReport = HIDReport()
+    var lastSentMode = currentMode
     var pressedActions: [KeyAction] = [KeyAction](repeating: .none, count: totalKeys)
 
     #if SMK_TARGET_ESP32C6
@@ -483,14 +487,24 @@ func app_main_swift() {
             }
         }
 
-        report.keys.withUnsafeBufferPointer { ptr in
-            if let base = ptr.baseAddress {
-                if currentMode == .bluetooth {
-                    send_keyboard_report(report.modifier, base)
-                } else {
-                    send_wired_report(report.modifier, base)
+        // Send only when the report actually changed (or the transport mode
+        // did) — HID hosts only need deltas. The previous unconditional
+        // per-tick send meant a connected BLE host received a ~100Hz
+        // notification stream around the clock (observed live against an
+        // iPhone: thousands of identical notify procedures), wasting
+        // airtime and battery on every target.
+        if report != lastSentReport || currentMode != lastSentMode {
+            report.keys.withUnsafeBufferPointer { ptr in
+                if let base = ptr.baseAddress {
+                    if currentMode == .bluetooth {
+                        send_keyboard_report(report.modifier, base)
+                    } else {
+                        send_wired_report(report.modifier, base)
+                    }
                 }
             }
+            lastSentReport = report
+            lastSentMode = currentMode
         }
 
         #if SMK_TARGET_ESP32C6
