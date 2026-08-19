@@ -122,7 +122,9 @@ Produces `build_samd21/smk_samd21.uf2`. Flash by double-tapping the XIAO M0's re
 
 ### Hardware-Independent Sources (`Sources/SMKCore/`) — compiled for ALL targets, host-testable
 
-Same flat-file-compilation treatment as `Sources/smk/` (added to `main/CMakeLists.txt`'s, `ports/rp2040/CMakeLists.txt`'s, and `ports/nrf52840/CMakeLists.txt`'s `swift_srcs` lists, no module boundary in the real build) — but these files have zero hardware/`@_extern` calls, so `Package.swift` also exposes them as a real `SMKCore` library target for host-side testing (`swift test`, no ESP-IDF/pico-sdk needed). See `docs/superpowers/specs/2026-08-09-host-unit-tests-design.md`.
+Same flat-file-compilation treatment as `Sources/smk/` — no module boundary in the real build. These files have zero hardware/`@_extern` calls, so `Package.swift` also exposes them as a real `SMKCore` library target for host-side testing (`swift test`, no ESP-IDF/pico-sdk needed). See `docs/superpowers/specs/2026-08-09-host-unit-tests-design.md`.
+
+**A new file here is invisible to the embedded builds until it is listed in all six build files that enumerate SMKCore sources explicitly** — `main/CMakeLists.txt` plus `ports/{rp2040,nrf52840,samd21,stm32f4,stm32wb}/CMakeLists.txt`. `Package.swift` needs no change, since its `SMKCore` target globs the directory — which is exactly the trap: a missing CMake entry still passes `swift test` and only surfaces as a link failure on real hardware.
 
 | File | Responsibility |
 |---|---|
@@ -131,7 +133,9 @@ Same flat-file-compilation treatment as `Sources/smk/` (added to `main/CMakeList
 | `ConnectionMode.swift` | wired/bluetooth toggle |
 | `HIDReport.swift` | HID report byte-building |
 | `Config.swift` | matrix-config JSON parsing |
-| `LayerEngine.swift` | keymap JSON loading, layer state, action resolution |
+| `LayerEngine.swift` | keymap JSON loading, layer state, action resolution. Holds `KeyAction`/`Modifier` `fromCString` — the token *grammar*. The key *vocabulary* it dispatches into lives in `KeyCodesGenerated.swift` |
+| `KeyCodesGenerated.swift` | **GENERATED — do not edit.** `KeyCode` enum, its HID-usage `rawValue`, and `fromCString`. Produced by `./generate_keycodes.sh` from `keycodes.json`, which is the single source of the key vocabulary for this repo *and* smk_configurator. Adding a key means editing the manifest and re-running the script, then committing the regenerated file in **both** repos (same pattern as `generate_ble_uuids.sh`). The configurator's `KeyVocabularyTests` pins the agreement by HID usage |
+| `HIDReportMap.swift` | BLE HID-over-GATT keyboard report map, shared by `Sources/smk/BleHelper.swift` (esp_hidd) and `ports/common/BleHidGatt.swift` (BTstack). Hoisted out of those two files, which held byte-identical copies. Declares the keycode array's Logical/Usage Maximum as 255 — it was 101 (`application`), which silently excluded every usage above it |
 | `LEDChainMapping.swift` | serpentine row/col -> RGB chain-position mapping |
 | `KeyEventProcessing.swift` | press/release edge detection, layer toggle/momentary add-remove, connection-toggle decision, HID report assembly — the scan loop calls this once per cycle |
 | `Logging.swift` | host-only `kb_log` no-op shim (not compiled into the embedded build) |
