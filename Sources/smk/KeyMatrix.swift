@@ -3,7 +3,7 @@
 // main/CMakeLists.txt's, ports/rp2040/CMakeLists.txt's,
 // ports/nrf52840/CMakeLists.txt's, ports/stm32f4/CMakeLists.txt's, and
 // ports/stm32wb/CMakeLists.txt's swift_srcs).
-#if !SMK_TARGET_ESP32C6 && !SMK_TARGET_RP2040 && !SMK_TARGET_NRF52840 && !SMK_TARGET_STM32F4 && !SMK_TARGET_STM32WB
+#if !SMK_TARGET_ESP32C6 && !SMK_TARGET_RP2040 && !SMK_TARGET_NRF52840 && !SMK_TARGET_STM32F4 && !SMK_TARGET_STM32WB && !SMK_TARGET_SAMD21
 @_extern(c, "init_keyboard_pins")
 func init_keyboard_pins(_ rows: UnsafePointer<Int32>, _ rowCount: Int32, _ cols: UnsafePointer<Int32>, _ colCount: Int32, _ colsAreDriven: Int32)
 #endif

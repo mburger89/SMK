@@ -75,7 +75,7 @@ func smkKeymapDispatchPacket(
     response[1] = opcode
 }
 
-#if SMK_TARGET_ESP32C6 || SMK_TARGET_RP2040 || SMK_TARGET_NRF52840 || SMK_TARGET_STM32F4 || SMK_TARGET_STM32WB
+#if SMK_TARGET_ESP32C6 || SMK_TARGET_RP2040 || SMK_TARGET_NRF52840 || SMK_TARGET_STM32F4 || SMK_TARGET_STM32WB || SMK_TARGET_SAMD21
 
 // Real cross-language entry point. ports/rp2040/platform/usb_descriptors.c,
 // ports/nrf52840/platform/usb_descriptors.c, and

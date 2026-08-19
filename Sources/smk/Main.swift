@@ -24,8 +24,9 @@ func init_ble_hid()
 // or the shared ports/common/BleHidGatt.swift, and nRF52840/STM32WB via
 // that same shared file. Only STM32F4 (no BLE hardware; C no-op stub in
 // ports/stm32f4/platform/platform_glue.c) still needs this declared as an
-// extern symbol.
-#if SMK_TARGET_STM32F4
+// extern symbol — as does SAMD21 (same no-radio C stub arrangement in its
+// platform_glue.c).
+#if SMK_TARGET_STM32F4 || SMK_TARGET_SAMD21
 @_extern(c, "send_keyboard_report")
 func send_keyboard_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
 #endif
@@ -161,6 +162,30 @@ func app_main_swift() {
                 ["trans", "trans", "trans", "trans", "trans"],
                 ["trans", "trans", "trans", "trans", "trans"],
                 ["trans", "none", "trans", "none", "trans"]
+            ]
+        ]
+    }
+    """
+#elseif SMK_BOARD_XIAO_M0
+    // Seeed XIAO M0 (SAMD21G18A) — bring-up target, not a real keyboard.
+    // 3x3 placeholder matrix on the XIAO's PORT-group-A pins (the shared
+    // GPIORegisters bank is single-group, same constraint as the STM32
+    // ports): rows = PA02/PA04/PA10 (XIAO D0/D1/D2), cols = PA11/PA08/PA09
+    // (D3/D4/D5). Placeholder pin numbers and layout below MUST be replaced
+    // once a real SAMD21 keyboard/macropad PCB is designed — nothing is
+    // wired to these pins on a bare XIAO M0.
+    let configJson = """
+    {
+        "matrix": {
+            "rows": [2, 4, 10],
+            "cols": [11, 8, 9],
+            "colsAreDriven": 1
+        },
+        "layers": [
+            [
+                ["key:1", "key:2", "key:3"],
+                ["key:4", "key:5", "key:6"],
+                ["key:7", "key:8", "key:9"]
             ]
         ]
     }
