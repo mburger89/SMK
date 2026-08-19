@@ -90,6 +90,89 @@ enum KeyCode: UInt8 {
     case upArrow
     case downArrow
     case application
+    case nonUSHash
+    case nonUSBackslash
+    case insert
+    case numLock
+    case keypadSlash
+    case keypadAsterisk
+    case keypadMinus
+    case keypadPlus
+    case keypadEnter
+    case keypad1
+    case keypad2
+    case keypad3
+    case keypad4
+    case keypad5
+    case keypad6
+    case keypad7
+    case keypad8
+    case keypad9
+    case keypad0
+    case keypadDot
+    case keypadEqual
+    case keypadComma
+    case keypadEqualAS400
+    case keyboardPower
+    case keyboardMute
+    case keyboardVolumeUp
+    case keyboardVolumeDown
+    case lockingCapsLock
+    case lockingNumLock
+    case lockingScrollLock
+    case f13
+    case f14
+    case f15
+    case f16
+    case f17
+    case f18
+    case f19
+    case f20
+    case f21
+    case f22
+    case f23
+    case f24
+    case execute
+    case help
+    case menu
+    case select
+    case stop
+    case again
+    case undo
+    case cut
+    case copy
+    case paste
+    case find
+    case international1
+    case international2
+    case international3
+    case international4
+    case international5
+    case international6
+    case international7
+    case international8
+    case international9
+    case language1
+    case language2
+    case language3
+    case language4
+    case language5
+    case language6
+    case language7
+    case language8
+    case language9
+    case alternateErase
+    case systemRequest
+    case cancel
+    case clear
+    case prior
+    case returnKey
+    case separator
+    case out
+    case oper
+    case clearAgain
+    case crsel
+    case exsel
     case transparent // Like QMK's KC_TRNS
 
     // Explicit rawValue overriding the synthesized ordinals: these are real
@@ -177,6 +260,89 @@ enum KeyCode: UInt8 {
         case .upArrow: return 0x52
         case .downArrow: return 0x51
         case .application: return 0x65
+        case .nonUSHash: return 0x32
+        case .nonUSBackslash: return 0x64
+        case .insert: return 0x49
+        case .numLock: return 0x53
+        case .keypadSlash: return 0x54
+        case .keypadAsterisk: return 0x55
+        case .keypadMinus: return 0x56
+        case .keypadPlus: return 0x57
+        case .keypadEnter: return 0x58
+        case .keypad1: return 0x59
+        case .keypad2: return 0x5A
+        case .keypad3: return 0x5B
+        case .keypad4: return 0x5C
+        case .keypad5: return 0x5D
+        case .keypad6: return 0x5E
+        case .keypad7: return 0x5F
+        case .keypad8: return 0x60
+        case .keypad9: return 0x61
+        case .keypad0: return 0x62
+        case .keypadDot: return 0x63
+        case .keypadEqual: return 0x67
+        case .keypadComma: return 0x85
+        case .keypadEqualAS400: return 0x86
+        case .keyboardPower: return 0x66
+        case .keyboardMute: return 0x7F
+        case .keyboardVolumeUp: return 0x80
+        case .keyboardVolumeDown: return 0x81
+        case .lockingCapsLock: return 0x82
+        case .lockingNumLock: return 0x83
+        case .lockingScrollLock: return 0x84
+        case .f13: return 0x68
+        case .f14: return 0x69
+        case .f15: return 0x6A
+        case .f16: return 0x6B
+        case .f17: return 0x6C
+        case .f18: return 0x6D
+        case .f19: return 0x6E
+        case .f20: return 0x6F
+        case .f21: return 0x70
+        case .f22: return 0x71
+        case .f23: return 0x72
+        case .f24: return 0x73
+        case .execute: return 0x74
+        case .help: return 0x75
+        case .menu: return 0x76
+        case .select: return 0x77
+        case .stop: return 0x78
+        case .again: return 0x79
+        case .undo: return 0x7A
+        case .cut: return 0x7B
+        case .copy: return 0x7C
+        case .paste: return 0x7D
+        case .find: return 0x7E
+        case .international1: return 0x87
+        case .international2: return 0x88
+        case .international3: return 0x89
+        case .international4: return 0x8A
+        case .international5: return 0x8B
+        case .international6: return 0x8C
+        case .international7: return 0x8D
+        case .international8: return 0x8E
+        case .international9: return 0x8F
+        case .language1: return 0x90
+        case .language2: return 0x91
+        case .language3: return 0x92
+        case .language4: return 0x93
+        case .language5: return 0x94
+        case .language6: return 0x95
+        case .language7: return 0x96
+        case .language8: return 0x97
+        case .language9: return 0x98
+        case .alternateErase: return 0x99
+        case .systemRequest: return 0x9A
+        case .cancel: return 0x9B
+        case .clear: return 0x9C
+        case .prior: return 0x9D
+        case .returnKey: return 0x9E
+        case .separator: return 0x9F
+        case .out: return 0xA0
+        case .oper: return 0xA1
+        case .clearAgain: return 0xA2
+        case .crsel: return 0xA3
+        case .exsel: return 0xA4
         case .transparent: return 0xFF
         }
     }
@@ -265,6 +431,89 @@ enum KeyCode: UInt8 {
         if strcmp(cStr, "up") == 0 { return .upArrow }
         if strcmp(cStr, "down") == 0 { return .downArrow }
         if strcmp(cStr, "application") == 0 { return .application }
+        if strcmp(cStr, "nonUSHash") == 0 { return .nonUSHash }
+        if strcmp(cStr, "nonUSBackslash") == 0 { return .nonUSBackslash }
+        if strcmp(cStr, "insert") == 0 { return .insert }
+        if strcmp(cStr, "numLock") == 0 { return .numLock }
+        if strcmp(cStr, "keypadSlash") == 0 { return .keypadSlash }
+        if strcmp(cStr, "keypadAsterisk") == 0 { return .keypadAsterisk }
+        if strcmp(cStr, "keypadMinus") == 0 { return .keypadMinus }
+        if strcmp(cStr, "keypadPlus") == 0 { return .keypadPlus }
+        if strcmp(cStr, "keypadEnter") == 0 { return .keypadEnter }
+        if strcmp(cStr, "keypad1") == 0 { return .keypad1 }
+        if strcmp(cStr, "keypad2") == 0 { return .keypad2 }
+        if strcmp(cStr, "keypad3") == 0 { return .keypad3 }
+        if strcmp(cStr, "keypad4") == 0 { return .keypad4 }
+        if strcmp(cStr, "keypad5") == 0 { return .keypad5 }
+        if strcmp(cStr, "keypad6") == 0 { return .keypad6 }
+        if strcmp(cStr, "keypad7") == 0 { return .keypad7 }
+        if strcmp(cStr, "keypad8") == 0 { return .keypad8 }
+        if strcmp(cStr, "keypad9") == 0 { return .keypad9 }
+        if strcmp(cStr, "keypad0") == 0 { return .keypad0 }
+        if strcmp(cStr, "keypadDot") == 0 { return .keypadDot }
+        if strcmp(cStr, "keypadEqual") == 0 { return .keypadEqual }
+        if strcmp(cStr, "keypadComma") == 0 { return .keypadComma }
+        if strcmp(cStr, "keypadEqualAS400") == 0 { return .keypadEqualAS400 }
+        if strcmp(cStr, "keyboardPower") == 0 { return .keyboardPower }
+        if strcmp(cStr, "keyboardMute") == 0 { return .keyboardMute }
+        if strcmp(cStr, "keyboardVolumeUp") == 0 { return .keyboardVolumeUp }
+        if strcmp(cStr, "keyboardVolumeDown") == 0 { return .keyboardVolumeDown }
+        if strcmp(cStr, "lockingCapsLock") == 0 { return .lockingCapsLock }
+        if strcmp(cStr, "lockingNumLock") == 0 { return .lockingNumLock }
+        if strcmp(cStr, "lockingScrollLock") == 0 { return .lockingScrollLock }
+        if strcmp(cStr, "f13") == 0 { return .f13 }
+        if strcmp(cStr, "f14") == 0 { return .f14 }
+        if strcmp(cStr, "f15") == 0 { return .f15 }
+        if strcmp(cStr, "f16") == 0 { return .f16 }
+        if strcmp(cStr, "f17") == 0 { return .f17 }
+        if strcmp(cStr, "f18") == 0 { return .f18 }
+        if strcmp(cStr, "f19") == 0 { return .f19 }
+        if strcmp(cStr, "f20") == 0 { return .f20 }
+        if strcmp(cStr, "f21") == 0 { return .f21 }
+        if strcmp(cStr, "f22") == 0 { return .f22 }
+        if strcmp(cStr, "f23") == 0 { return .f23 }
+        if strcmp(cStr, "f24") == 0 { return .f24 }
+        if strcmp(cStr, "execute") == 0 { return .execute }
+        if strcmp(cStr, "help") == 0 { return .help }
+        if strcmp(cStr, "menu") == 0 { return .menu }
+        if strcmp(cStr, "select") == 0 { return .select }
+        if strcmp(cStr, "stop") == 0 { return .stop }
+        if strcmp(cStr, "again") == 0 { return .again }
+        if strcmp(cStr, "undo") == 0 { return .undo }
+        if strcmp(cStr, "cut") == 0 { return .cut }
+        if strcmp(cStr, "copy") == 0 { return .copy }
+        if strcmp(cStr, "paste") == 0 { return .paste }
+        if strcmp(cStr, "find") == 0 { return .find }
+        if strcmp(cStr, "international1") == 0 { return .international1 }
+        if strcmp(cStr, "international2") == 0 { return .international2 }
+        if strcmp(cStr, "international3") == 0 { return .international3 }
+        if strcmp(cStr, "international4") == 0 { return .international4 }
+        if strcmp(cStr, "international5") == 0 { return .international5 }
+        if strcmp(cStr, "international6") == 0 { return .international6 }
+        if strcmp(cStr, "international7") == 0 { return .international7 }
+        if strcmp(cStr, "international8") == 0 { return .international8 }
+        if strcmp(cStr, "international9") == 0 { return .international9 }
+        if strcmp(cStr, "language1") == 0 { return .language1 }
+        if strcmp(cStr, "language2") == 0 { return .language2 }
+        if strcmp(cStr, "language3") == 0 { return .language3 }
+        if strcmp(cStr, "language4") == 0 { return .language4 }
+        if strcmp(cStr, "language5") == 0 { return .language5 }
+        if strcmp(cStr, "language6") == 0 { return .language6 }
+        if strcmp(cStr, "language7") == 0 { return .language7 }
+        if strcmp(cStr, "language8") == 0 { return .language8 }
+        if strcmp(cStr, "language9") == 0 { return .language9 }
+        if strcmp(cStr, "alternateErase") == 0 { return .alternateErase }
+        if strcmp(cStr, "systemRequest") == 0 { return .systemRequest }
+        if strcmp(cStr, "cancel") == 0 { return .cancel }
+        if strcmp(cStr, "clear") == 0 { return .clear }
+        if strcmp(cStr, "prior") == 0 { return .prior }
+        if strcmp(cStr, "returnKey") == 0 { return .returnKey }
+        if strcmp(cStr, "separator") == 0 { return .separator }
+        if strcmp(cStr, "out") == 0 { return .out }
+        if strcmp(cStr, "oper") == 0 { return .oper }
+        if strcmp(cStr, "clearAgain") == 0 { return .clearAgain }
+        if strcmp(cStr, "crsel") == 0 { return .crsel }
+        if strcmp(cStr, "exsel") == 0 { return .exsel }
         return .noKey
     }
 }

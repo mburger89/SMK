@@ -35,4 +35,32 @@ struct KeyCodeTests {
         #expect(KeyCode.fromCString("nonsense") == .noKey)
         #expect(KeyCode.fromCString("A") == .noKey)   // case-sensitive by design
     }
+
+    @Test("the previously missing keyboard-page usages are present and correct")
+    func newUsagesArePinned() {
+        #expect(KeyCode.nonUSHash.rawValue == 0x32)
+        #expect(KeyCode.insert.rawValue == 0x49)
+        #expect(KeyCode.numLock.rawValue == 0x53)
+        #expect(KeyCode.keypad1.rawValue == 0x59)
+        #expect(KeyCode.keypad0.rawValue == 0x62)
+        #expect(KeyCode.nonUSBackslash.rawValue == 0x64)
+        #expect(KeyCode.keyboardPower.rawValue == 0x66)
+        #expect(KeyCode.keypadEqual.rawValue == 0x67)
+        #expect(KeyCode.f13.rawValue == 0x68)
+        #expect(KeyCode.f24.rawValue == 0x73)
+        #expect(KeyCode.paste.rawValue == 0x7D)
+        #expect(KeyCode.lockingCapsLock.rawValue == 0x82)
+        #expect(KeyCode.international1.rawValue == 0x87)
+        #expect(KeyCode.language9.rawValue == 0x98)
+        #expect(KeyCode.exsel.rawValue == 0xA4)
+    }
+
+    @Test("new tokens resolve through fromCString")
+    func newTokensResolve() {
+        #expect(KeyCode.fromCString("insert") == .insert)
+        #expect(KeyCode.fromCString("keypadAsterisk") == .keypadAsterisk)
+        #expect(KeyCode.fromCString("f24") == .f24)
+        #expect(KeyCode.fromCString("international1") == .international1)
+        #expect(KeyCode.fromCString("exsel") == .exsel)
+    }
 }
