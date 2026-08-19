@@ -1,6 +1,6 @@
 ---
 name: target-build
-description: Build (and optionally flash) SMK firmware for a specific hardware target — esp32c6, pico, pico_w, pico2, pico2_w, smk_kbd_rp2040, nrf52840, stm32f4, or stm32wb. Use whenever the user asks to build, compile, or flash the firmware for one of these boards, or asks which command builds a given target.
+description: Build (and optionally flash) SMK firmware for a specific hardware target — esp32c6, pico, pico_w, pico2, pico2_w, smk_kbd_rp2040, nrf52840, nrf52840_feather, stm32f4, or stm32wb. Use whenever the user asks to build, compile, or flash the firmware for one of these boards, or asks which command builds a given target.
 ---
 
 # SMK Target Build
@@ -25,6 +25,7 @@ ambiguous (e.g. just "pico"), ask which — don't guess between `pico`,
 | Pico 2 W | `pico2_w` |
 | smk_kbd_rp2040, the custom RP2040 PCB | `smk_kbd_rp2040` |
 | nRF52840, nrf52840dk | `nrf52840` |
+| Feather nRF52840 Express, Adafruit Feather nRF52840 | `nrf52840_feather` |
 | STM32F4, Black Pill, WeAct | `stm32f4` |
 | STM32WB, NUCLEO-WB55RG | `stm32wb` |
 
@@ -68,18 +69,41 @@ picotool reboot
 `picotool load -f` does **not** auto-reboot — the `picotool reboot` step is
 required or the newly flashed firmware never runs.
 
-### nrf52840
+### nrf52840 / nrf52840_feather
 
 ```bash
 export NRF5_SDK_PATH=~/nRF5_SDK
 export NRFXLIB_PATH=~/sdk-nrfxlib
 export TINYUSB_PATH=~/tinyusb
 export BTSTACK_PATH=~/btstack
-./build_nrf52840.sh
+./build_nrf52840.sh              # nrf52840dk (default)
+./build_nrf52840.sh feather      # Feather nRF52840 Express
 ```
 
-Produces `build_nrf52840/`. No flash step is scripted yet — this target is
-build-only per CLAUDE.md (placeholder GPIO map, not yet hardware-verified).
+Produces `build_nrf52840_nrf52840dk/` or `build_nrf52840_feather_nrf52840/`
+depending on which board arg was passed. `nrf52840dk` has no scripted flash
+step — build-only per CLAUDE.md (placeholder GPIO map, not yet
+hardware-verified).
+
+`feather` additionally produces `smk_nrf52840.uf2` in its build dir, but
+**drag-and-drop UF2 has not worked in bring-up so far** (bootloader enters
+fine, but no mass-storage drive ever mounts — see CLAUDE.md's "nRF52840
+Feather board" section). The flash path that actually worked twice in
+that session is `adafruit-nrfutil` DFU-over-serial:
+```bash
+pip3 install adafruit-nrfutil   # venv if Python is externally-managed
+adafruit-nrfutil dfu genpkg --dev-type 0x0052 \
+    --application build_nrf52840_feather_nrf52840/smk_nrf52840.hex \
+    smk_nrf52840_dfu.zip
+adafruit-nrfutil dfu serial -pkg smk_nrf52840_dfu.zip -p /dev/cu.usbmodemXXXX -b 115200
+```
+Enter the bootloader first (watch for the LED to shift to a slow red
+fade — a plain blink is a false positive; if the board is already
+enumerating over USB, `stty -f /dev/cu.usbmodemXXXX 1200` is more
+reliable than the physical double-tap). **IN PROGRESS, not confirmed
+working** — a real missing-`SCB->VTOR`-relocation bug was found and fixed
+this session (see CLAUDE.md), but the fix was never hardware-reconfirmed
+before the USB connection went unreliable.
 
 ### stm32f4
 

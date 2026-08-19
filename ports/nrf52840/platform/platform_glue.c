@@ -109,9 +109,42 @@ void send_keyboard_report(uint8_t modifier, uint8_t *keycodes) {
 }
 #endif
 
+// --- Vector table relocation (Feather nRF52840 Express only) ---------------
+// This board's factory UF2 bootloader links the app above flash 0x0 (see
+// ports/nrf52840/linker/feather_nrf52840.ld) and jumps straight to our
+// Reset_Handler, but never touches the CPU's VTOR register on the way —
+// confirmed by reading both gcc_startup_nrf52840.S and system_nrf52.c from
+// the vendored nRF5 SDK, neither of which writes VTOR at all (they assume
+// the CPU's power-on-reset default, VTOR=0x0, which IS correct for the
+// nrf52840dk build linked at flash origin 0x0, but wrong here). Left
+// unfixed, any interrupt firing while this app runs dispatches through the
+// STALE vector table at address 0x0 (inside the SoftDevice's own reserved
+// flash region, not ours) instead of our real handlers at __isr_vector's
+// actual link address (0x27000) — found via real hardware bring-up: the
+// board flashed and rebooted successfully but never enumerated any USB
+// device at all, silently. Direct MMIO write rather than a CMSIS header,
+// since SCB->VTOR's address (0xE000ED08) is fixed by the ARMv7-M
+// architecture, not chip-specific.
+#if SMK_BOARD_FEATHER_NRF52840
+extern uint32_t __isr_vector[]; // linker symbol, gcc_startup_nrf52840.S
+static void smk_relocate_vector_table(void) {
+    *(volatile uint32_t *)0xE000ED08UL = (uint32_t)__isr_vector;
+}
+#endif
+
 // --- Entry point -----------------------------------------------------------
 int main(void) {
+#if SMK_BOARD_FEATHER_NRF52840
+    // VTOR must be fixed before anything can safely take an interrupt.
+    // mpsl_glue_init() is skipped entirely on this board — this bring-up
+    // pass is USB HID only (see Sources/smk/Main.swift's
+    // SMK_BOARD_FEATHER_NRF52840 branch, which also skips init_ble_hid()),
+    // and MPSL claiming RTC0/TIMER0/RADIO interrupts was the most likely
+    // immediate trigger of the stale-VTOR crash before this fix.
+    smk_relocate_vector_table();
+#else
     mpsl_glue_init(); // bring up MPSL before the scan loop starts (Task 5)
+#endif
     app_main_swift(); // never returns (infinite scan loop)
     return 0;
 }

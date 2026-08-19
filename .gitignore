@@ -33,7 +33,8 @@ build_rp2040_pico2_w/
 build_rp2040_smk_kbd_rp2040/
 
 # nRF52840 build output
-build_nrf52840/
+build_nrf52840_nrf52840dk/
+build_nrf52840_feather_nrf52840/
 
 # STM32F4 build output
 build_stm32f4/
