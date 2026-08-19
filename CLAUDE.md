@@ -19,6 +19,7 @@ SMK (Swift Matrix Keyboard) is keyboard firmware written in **Embedded Swift** t
 | nRF52840 | Arm Cortex-M4F | CMake / Ninja (no pico-sdk equivalent — vendored nRF5 SDK + sdk-nrfxlib + TinyUSB + BTstack) | USB HID + BLE HID (SoftDevice Controller over BTstack); build-only, not yet hardware-verified |
 | STM32F4 (WeAct Black Pill) | Arm Cortex-M4F | CMake / Ninja (hand-rolled — vendored cmsis-device-f4 + CMSIS_6 + TinyUSB, hand-written linker script) | USB HID (TinyUSB's `dwc2` driver); build-only, not yet hardware-verified |
 | STM32WB (NUCLEO-WB55RG) | Arm Cortex-M4 (+ on-chip Cortex-M0+ radio coprocessor running ST's own firmware) | CMake / Ninja (hand-rolled — vendored cmsis-device-wb + CMSIS_6 + TinyUSB + BTstack + STM32CubeWB's IPCC transport layer) | USB HID (TinyUSB's `fsdev` driver) + BLE HID (ST's HCI-Layer wireless coprocessor over BTstack); build-only, not yet hardware-verified |
+| SAMD21 (Seeed XIAO M0) | Arm Cortex-M0+ (armv6m, no LDREX/STREX — `ports/samd21/platform/armv6m_atomics.c` supplies `__atomic_*` via PRIMASK critical sections) | CMake / Ninja (hand-rolled — vendored TinyUSB `hw/mcu/microchip/samd21` DFP + linker script) | USB HID (TinyUSB's `dcd_samd` driver); **IN PROGRESS, not working yet** — DFLL48M clock bring-up and `tusb_rhport_init` both confirmed correct on real hardware (worked around a bootloader-locked GCLK2 USB clock channel — see `ports/samd21/ClockInit.swift`), but the device still never completes USB enumeration with a host. A UART debug channel (`ports/samd21/UartDebug.swift`, PA06/SERCOM0, 115200 8N1 TX-only) was added after LED-blink bit-decoding of the USB INTFLAG/EPINTFLAG registers proved unreliable; reading it needs a USB-to-TTL serial adapter (RX → XIAO D6, GND → GND), not yet available during this bring-up session |
 
 ## Prerequisites
 
@@ -57,6 +58,12 @@ SMK (Swift Matrix Keyboard) is keyboard firmware written in **Embedded Swift** t
 - **ARM toolchain with newlib**: same `arm-gcc-bin@14` already required for RP2040/nRF52840/STM32F4 — no new install.
 - **Swift Embedded ARM toolchain**: same one already required for the other ARM ports — `armv7em-none-none-eabi` has a real stdlib, no dev-snapshot requirement.
 
+### SAMD21 (Seeed XIAO M0) — IN PROGRESS, not hardware-verified yet (see Supported Targets)
+- **TinyUSB** at `~/tinyusb`, with the SAMD21 DFP fetched: `cd ~/tinyusb && python3 tools/get_deps.py samd2x_l2x` (reused checkout if you have one from RP2040/nRF52840/STM32F4/STM32WB — just needs this extra `get_deps.py` step for the `hw/mcu/microchip/samd21` device headers).
+- **CMSIS_6** (reused from the STM32 ports — `~/CMSIS_6`, no new clone needed if you have one).
+- **ARM toolchain with newlib**: same `arm-gcc-bin@14` already required for the other ARM ports — no new install.
+- **Swift Embedded ARM toolchain**: same one already required for the other ARM ports — `armv6m-none-none-eabi` (Cortex-M0+, no LDREX/STREX) has a real stdlib on every currently-installed toolchain.
+
 ## Build & Flash Commands
 
 ### ESP32-C6
@@ -82,6 +89,16 @@ export PICO_SDK_PATH=~/pico-sdk
 Produces `build_rp2040_<board>/smk_rp2040.uf2`. Flash via BOOTSEL + `picotool load -f ...`
 
 The RP2040 build uses CMake's native Swift support (`enable_language(Swift)`) with the pico-sdk CMake toolchain, auto-discovering swiftc from `~/Library/Developer/Toolchains/` or `SWIFTC_PATH`.
+
+### SAMD21 (Seeed XIAO M0) — IN PROGRESS
+```bash
+export TINYUSB_PATH=~/tinyusb
+export CMSIS_CORE_PATH=~/CMSIS_6
+
+./build_samd21.sh
+```
+
+Produces `build_samd21/smk_samd21.uf2`. Flash by double-tapping the XIAO M0's reset pads (mounts an `Arduino` UF2-bootloader volume) and copying the `.uf2` onto it. USB enumeration does not yet work on this target — see Supported Targets above.
 
 ## Architecture
 
