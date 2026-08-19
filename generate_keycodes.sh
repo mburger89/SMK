@@ -66,4 +66,70 @@ f += ["        return .noKey",
       ""]
 pathlib.Path("Sources/SMKCore/KeyCodesGenerated.swift").write_text("\n".join(f))
 print("wrote Sources/SMKCore/KeyCodesGenerated.swift")
+
+# --- configurator: Sources/SMKConfigurator/Model/KeyCodesGenerated.swift ---
+GROUPS = [
+    ("letters",         "Letters",               2),
+    ("digits",          "Numbers",               1),
+    ("editing",         "Editing & Punctuation", 1),
+    ("functionKeys",    "Function Keys",         1),
+    ("navigation",      "Navigation",            1),
+    ("keypad",          "Keypad",                1),
+    ("editingCommands", "Editing Commands",      1),
+    ("system",          "System",                1),
+    ("international",   "International",         1),
+    ("legacy",          "Legacy",                1),
+]
+known = {g for g, _t, _r in GROUPS}
+unknown = sorted({e["group"] for e in keyboard} - known)
+if unknown:
+    raise SystemExit("keycodes.json uses unknown group(s): %s" % ", ".join(unknown))
+
+c = list(BANNER)
+c += ["/// The parsed vocabulary of one `key:` token, matching KeyCode in",
+      "/// ~/esp/SMK/Sources/SMKCore/KeyCodesGenerated.swift entry for entry.",
+      "enum KeyName: String, CaseIterable, Hashable {"]
+for e in keyboard:
+    c.append('    case %s = "%s"' % (e["name"], swift_string(e["token"])))
+c += ["}",
+      "",
+      "extension KeyName {",
+      "    var displayLabel: String {",
+      "        switch self {"]
+for e in keyboard:
+    c.append('        case .%s: return "%s"' % (e["name"], swift_string(e["label"])))
+c += ["        }",
+      "    }",
+      "",
+      "    /// The HID usage this token resolves to in the firmware. The editor never",
+      "    /// puts this on the wire -- it sends token strings -- but carrying it lets",
+      "    /// the cross-repo agreement test compare actual keycodes rather than only",
+      "    /// checking that the same names exist on both sides.",
+      "    var hidUsage: UInt8 {",
+      "        switch self {"]
+for e in keyboard:
+    c.append("        case .%s: return 0x%02X" % (e["name"], e["usage"]))
+c += ["        }",
+      "    }",
+      "}",
+      "",
+      "extension KeyName {"]
+for key, _title, _rows in GROUPS:
+    members = ", ".join(".%s" % e["name"] for e in keyboard if e["group"] == key)
+    c.append("    static let %s: [KeyName] = [%s]" % (key, members))
+c += ["",
+      "    /// Palette sections in display order, consumed by PaletteDrawerView for",
+      "    /// both rendering and its height math. Groups with no members are dropped",
+      "    /// so an empty section never reserves drawer height.",
+      "    static var allGroups: [(title: String, keys: [KeyName], rows: Int)] {",
+      "        ["]
+for key, title, rows in GROUPS:
+    c.append('            (title: "%s", keys: %s, rows: %d),' % (title, key, rows))
+c += ["        ].filter { !$0.keys.isEmpty }",
+      "    }",
+      "}",
+      ""]
+out = configurator / "Sources/SMKConfigurator/Model/KeyCodesGenerated.swift"
+out.write_text("\n".join(c))
+print("wrote %s" % out)
 PY
