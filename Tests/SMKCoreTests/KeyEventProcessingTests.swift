@@ -161,3 +161,73 @@ import Testing
     #expect(result.connectionEvents == [.toggled(.wired), .toggled(.bluetooth)])
     #expect(currentMode == .bluetooth)
 }
+
+@Test func macroPressEmitsAMacroEvent() {
+    var engine = LayerEngine()
+    engine.loadKeymap(json: """
+    { "layers": [ [ ["macro:2", "key:a"] ] ] }
+    """)
+    var pressedActions: [KeyAction] = [.none, .none]
+    var currentMode = ConnectionMode.bluetooth
+
+    let result = processKeyEvents(
+        cleanScan: [true, false], lastScan: [false, false], colCount: 2,
+        pressedActions: &pressedActions, engine: &engine,
+        hasWiredBridge: false, currentMode: &currentMode
+    )
+    #expect(result.macroEvents == [2])
+}
+
+@Test func macroKeyContributesNothingToTheReport() {
+    var engine = LayerEngine()
+    engine.loadKeymap(json: """
+    { "layers": [ [ ["macro:2"] ] ] }
+    """)
+    var pressedActions: [KeyAction] = [.none]
+    var currentMode = ConnectionMode.bluetooth
+
+    let result = processKeyEvents(
+        cleanScan: [true], lastScan: [false], colCount: 1,
+        pressedActions: &pressedActions, engine: &engine,
+        hasWiredBridge: false, currentMode: &currentMode
+    )
+    #expect(result.report == HIDReport())
+}
+
+@Test func macroReleaseEmitsNoEvent() {
+    var engine = LayerEngine()
+    engine.loadKeymap(json: """
+    { "layers": [ [ ["macro:2"] ] ] }
+    """)
+    var pressedActions: [KeyAction] = [.macro(2)]
+    var currentMode = ConnectionMode.bluetooth
+
+    let result = processKeyEvents(
+        cleanScan: [false], lastScan: [true], colCount: 1,
+        pressedActions: &pressedActions, engine: &engine,
+        hasWiredBridge: false, currentMode: &currentMode
+    )
+    #expect(result.macroEvents.isEmpty)
+}
+
+@Test func resettingLastScanRepressesAStillHeldKey() {
+    // The stuck-key guard, at the level that IS host-testable. When
+    // playback ends, Main.swift forces lastScan to all-false so the next
+    // cycle re-observes every physically-held key as a fresh press --
+    // otherwise a key released during playback was never seen as a
+    // transition and stays down forever.
+    var engine = LayerEngine()
+    engine.loadKeymap(json: """
+    { "layers": [ [ ["key:a"] ] ] }
+    """)
+    var pressedActions: [KeyAction] = [.none]
+    var currentMode = ConnectionMode.bluetooth
+
+    let result = processKeyEvents(
+        cleanScan: [true], lastScan: [false], colCount: 1,
+        pressedActions: &pressedActions, engine: &engine,
+        hasWiredBridge: false, currentMode: &currentMode
+    )
+    #expect(result.report.keys[0] == KeyCode.a.rawValue)
+    #expect(result.transitions.first?.pressed == true)
+}

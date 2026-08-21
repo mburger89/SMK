@@ -493,6 +493,7 @@ func app_main_swift() {
     var lastSentReport = HIDReport()
     var lastSentMode = currentMode
     var pressedActions: [KeyAction] = [KeyAction](repeating: .none, count: totalKeys)
+    var macroPlayer = MacroPlayer()
 
     #if SMK_TARGET_ESP32C6
     // Battery voltage changes slowly, so polling it every scan tick would
@@ -519,7 +520,26 @@ func app_main_swift() {
             currentMode: &currentMode
         )
         lastScan = cleanScan
-        report = result.report
+
+        if !macroPlayer.isActive, let slot = result.macroEvents.first,
+           let macro = engine.macros.first(where: { $0.id == slot }) {
+            macroPlayer.start(macro)
+        }
+
+        if macroPlayer.isActive {
+            switch macroPlayer.tick() {
+            case .report(let r): report = r
+            case .finished:
+                // Resume from the CURRENT scan, not the stale lastScan: a
+                // key released during playback was never observed as a
+                // transition and would otherwise stay down forever.
+                lastScan = [Bool](repeating: false, count: cleanScan.count)
+                report = HIDReport()
+            case .idle: break
+            }
+        } else {
+            report = result.report
+        }
 
         #if SMK_RGB_AVAILABLE
         for t in result.transitions {

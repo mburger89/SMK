@@ -17,6 +17,7 @@ struct KeyEventProcessingResult {
     var report = HIDReport()
     var transitions: [KeyTransition] = []
     var connectionEvents: [ConnectionToggleEvent] = []
+    var macroEvents: [Int] = []
 }
 
 /// Processes one debounced scan cycle against the current layer/connection
@@ -32,6 +33,10 @@ struct KeyEventProcessingResult {
 /// logging — replaying it reproduces the exact log sequence the original
 /// inline-per-press logging produced, even if a future keymap binds
 /// toggle_conn to multiple keys that transition in the same cycle.
+/// `macroEvents` (also scan-index order, one entry per macro-key
+/// press-transition, holding the slot number) tells the caller which
+/// macro(s) to start — this function only records the press, it never
+/// starts playback itself.
 func processKeyEvents(
     cleanScan: [Bool],
     lastScan: [Bool],
@@ -64,6 +69,8 @@ func processKeyEvents(
                 } else {
                     result.connectionEvents.append(.ignored)
                 }
+            case .macro(let slot):
+                result.macroEvents.append(slot)
             default:
                 break
             }
