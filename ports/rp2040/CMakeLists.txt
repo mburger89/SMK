@@ -166,6 +166,7 @@ set(SHARED_SWIFT_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LayerEngine.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapBinary.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyCodesGenerated.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/AsciiKeycodes.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/HIDReportMap.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/smk/KeyMatrix.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Debounce.swift"
