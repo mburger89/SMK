@@ -106,6 +106,11 @@ private func samplePayload(layerCount: Int) -> [UInt8] {
 // nested-repeat-block refusal called out as a landmine the brief itself
 // cannot pin with a byte layout) is otherwise entirely untested code, so
 // these are added beyond the brief to verify it directly.
+//
+// The step wire format below is the configurator compiler's actual format
+// (opcodes 0x01-0x05, per-opcode field layouts, `repeatBlock`'s body given
+// as a byte length rather than a step count) -- not an invented one. See
+// the "wire format correction" section of task-2-report.md.
 
 /// A 1x1-matrix, 0-layer payload carrying one macro entry (id 7, name "AB")
 /// exercising every `MacroStep` kind, including a repeat block.
@@ -118,11 +123,18 @@ private func sampleMacroPayload() -> [UInt8] {
     b += [2, 0x41, 0x42]  // nameLen=2, name="AB" (decoded but not retained)
     b += [5]        // stepCount
 
-    b += [0, Modifier.leftShift.rawValue, KeyCode.b.rawValue, 0x2C, 0x01]  // keystroke, holdMs=300
-    b += [1, 1, UInt8(ascii: "x"), 10, 0]                                  // text "x", msPerChar=10
-    b += [2, 0xF4, 0x01]                                                   // delay ms=500
-    b += [3, 1, 2]                                                         // layer momentary n=2
-    b += [4, 3, 1, 2, 20, 0]     // repeatBlock count=3, 1 nested step: delay ms=20
+    // keystroke: opcode(1) mods(1) keycode(1) holdMs(2 LE) -- holdMs=300
+    b += [0x01, Modifier.leftShift.rawValue, KeyCode.b.rawValue, 0x2C, 0x01]
+    // text: opcode(1) delivery(1) msPerChar(1) length(1) payload(length) -- "x", msPerChar=10
+    b += [0x04, 0, 10, 1, UInt8(ascii: "x")]
+    // delay: opcode(1) ms(2 LE) -- ms=500
+    b += [0x02, 0xF4, 0x01]
+    // layer: opcode(1) op(1) index(1) -- op=0 (momentary), n=2
+    b += [0x03, 0, 2]
+    // repeatBlock: opcode(1) count(1) bodyLength(2 LE) body(bodyLength) --
+    // count=3, body is one delay step (ms=20), so bodyLength=3
+    b += [0x05, 3, 3, 0]
+    b += [0x02, 20, 0]  // the repeat's body: a single delay(ms: 20) step
     return b
 }
 
@@ -163,8 +175,36 @@ private func sampleMacroPayload() -> [UInt8] {
     b += [1]           // macro id
     b += [0]           // nameLen=0
     b += [1]           // stepCount=1
-    b += [4, 2, 1]     // outer repeatBlock: count=2, 1 nested step
-    b += [4, 1, 0]     // nested step is itself a repeatBlock -- must be refused
+
+    // Outer repeatBlock: opcode count=2, bodyLength=4, whose body is
+    // exactly one nested step that is itself a repeatBlock (count=1,
+    // empty body) -- must be refused before even reading the nested
+    // repeat's own count/bodyLength.
+    b += [0x05, 2, 4, 0]
+    b += [0x05, 1, 0, 0]
+
+    let p = b.withUnsafeBufferPointer {
+        decodeKeymapPayload($0.baseAddress!, count: b.count)
+    }
+    #expect(p == nil)
+}
+
+@Test func repeatBlockBodyLengthMismatchIsRejected() {
+    // bodyLength is attacker-controlled. Here it under-declares the body
+    // (2, but the one step inside it is 3 bytes) -- the buffer has enough
+    // real bytes that decoding the step reads past the declared bodyEnd
+    // without leaving the actual buffer (no memory-safety issue), but the
+    // result must still be refused: a body that doesn't parse as an exact
+    // sequence of steps is a format error, not something to accept with a
+    // mismatched length.
+    var b: [UInt8] = [1, 1, 1, 0, 1, 0]
+    b += [5]           // rows[]
+    b += [6]           // cols[]
+    b += [1]           // macro id
+    b += [0]           // nameLen=0
+    b += [1]           // stepCount=1
+    b += [0x05, 1, 2, 0]   // repeatBlock: count=1, bodyLength=2 (claimed, too small)
+    b += [0x02, 20, 0]     // body's actual content: one delay step, 3 bytes
     let p = b.withUnsafeBufferPointer {
         decodeKeymapPayload($0.baseAddress!, count: b.count)
     }

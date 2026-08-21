@@ -137,16 +137,17 @@ struct MacroDefinition: Equatable {
     var steps: [MacroStep]
 }
 
-/// Per-step wire tags for the macro bytecode this decoder reads. Unlike
-/// `KeymapCellTag` matched against `KeyCode`/`Modifier`, this enum's raw
-/// values are never overridden, so the compiler-synthesized
+/// Per-step wire opcodes for the macro bytecode this decoder reads --
+/// 1-based, matching the configurator compiler's existing wire format
+/// (not renumbered to 0-based tags the way `KeymapCellTag` is). This enum's
+/// raw values are never overridden, so the compiler-synthesized
 /// `init?(rawValue:)` maps them correctly -- no ordinal landmine here.
-private enum MacroStepTag: UInt8 {
-    case keystroke = 0
-    case text = 1
-    case delay = 2
-    case layer = 3
-    case repeatBlock = 4
+private enum MacroStepOpcode: UInt8 {
+    case keystroke = 0x01
+    case delay = 0x02
+    case layer = 0x03
+    case text = 0x04
+    case repeatBlock = 0x05
 }
 
 /// Decodes a full binary keymap payload: the 6-byte header, the matrix's
@@ -240,20 +241,22 @@ private func decodeMacroEntry(_ bytes: UnsafePointer<UInt8>, _ offset: inout Int
     return MacroDefinition(id: id, steps: steps)
 }
 
-/// Decodes one macro step. `allowRepeatBlock` is `false` while decoding a
-/// repeat block's own body: a repeat block whose steps contain another
-/// repeat block is refused here rather than at playback, because
-/// `MacroPlayer` uses a single loop counter, not a stack, and nesting must
-/// never reach it.
+/// Decodes one macro step in the wire format the configurator's compiler
+/// emits: `opcode(1)` then opcode-specific fields. `allowRepeatBlock` is
+/// `false` while decoding a repeat block's own body: a repeat block whose
+/// steps contain another repeat block is refused here rather than at
+/// playback, because `MacroPlayer` uses a single loop counter, not a
+/// stack, and nesting must never reach it.
 private func decodeMacroStep(
     _ bytes: UnsafePointer<UInt8>, _ offset: inout Int, _ count: Int, allowRepeatBlock: Bool
 ) -> MacroStep? {
     guard offset + 1 <= count else { return nil }
-    guard let tag = MacroStepTag(rawValue: bytes[offset]) else { return nil }
+    guard let opcode = MacroStepOpcode(rawValue: bytes[offset]) else { return nil }
     offset += 1
 
-    switch tag {
+    switch opcode {
     case .keystroke:
+        // opcode(1) + mods(1) + keycode(1) + holdMs(2 LE) -- already consumed opcode.
         guard offset + 4 <= count else { return nil }
         let mods = bytes[offset]
         let key = bytes[offset + 1]
@@ -261,44 +264,69 @@ private func decodeMacroStep(
         offset += 4
         return .keystroke(mods: mods, key: key, holdMs: holdMs)
 
-    case .text:
-        guard offset + 1 <= count else { return nil }
-        let len = Int(bytes[offset])
-        offset += 1
-        // Both the string bytes and the msPerChar field that follows them
-        // must fit before either is read.
-        guard offset + len + 2 <= count else { return nil }
-        let text = String(decoding: UnsafeBufferPointer(start: bytes + offset, count: len), as: UTF8.self)
-        offset += len
-        let msPerChar = Int(bytes[offset]) | (Int(bytes[offset + 1]) << 8)
-        offset += 2
-        return .text(text, msPerChar: msPerChar)
-
     case .delay:
+        // opcode(1) + ms(2 LE)
         guard offset + 2 <= count else { return nil }
         let ms = Int(bytes[offset]) | (Int(bytes[offset + 1]) << 8)
         offset += 2
         return .delay(ms: ms)
 
     case .layer:
+        // opcode(1) + op(1) + index(1). op's momentary/toggle mapping is not
+        // pinned by the format's own documentation -- 0 = momentary ("mo"),
+        // 1 = toggle ("tg"), inferred from this codebase's consistent
+        // mo-before-tg ordering (KeymapCellTag.momentaryLayer/.toggleLayer,
+        // KeyAction.fromCString's "mo:"/"tg:" check order) and flagged for
+        // confirmation against the configurator's actual compiler in the
+        // task report -- NOT independently verified against another
+        // implementation the way the modifier bit order was.
         guard offset + 2 <= count else { return nil }
-        let momentary = bytes[offset] != 0
-        let n = Int(bytes[offset + 1])
+        let op = bytes[offset]
+        let index = Int(bytes[offset + 1])
         offset += 2
-        return .layer(momentary: momentary, n: n)
+        return .layer(momentary: op == 0, n: index)
+
+    case .text:
+        // opcode(1) + delivery(1) + msPerChar(1) + length(1) + payload(length).
+        // `delivery` (0x00 keystrokes / 0x01 paste) is preserved on the wire
+        // by design -- paste can't work board-side and the editor already
+        // refuses to save it, so this decoder reads past the byte without
+        // interpreting it, rather than dropping the stride all three
+        // implementations share.
+        guard offset + 3 <= count else { return nil }
+        let msPerChar = Int(bytes[offset + 1])
+        let length = Int(bytes[offset + 2])
+        offset += 3
+        guard offset + length <= count else { return nil }
+        let text = String(decoding: UnsafeBufferPointer(start: bytes + offset, count: length), as: UTF8.self)
+        offset += length
+        return .text(text, msPerChar: msPerChar)
 
     case .repeatBlock:
+        // opcode(1) + count(1) + bodyLength(2 LE) + body(bodyLength).
+        // bodyLength is attacker-controlled (a corrupt/malicious frame), so
+        // it is validated against the bytes remaining before any nested
+        // step is decoded, exactly like every other length in this format.
         guard allowRepeatBlock else { return nil }
-        guard offset + 2 <= count else { return nil }
+        guard offset + 3 <= count else { return nil }
         let repeatCount = Int(bytes[offset])
-        let nestedStepCount = Int(bytes[offset + 1])
-        offset += 2
+        let bodyLength = Int(bytes[offset + 1]) | (Int(bytes[offset + 2]) << 8)
+        offset += 3
+        guard offset + bodyLength <= count else { return nil }
+        let bodyEnd = offset + bodyLength
+
         var nested: [MacroStep] = []
-        nested.reserveCapacity(nestedStepCount)
-        for _ in 0..<nestedStepCount {
+        while offset < bodyEnd {
             guard let step = decodeMacroStep(bytes, &offset, count, allowRepeatBlock: false) else { return nil }
             nested.append(step)
         }
+        // A nested step's own fields are always bounds-checked against the
+        // real buffer (`count`), so overrunning bodyEnd is never a memory
+        // safety issue -- but a step landing short of or past the declared
+        // bodyLength means the body doesn't parse as a clean sequence of
+        // steps, which is refused as a format error rather than silently
+        // accepted with a mismatched length.
+        guard offset == bodyEnd else { return nil }
         return .repeatBlock(count: repeatCount, steps: nested)
     }
 }
