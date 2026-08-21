@@ -105,10 +105,19 @@ func smkKeymapDispatchPacket(
 // below is therefore intentional, not a copy-paste bug -- they answer
 // different questions that currently share the same number.
 //
-// macroSlots reports the id space of a one-byte macro slot, which holds 256
-// distinct values (0-255) -- but macroSlots itself is a UInt8 wire field, so
-// 256 does not fit; 255 (UInt8.max) is the closest representable value, one
-// short of the true slot count. Flagged rather than silently rounded.
+// macroSlots reports the id space of a one-byte macro slot: ids 0-255, which
+// is 256 distinct values. But the macroSlots field on the wire is *also* one
+// byte, so 256 itself cannot be represented -- 255 (UInt8.max) is reported
+// instead, understating the true id space by exactly one slot. That is
+// deliberate, not a rounding bug: understating is the safe direction (the
+// editor refuses a 256th macro that would in fact have fit, rather than
+// accepting a 256th that does not exist), and 255 macros exhausts the
+// shared payload budget (macroBytes above) many times over long before the
+// slot count would matter for any realistic keymap. Widening this field to
+// two bytes to recover that single slot would churn a wire format three
+// independent implementations (this decoder, the configurator's compiler,
+// and whichever port supplies these values) must agree on -- not worth it
+// to report one more slot than any board can ever actually use.
 func smkKeymapRealCaps() -> (macroBytes: UInt16, macroSlots: UInt8, keymapMaxLen: UInt16) {
     (macroBytes: UInt16(smkKeymapMaxLen), macroSlots: UInt8.max, keymapMaxLen: UInt16(smkKeymapMaxLen))
 }
