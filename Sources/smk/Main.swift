@@ -485,25 +485,44 @@ func app_main_swift() {
 
     // Load a previously-uploaded keymap from the on-device store in place
     // of the compiled default. keymapBufSize must exceed the store's
-    // SMK_KEYMAP_MAX_LEN (4085) by at least 1 byte for the null terminator.
+    // SMK_KEYMAP_MAX_LEN (4085) -- the buffer now holds a raw binary
+    // (frame version 2) payload, not a null-terminated JSON C string, so
+    // the old "+1 for the null terminator" no longer applies; kept as
+    // slack above smkKeymapMaxLen regardless.
     let keymapBufSize = 4096
     var keymapBuf = [Int8](repeating: 0, count: keymapBufSize)
     var loadedFromStore = false
+    // Declared outside the `if !resetHeld` block: smk_keymap_load's return
+    // is also the exact payload byte count `loadKeymap(binary:count:)`
+    // below needs, not just a load/no-load flag.
+    var storedLen: Int32 = -1
     if !resetHeld {
-        let storedLen = keymapBuf.withUnsafeMutableBufferPointer { ptr -> Int32 in
+        storedLen = keymapBuf.withUnsafeMutableBufferPointer { ptr -> Int32 in
             guard let base = ptr.baseAddress else { return -1 }
             return smk_keymap_load(base, UInt32(ptr.count))
         }
         if storedLen >= 0 {
-            keymapBuf[Int(storedLen)] = 0
             loadedFromStore = true
         }
     }
 
     if loadedFromStore {
+        // smk_keymap_load already ran smkKeymapFrameValidate (magic,
+        // frameVersion == 2, length, CRC32) before returning a
+        // non-negative length, so what's sitting in keymapBuf is a
+        // validated version-2 binary payload -- decode it as one, not as
+        // a JSON C string (the two used to be the same null-terminated
+        // buffer by coincidence; they have not been since the frame
+        // format moved to binary). Pass storedLen, the real payload byte
+        // count, not keymapBufSize/ptr.count (the buffer's capacity) --
+        // decodeKeymapPayload's bounds checks are strict by design, and a
+        // count longer than the actual payload makes it reject good data
+        // instead of accepting garbage.
         keymapBuf.withUnsafeBufferPointer { ptr in
             if let base = ptr.baseAddress {
-                engine.loadKeymap(cJsonStr: base)
+                base.withMemoryRebound(to: UInt8.self, capacity: Int(storedLen)) { bytes in
+                    engine.loadKeymap(binary: bytes, count: Int(storedLen))
+                }
             }
         }
         if engine.keymaps.isEmpty {
