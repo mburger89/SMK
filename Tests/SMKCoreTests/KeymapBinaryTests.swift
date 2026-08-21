@@ -210,3 +210,45 @@ private func sampleMacroPayload() -> [UInt8] {
     }
     #expect(p == nil)
 }
+
+// MARK: - Compiled-in default keymap (generate_default_keymap.sh)
+
+// The real deliverable of Task 7: this is the only thing that catches
+// generator/decoder drift on every future run. `defaultKeymapBytes` lives in
+// the generated Sources/SMKCore/DefaultKeymapGenerated.swift -- a second,
+// independent encoder for the exact format `decodeKeymapPayload` above
+// reads, and nothing but this test keeps the two honest with each other.
+
+@Test func compiledDefaultKeymapRoundTrips() {
+    let bytes = defaultKeymapBytes
+    let payload = bytes.withUnsafeBufferPointer {
+        decodeKeymapPayload($0.baseAddress!, count: bytes.count)
+    }
+    #expect(payload != nil)
+    guard let payload else { return }
+
+    // Matches ~/esp/SMK/keymap.json's "matrix" object -- the smk_kbd
+    // board's GPIO map (5 rows, 12 cols, COL2ROW).
+    #expect(payload.rows == [0, 1, 2, 3, 5])
+    #expect(payload.cols == [6, 7, 8, 14, 15, 18, 19, 20, 21, 22, 23, 17])
+    #expect(payload.colsAreDriven == true)
+    #expect(payload.layers.count == 2)
+    #expect(payload.macros.isEmpty)
+
+    // Sample cells from keymap.json's two layers, not just the matrix
+    // header -- a header-only check would miss a generator bug that
+    // scrambles cell order or the tag table.
+    #expect(payload.layers[0][0][0] == KeyAction.key(.k1))          // layer 0, row 0, col 0: "key:1"
+    #expect(payload.layers[0][4][3] == KeyAction.momentaryLayer(1)) // layer 0, row 4, col 3: "mo:1"
+    #expect(payload.layers[1][0][0] == KeyAction.toggleConnection)  // layer 1, row 0, col 0: "toggle_conn"
+    #expect(payload.layers[1][2][6] == KeyAction.key(.leftArrow))   // layer 1, row 2, col 6: "key:left"
+    #expect(payload.layers[1][4][6] == KeyAction.none)              // layer 1, row 4, col 6: "none"
+}
+
+@Test func compiledDefaultKeymapMatchesTheSizeEstimate() {
+    // 6-byte header + 5 rows + 12 cols + 2 layers * 5 * 12 * 2 bytes/cell
+    // = 263 bytes, against ~1575 bytes of keymap.json text. If this drifts
+    // far from 263, either the generator or keymap.json changed in a way
+    // that should be looked at, not silently accepted.
+    #expect(defaultKeymapBytes.count == 263)
+}

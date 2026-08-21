@@ -85,6 +85,37 @@ func smk_default_mode_is_wired() -> Int32
 // coexist with an @_extern(c, ...) forward declaration of the same name
 // ("invalid redeclaration").
 
+// Loads the compiled-in default keymap. Binary (Task 7 -- see
+// generate_default_keymap.sh and the generated
+// Sources/SMKCore/DefaultKeymapGenerated.swift) for the three boards whose
+// default is byte-for-byte the ~/esp/SMK/keymap.json layout (verified by
+// diffing every board's `configJson` "layers" array against that file):
+// SMK_BOARD_NRF52840DK, SMK_BOARD_KBD_RP2040, and this file's `#else` board
+// (smk_kbd / ESP32-C6) -- only their GPIO matrix pins differ between each
+// other, which `Config.fromJson(configJson)` above already handles
+// separately from this call. The other five bring-up boards
+// (SMK_BOARD_FEATHER_NRF52840, SMK_BOARD_STM32F4_BLACKPILL, SMK_BOARD_XIAO_M0,
+// SMK_BOARD_STM32WB_NUCLEO, SMK_BOARD_TEST_BOARD) ship their own smaller /
+// placeholder layouts that keymap.json does not describe (see each board's
+// own `configJson` block below), so they keep parsing their own JSON
+// literal here rather than silently loading the wrong default.
+//
+// `configJson` itself is NOT retired by this: `Config.fromJson(configJson)`
+// (Sources/SMKCore/Config.swift) still parses every board's "matrix" object
+// for its GPIO rowPins/colPins/colsAreDriven ahead of this call, so cJSON
+// stays linked for that regardless of which branch below runs.
+func loadCompiledDefaultKeymap(into engine: inout LayerEngine, configJson: String) {
+    #if SMK_BOARD_FEATHER_NRF52840 || SMK_BOARD_STM32F4_BLACKPILL || SMK_BOARD_XIAO_M0 || SMK_BOARD_STM32WB_NUCLEO || SMK_BOARD_TEST_BOARD
+    engine.loadKeymap(json: configJson)
+    #else
+    defaultKeymapBytes.withUnsafeBufferPointer { ptr in
+        if let base = ptr.baseAddress {
+            engine.loadKeymap(binary: base, count: ptr.count)
+        }
+    }
+    #endif
+}
+
 @_cdecl("app_main_swift")
 func app_main_swift() {
     kb_log("Initialising SMK Keyboard...")
@@ -477,12 +508,12 @@ func app_main_swift() {
         }
         if engine.keymaps.isEmpty {
             kb_log("Stored keymap invalid, falling back to compiled default")
-            engine.loadKeymap(json: configJson)
+            loadCompiledDefaultKeymap(into: &engine, configJson: configJson)
         } else {
             kb_log("Loaded keymap from on-device store")
         }
     } else {
-        engine.loadKeymap(json: configJson)
+        loadCompiledDefaultKeymap(into: &engine, configJson: configJson)
     }
 
     let totalKeys = cfg.rowPins.count * cfg.colPins.count
