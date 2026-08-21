@@ -90,11 +90,50 @@ parameter. A variable-width encoding would save more, but 16 layers already
 fit at a flat two bytes, and a fixed stride keeps the decoder a bounds-checked
 index rather than a parser.
 
-Macro entries keep the step layout already specified in
-`~/esp/smk_configurator/CLAUDE.md` — opcodes, endianness, modifier bit order,
-keycode derivation. That contract stops being vestigial: these are now the
-bytes actually stored, which is what the editor's capacity meter always
-claimed to measure.
+### Macro entries
+
+Reproduced here in full rather than referenced. An earlier draft pointed at
+`~/esp/smk_configurator/CLAUDE.md`, but that content lives on an **unmerged
+branch** of that repo — anyone reading the main checkout finds nothing, and an
+implementer who trusts the reference invents an incompatible layout instead.
+A format definition must not depend on another repository's unmerged state.
+
+A compiled macro is `id(1) + nameLength(1) + name + stepCount(1) + steps`.
+
+| step | opcode | layout |
+|---|---|---|
+| keystroke | `0x01` | `opcode(1) + mods(1) + keycode(1) + holdMs(2)` = 5 |
+| delay | `0x02` | `opcode(1) + ms(2)` = 3 |
+| layer | `0x03` | `opcode(1) + op(1) + index(1)` = 3 |
+| text | `0x04` | `opcode(1) + delivery(1) + msPerChar(1) + length(1) + payload` = 4 + n |
+| repeat | `0x05` | `opcode(1) + count(1) + bodyLength(2) + body` = 4 + body |
+
+All multi-byte fields (`holdMs`, `ms`, `bodyLength`) are **little-endian** —
+the native order of both supported MCUs (RP2040 is Cortex-M0+, ESP32-C6 is
+RISC-V), so neither port byte-swaps.
+
+**`mods` bit packing.** `ModifierName`'s eight cases in `CaseIterable`
+declaration order — `leftCtrl, leftShift, leftAlt, leftGUI, rightCtrl,
+rightShift, rightAlt, rightGUI` — are bits 0–7, LSB first. That is the
+modifier byte of a standard USB HID keyboard report, so a `mods` byte can be
+OR'd straight into a report rather than remapped.
+
+**`keycode`** is the HID usage from `KeyCodesGenerated.swift`, `0x00` when a
+keystroke step has no key.
+
+**`op`** is `0x00` momentary (`"mo"`), `0x01` toggle (`"tg"`) — `LayerOp`'s
+declaration order in the editor, and the same convention as `delivery` where
+`0x00` is the first case. The original contract listed `op(1)` in the layout
+but never assigned its values; a firmware implementer inferred these and
+flagged the gap rather than leaving it silent, and they are pinned here so
+the editor's compiler matches rather than re-deriving.
+
+**`delivery`** is `0x00` keystrokes, `0x01` paste. The byte stays in the
+layout even though paste is unimplementable board-side — removing it would
+churn a stride three implementations share, for nothing.
+
+This contract stops being vestigial: these are now the bytes actually stored,
+which is what the editor's capacity meter always claimed to measure.
 
 ### What binary costs: lossless save
 
