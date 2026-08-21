@@ -39,6 +39,9 @@ enum KeyAction: Equatable {
     case toggleLayer(Int)
     case transparent
     case toggleConnection
+    /// Runs the macro in slot `n`. Must stay in lockstep with
+    /// `ActionToken.macro` in the configurator.
+    case macro(Int)
 
     static func fromCString(_ cStr: UnsafePointer<Int8>) -> KeyAction {
         if strcmp(cStr, "none") == 0 { return .none }
@@ -58,6 +61,18 @@ enum KeyAction: Equatable {
         if strncmp(cStr, "tg:", 3) == 0 {
             let val = Int(atoi(cStr.advanced(by: 3)))
             return .toggleLayer(val)
+        }
+        if strncmp(cStr, "macro:", 6) == 0 {
+            let rest = cStr.advanced(by: 6)
+            // atoi returns 0 for non-numeric input, which would silently
+            // turn "macro:abc" into .macro(0) -- a real macro slot. Guard
+            // that the first character after the prefix is actually a
+            // digit before trusting atoi's result.
+            let firstChar = rest.pointee
+            if firstChar >= 0x30 && firstChar <= 0x39 {
+                return .macro(Int(atoi(rest)))
+            }
+            return .none
         }
 
         return .none

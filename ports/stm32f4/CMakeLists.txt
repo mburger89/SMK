@@ -154,6 +154,7 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/HIDReport.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Config.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LayerEngine.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapBinary.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyCodesGenerated.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/HIDReportMap.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyEventProcessing.swift"
