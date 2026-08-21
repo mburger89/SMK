@@ -11,6 +11,7 @@ let smkKeymapOpBegin: UInt8 = 0x01
 let smkKeymapOpChunk: UInt8 = 0x02
 let smkKeymapOpCommit: UInt8 = 0x03
 let smkKeymapOpErase: UInt8 = 0x04
+let smkKeymapOpCaps: UInt8 = 0x05
 
 let smkKeymapStatusOk: UInt8 = 0x00
 let smkKeymapStatusErr: UInt8 = 0x01
@@ -30,20 +31,26 @@ let smkKeymapStatusErr: UInt8 = 0x01
 // Sources/smk/Main.swift); this file just reuses that same-module
 // definition.
 
-// Testable core of the dispatch logic. The four storage operations are
-// injected rather than called directly so host tests can substitute fakes
-// instead of linking against the real (still-C-backed) NVS/flash storage
-// functions declared above. This also makes the opcode/length-validation
-// branching itself observable in isolation — e.g. a CHUNK packet with
-// chunk_len > smkKeymapPacketLen - 4 short-circuits to result = -1
+// Testable core of the dispatch logic. The five storage/capacity operations
+// are injected rather than called directly so host tests can substitute
+// fakes instead of linking against the real (still-C-backed) NVS/flash
+// storage functions declared above. This also makes the opcode/length-
+// validation branching itself observable in isolation — e.g. a CHUNK packet
+// with chunk_len > smkKeymapPacketLen - 4 short-circuits to result = -1
 // without ever invoking `writeChunk`.
+//
+// `caps` reports (macroBytes, macroSlots, keymapMaxLen) — the real per-port
+// values a board has for macro storage and keymap payload size, so the
+// configurator's capacity meter can show actual numbers instead of its
+// conservative floor estimate.
 func smkKeymapDispatchPacket(
     _ packet: UnsafePointer<UInt8>,
     _ response: UnsafeMutablePointer<UInt8>,
     beginWrite: (UInt16) -> Int32,
     writeChunk: (UInt16, UnsafePointer<UInt8>, UInt16) -> Int32,
     commit: (UInt32) -> Int32,
-    erase: () -> Void
+    erase: () -> Void,
+    caps: () -> (macroBytes: UInt16, macroSlots: UInt8, keymapMaxLen: UInt16)
 ) {
     for i in 0..<smkKeymapPacketLen { response[i] = 0 }
     let opcode = packet[0]
@@ -66,6 +73,14 @@ func smkKeymapDispatchPacket(
         result = commit(crc32)
     case smkKeymapOpErase:
         erase()
+        result = 0
+    case smkKeymapOpCaps:
+        let (macroBytes, macroSlots, keymapMaxLen) = caps()
+        response[2] = UInt8(macroBytes & 0xFF)
+        response[3] = UInt8((macroBytes >> 8) & 0xFF)
+        response[4] = macroSlots
+        response[5] = UInt8(keymapMaxLen & 0xFF)
+        response[6] = UInt8((keymapMaxLen >> 8) & 0xFF)
         result = 0
     default:
         result = -1
@@ -90,7 +105,15 @@ func smk_keymap_dispatch_packet(_ packet: UnsafePointer<UInt8>, _ response: Unsa
         beginWrite: smk_keymap_begin_write,
         writeChunk: smk_keymap_write_chunk,
         commit: smk_keymap_commit,
-        erase: smk_keymap_erase
+        erase: smk_keymap_erase,
+        // keymapMaxLen is the real, already-shared ceiling (KeymapFrame.swift).
+        // macroBytes/macroSlots are NOT real numbers yet: no per-port macro
+        // storage budget has been carved out of the 4085-byte blob by any
+        // task in this wave (see docs/superpowers/specs/2026-08-21-binary-
+        // keymap-format-design.md, "roughly 2 KB left for macros" is only an
+        // estimate). 0/0 is a placeholder until a later task defines and
+        // threads a real per-port macro budget through here.
+        caps: { (macroBytes: 0, macroSlots: 0, keymapMaxLen: UInt16(smkKeymapMaxLen)) }
     )
 }
 

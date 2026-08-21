@@ -31,7 +31,8 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
                 beginWrite: { totalLen in seenTotalLen = totalLen; return 0 },
                 writeChunk: neverCalledWriteChunk,
                 commit: { _ in Issue.record("commit should not have been called"); return -1 },
-                erase: { Issue.record("erase should not have been called") }
+                erase: { Issue.record("erase should not have been called") },
+                caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
             )
         }
     }
@@ -53,7 +54,8 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
                 beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
                 writeChunk: neverCalledWriteChunk,
                 commit: { _ in Issue.record("commit should not have been called"); return -1 },
-                erase: { Issue.record("erase should not have been called") }
+                erase: { Issue.record("erase should not have been called") },
+                caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
             )
         }
     }
@@ -83,7 +85,8 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
                     return 0
                 },
                 commit: { _ in Issue.record("commit should not have been called"); return -1 },
-                erase: { Issue.record("erase should not have been called") }
+                erase: { Issue.record("erase should not have been called") },
+                caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
             )
         }
     }
@@ -106,7 +109,8 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
                 beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
                 writeChunk: neverCalledWriteChunk,
                 commit: { crc32 in seenCrc = crc32; return 0 },
-                erase: { Issue.record("erase should not have been called") }
+                erase: { Issue.record("erase should not have been called") },
+                caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
             )
         }
     }
@@ -127,7 +131,8 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
                 beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
                 writeChunk: neverCalledWriteChunk,
                 commit: { _ in Issue.record("commit should not have been called"); return -1 },
-                erase: { eraseCalled = true }
+                erase: { eraseCalled = true },
+                caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
             )
         }
     }
@@ -148,7 +153,8 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
                 beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
                 writeChunk: neverCalledWriteChunk,
                 commit: { _ in Issue.record("commit should not have been called"); return -1 },
-                erase: { Issue.record("erase should not have been called") }
+                erase: { Issue.record("erase should not have been called") },
+                caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
             )
         }
     }
@@ -168,7 +174,8 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
                 beginWrite: { _ in -1 },
                 writeChunk: { _, _, _ in -1 },
                 commit: { _ in -1 },
-                erase: { }
+                erase: { },
+                caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
             )
         }
     }
@@ -176,4 +183,30 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
     // Everything past byte 1 (status/opcode) must be zeroed, not left at
     // the caller's stale 0xAB filler.
     #expect(response[2...].allSatisfy { $0 == 0 })
+}
+
+@Test func dispatchCapsReturnsMacroAndKeymapCapacityLittleEndian() {
+    let pkt = packet([smkKeymapOpCaps])
+    var response = [UInt8](repeating: 0xFF, count: smkKeymapPacketLen)
+
+    pkt.withUnsafeBufferPointer { pktBuf in
+        response.withUnsafeMutableBufferPointer { respBuf in
+            smkKeymapDispatchPacket(
+                pktBuf.baseAddress!, respBuf.baseAddress!,
+                beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
+                writeChunk: neverCalledWriteChunk,
+                commit: { _ in Issue.record("commit should not have been called"); return -1 },
+                erase: { Issue.record("erase should not have been called") },
+                caps: { (macroBytes: 0x1234, macroSlots: 7, keymapMaxLen: 0xABCD) }
+            )
+        }
+    }
+
+    #expect(response[0] == 0x00) // status OK
+    #expect(response[1] == smkKeymapOpCaps)
+    #expect(response[2] == 0x34) // macroBytes low byte
+    #expect(response[3] == 0x12) // macroBytes high byte
+    #expect(response[4] == 7) // macroSlots
+    #expect(response[5] == 0xCD) // keymapMaxLen low byte
+    #expect(response[6] == 0xAB) // keymapMaxLen high byte
 }
