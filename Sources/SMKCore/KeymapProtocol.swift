@@ -90,6 +90,29 @@ func smkKeymapDispatchPacket(
     response[1] = opcode
 }
 
+// The real values every port's `caps` closure supplies. Pulled out as a
+// plain, host-testable function (rather than inlined into the `@_cdecl`
+// wrapper below, which only compiles for embedded targets) so its values
+// are pinned by a test instead of only reviewed by eye.
+//
+// macroBytes reports the whole payload budget (smkKeymapMaxLen), not a
+// macro-only allowance -- there isn't one. The binary format gives macros
+// and layers one shared budget inside the keymap payload rather than a
+// separate flash region, so macro headroom is dynamic: whatever the
+// compiled layers do not use. Only the editor knows that, since it compiles
+// the layers; the board can only report the shared ceiling and let the
+// editor subtract its own layer size from it. macroBytes == keymapMaxLen
+// below is therefore intentional, not a copy-paste bug -- they answer
+// different questions that currently share the same number.
+//
+// macroSlots reports the id space of a one-byte macro slot, which holds 256
+// distinct values (0-255) -- but macroSlots itself is a UInt8 wire field, so
+// 256 does not fit; 255 (UInt8.max) is the closest representable value, one
+// short of the true slot count. Flagged rather than silently rounded.
+func smkKeymapRealCaps() -> (macroBytes: UInt16, macroSlots: UInt8, keymapMaxLen: UInt16) {
+    (macroBytes: UInt16(smkKeymapMaxLen), macroSlots: UInt8.max, keymapMaxLen: UInt16(smkKeymapMaxLen))
+}
+
 #if SMK_TARGET_ESP32C6 || SMK_TARGET_RP2040 || SMK_TARGET_NRF52840 || SMK_TARGET_STM32F4 || SMK_TARGET_STM32WB || SMK_TARGET_SAMD21
 
 // Real cross-language entry point. ports/rp2040/platform/usb_descriptors.c,
@@ -106,14 +129,7 @@ func smk_keymap_dispatch_packet(_ packet: UnsafePointer<UInt8>, _ response: Unsa
         writeChunk: smk_keymap_write_chunk,
         commit: smk_keymap_commit,
         erase: smk_keymap_erase,
-        // keymapMaxLen is the real, already-shared ceiling (KeymapFrame.swift).
-        // macroBytes/macroSlots are NOT real numbers yet: no per-port macro
-        // storage budget has been carved out of the 4085-byte blob by any
-        // task in this wave (see docs/superpowers/specs/2026-08-21-binary-
-        // keymap-format-design.md, "roughly 2 KB left for macros" is only an
-        // estimate). 0/0 is a placeholder until a later task defines and
-        // threads a real per-port macro budget through here.
-        caps: { (macroBytes: 0, macroSlots: 0, keymapMaxLen: UInt16(smkKeymapMaxLen)) }
+        caps: smkKeymapRealCaps
     )
 }
 

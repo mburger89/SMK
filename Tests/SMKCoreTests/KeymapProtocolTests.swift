@@ -210,3 +210,46 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
     #expect(response[5] == 0xCD) // keymapMaxLen low byte
     #expect(response[6] == 0xAB) // keymapMaxLen high byte
 }
+
+// Pins the real values every port's `caps` closure supplies (via
+// `smk_keymap_dispatch_packet`'s `@_cdecl` wrapper, which itself only
+// compiles for embedded targets and so isn't host-testable directly).
+// macroBytes and keymapMaxLen are the same shared payload budget rather than
+// a macro-only allowance -- see smkKeymapRealCaps's doc comment for why
+// that's intentional, not a bug. macroSlots is UInt8.max (255), one short of
+// the true 256-value id space a one-byte slot can hold, because 256 itself
+// does not fit in the UInt8 wire field.
+@Test func realCapsReportsSharedPayloadBudgetAndMaxSlotId() {
+    let (macroBytes, macroSlots, keymapMaxLen) = smkKeymapRealCaps()
+
+    #expect(macroBytes == UInt16(smkKeymapMaxLen))
+    #expect(keymapMaxLen == UInt16(smkKeymapMaxLen))
+    #expect(macroBytes == keymapMaxLen)
+    #expect(macroSlots == UInt8.max)
+}
+
+@Test func dispatchCapsWithRealSupplierEncodesSharedBudgetLittleEndian() {
+    let pkt = packet([smkKeymapOpCaps])
+    var response = [UInt8](repeating: 0xFF, count: smkKeymapPacketLen)
+
+    pkt.withUnsafeBufferPointer { pktBuf in
+        response.withUnsafeMutableBufferPointer { respBuf in
+            smkKeymapDispatchPacket(
+                pktBuf.baseAddress!, respBuf.baseAddress!,
+                beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
+                writeChunk: neverCalledWriteChunk,
+                commit: { _ in Issue.record("commit should not have been called"); return -1 },
+                erase: { Issue.record("erase should not have been called") },
+                caps: smkKeymapRealCaps
+            )
+        }
+    }
+
+    let maxLen = UInt16(smkKeymapMaxLen) // 4085 = 0x0FF5
+    #expect(response[0] == 0x00) // status OK
+    #expect(response[2] == UInt8(maxLen & 0xFF)) // macroBytes low byte
+    #expect(response[3] == UInt8((maxLen >> 8) & 0xFF)) // macroBytes high byte
+    #expect(response[4] == 0xFF) // macroSlots
+    #expect(response[5] == UInt8(maxLen & 0xFF)) // keymapMaxLen low byte
+    #expect(response[6] == UInt8((maxLen >> 8) & 0xFF)) // keymapMaxLen high byte
+}
