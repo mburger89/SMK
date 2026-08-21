@@ -89,15 +89,43 @@ fourth pattern. The frame *format* stays shared; only the ceiling varies.
 
 | Port | Today | Proposed | Cost |
 |---|---|---|---|
-| RP2040 | last 1 flash sector, 4096 B frame | 4 sectors, 16384 B frame | 12 KB less program flash; every save erases 4 sectors instead of 1 — slower, and 4× the wear |
-| ESP32-C6 | NVS blob, same 4085 ceiling | 16 KB blob | Default `SINGLE_APP` table gives NVS 24 KB; 16 KB plus NVS overhead is tight and must be verified against the real partition before committing to the number |
+| RP2040 | last 1 flash sector, 4096 B frame | 4 sectors, 16384 B frame, **with boot migration** | 12 KB less program flash; every save erases 4 sectors instead of 1 — slower, and 4× the wear |
+| ESP32-C6 | NVS blob, same 4085 ceiling | **dedicated `keymap` partition** at 0x110000, 64 KB | Custom partition CSV replacing `SINGLE_APP`, and a new storage backend replacing `KeymapStoreNVS` |
 | nRF52840 | stub | stub, reports 0 macro bytes | None — the editor already treats this as authoring-and-export with flashing disabled and the reason shown |
 
-**Raising RP2040's ceiling moves the reserved region's start address.** A
-board already carrying a stored keymap would read its old frame from what is
-now the wrong offset. This needs either a migration or an accepted one-time
-"re-flash your keymap after this update" — a real user-facing cost, not just
-a constant change.
+#### RP2040: migrate on boot
+
+`flashOffset()` is `flash_size − sectorSize`, so the region is anchored to
+the end of flash and grows *downward*. Enlarging it to 4 sectors means new
+firmware reads 12 KB earlier than an old board's frame sits, finds erased
+flash, and `smkKeymapFrameValidate` rejects it on magic/CRC — `Main.swift`
+then logs "Stored keymap invalid" and uses the compiled default. **The
+failure is already safe**; the only loss is the user's uploaded keymap.
+
+Rather than accept that loss, new firmware checks the old offset
+(`flash_size − 4096`) first on boot. If a valid frame is there, it is
+rewritten at the new 4-sector offset and the old location erased. The
+frame's magic, version byte and CRC32 make detection reliable rather than a
+guess. One-time in effect, though the check runs on every boot.
+
+#### ESP32-C6: a dedicated partition, not an NVS blob
+
+The built partition table (`build/partition_table/partition-table.bin`)
+decodes to `nvs` 24 KB at 0x9000, `phy_init` 4 KB at 0xf000, and `factory`
+1024 KB at 0x10000 — ending at 0x110000 and leaving roughly **2.9 MB of a
+4 MB part unused**.
+
+An earlier draft of this document proposed a 16 KB blob inside the 24 KB NVS
+partition. That was wrong: `BleHelper.swift:361` calls `nvs_flash_init()`,
+and NimBLE stores bonding keys in that same partition, so a large keymap
+blob would compete with BLE pairing data for space and could starve NVS of
+the free pages it needs to garbage-collect.
+
+Instead, a dedicated `keymap` data partition is appended after `factory`,
+read and written directly. `nvs`, `phy_init` and `factory` keep
+byte-identical offsets and sizes, so existing BLE bonds and PHY calibration
+survive the repartition untouched. This also aligns both ports on one mental
+model — a dedicated region rather than a shared key-value store.
 
 ### 3. `CAPS`
 
@@ -149,6 +177,8 @@ Mostly host-side, which is why the player belongs in `SMKCore`:
 - `CAPS` via the existing injected-fake dispatch pattern
 - Character table pinned against `KeyName`'s HID usages
 - Per-port `maxLen` frame validation
+- RP2040 boot migration: a valid frame at the old offset is relocated; an
+  invalid one at either offset still falls back to the compiled default
 - Byte widths pinned against the editor's `MacroStep.compiledSize`, cross-repo
 
 ## Out of scope
