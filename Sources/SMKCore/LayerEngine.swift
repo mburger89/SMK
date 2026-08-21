@@ -84,9 +84,41 @@ struct LayerEngine {
     private var momentaryCounts: [Int] = [Int](repeating: 0, count: 16)
 
     private(set) var keymaps: [[[KeyAction]]] = []
-    
+    /// Macros decoded from the version-2 binary payload by
+    /// `loadKeymap(binary:count:)`. Always empty on the JSON
+    /// (`loadKeymap(json:)`/`loadKeymap(cJsonStr:)`) path -- macros never
+    /// rode in the JSON format.
+    private(set) var macros: [MacroDefinition] = []
+
     mutating func loadKeymap(json: String) {
         json.withCString { loadKeymap(cJsonStr: $0) }
+    }
+
+    // Loads a keymap from a version-2 binary payload -- the bytes
+    // immediately following the 11-byte frame header, once
+    // `smkKeymapFrameValidate` has already confirmed the frame's magic,
+    // version, length and CRC. `bytes` must point to at least `count`
+    // readable bytes. See KeymapBinary.swift and
+    // docs/superpowers/specs/2026-08-21-binary-keymap-format-design.md for
+    // the payload layout this decodes.
+    //
+    // Mirrors loadKeymap(cJsonStr:)'s caution around a malformed/empty
+    // result: an undecodable payload or a payload with zero layers leaves
+    // `keymaps` untouched rather than clobbering a previously-loaded (or
+    // compiled-in default) keymap with nothing. `macros` is always replaced
+    // with whatever decoded, including an empty list -- a keymap legitimately
+    // can have zero macros, unlike zero layers.
+    mutating func loadKeymap(binary bytes: UnsafePointer<UInt8>, count: Int) {
+        guard let payload = decodeKeymapPayload(bytes, count: count) else {
+            kb_log("Binary keymap payload invalid")
+            return
+        }
+
+        if !payload.layers.isEmpty {
+            self.keymaps = payload.layers
+            kb_log("Keymap loaded successfully")
+        }
+        self.macros = payload.macros
     }
 
     // Parses a keymap already available as a C string — used both by
