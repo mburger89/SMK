@@ -210,24 +210,29 @@ import Testing
     #expect(result.macroEvents.isEmpty)
 }
 
-@Test func resettingLastScanRepressesAStillHeldKey() {
-    // The stuck-key guard, at the level that IS host-testable. When
-    // playback ends, Main.swift forces lastScan to all-false so the next
-    // cycle re-observes every physically-held key as a fresh press --
-    // otherwise a key released during playback was never seen as a
-    // transition and stays down forever.
+@Test func heldKeyProducesNoFreshPressTransition() {
+    // Pins the property Main.swift's macro-finish handling relies on: a
+    // key already down in lastScan and still down in cleanScan is NOT a
+    // press edge. This is why Main.swift deliberately does not reset
+    // lastScan to all-false when a macro finishes -- doing so would make
+    // a still-held macro key read as a fresh press and re-trigger the
+    // macro for as long as the key stays down, i.e. reintroduce
+    // auto-repeat. processKeyEvents observes a real release the instant
+    // it happens (every tick, macro or not), so no such reset is needed
+    // to "un-stick" a released key either -- see Main.swift's comment on
+    // the `.finished` case for the full argument.
     var engine = LayerEngine()
     engine.loadKeymap(json: """
     { "layers": [ [ ["key:a"] ] ] }
     """)
-    var pressedActions: [KeyAction] = [.none]
+    var pressedActions: [KeyAction] = [.key(.a)]
     var currentMode = ConnectionMode.bluetooth
 
     let result = processKeyEvents(
-        cleanScan: [true], lastScan: [false], colCount: 1,
+        cleanScan: [true], lastScan: [true], colCount: 1,
         pressedActions: &pressedActions, engine: &engine,
         hasWiredBridge: false, currentMode: &currentMode
     )
+    #expect(result.transitions.isEmpty)
     #expect(result.report.keys[0] == KeyCode.a.rawValue)
-    #expect(result.transitions.first?.pressed == true)
 }

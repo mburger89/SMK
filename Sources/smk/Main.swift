@@ -530,10 +530,19 @@ func app_main_swift() {
             switch macroPlayer.tick() {
             case .report(let r): report = r
             case .finished:
-                // Resume from the CURRENT scan, not the stale lastScan: a
-                // key released during playback was never observed as a
-                // transition and would otherwise stay down forever.
-                lastScan = [Bool](repeating: false, count: cleanScan.count)
+                // No lastScan reset here, deliberately: processKeyEvents
+                // runs every tick against the live matrix regardless of
+                // macro state, so a key released mid-playback is already
+                // observed the instant it happens -- nothing to repair
+                // once the macro ends. A still-held macro key is exactly
+                // that case: lastScan already shows it down, so this
+                // frame's report clear does NOT produce a fresh press on
+                // the next tick, and the macro fires once per press
+                // rather than auto-repeating for as long as the key is
+                // held. Forcing lastScan back to all-false here was tried
+                // and reverted -- it reintroduced the "Repeat while held"
+                // behavior this project deliberately dropped elsewhere for
+                // having no model field behind it.
                 report = HIDReport()
             case .idle: break
             }
