@@ -1,5 +1,17 @@
 # Firmware macro playback — design
 
+> **SUPERSEDED** by `2026-08-21-binary-keymap-format-design.md`.
+>
+> Its player, ASCII-table, triggering and `CAPS` sections still hold. Its
+> **storage** sections do not: measuring the reference keymap showed JSON
+> costs 11.9 bytes per cell, so compiling the whole keymap to binary fits 16
+> layers plus macros inside the *existing* 4085-byte ceiling. That removes
+> the need for RP2040's four-sector region and boot migration, and for
+> ESP32-C6's dedicated partition — both specified below, both now
+> unnecessary.
+>
+> Kept for the record of what was decided and why it changed.
+
 Date: 2026-08-21
 Companion spec: `~/esp/smk_configurator/docs/superpowers/specs/2026-08-20-macro-creation-design.md`
 (this is that document's sub-project 3)
