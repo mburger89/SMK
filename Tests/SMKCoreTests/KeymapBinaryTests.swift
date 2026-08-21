@@ -100,3 +100,73 @@ private func samplePayload(layerCount: Int) -> [UInt8] {
     #expect(headerBytes + layerBytes < smkKeymapMaxLen)
     #expect(smkKeymapMaxLen - (headerBytes + layerBytes) > 2000)
 }
+
+// The tests above never exercise macroCount > 0 -- none of the brief's given
+// tests do. Macro-entry parsing (name/step-count bounds checks, and the
+// nested-repeat-block refusal called out as a landmine the brief itself
+// cannot pin with a byte layout) is otherwise entirely untested code, so
+// these are added beyond the brief to verify it directly.
+
+/// A 1x1-matrix, 0-layer payload carrying one macro entry (id 7, name "AB")
+/// exercising every `MacroStep` kind, including a repeat block.
+private func sampleMacroPayload() -> [UInt8] {
+    var b: [UInt8] = [1, 1, 1, 0, 1, 0]  // header: 1x1 matrix, 0 layers, 1 macro
+    b += [5]   // rows[]
+    b += [6]   // cols[]
+
+    b += [7]        // macro id
+    b += [2, 0x41, 0x42]  // nameLen=2, name="AB" (decoded but not retained)
+    b += [5]        // stepCount
+
+    b += [0, Modifier.leftShift.rawValue, KeyCode.b.rawValue, 0x2C, 0x01]  // keystroke, holdMs=300
+    b += [1, 1, UInt8(ascii: "x"), 10, 0]                                  // text "x", msPerChar=10
+    b += [2, 0xF4, 0x01]                                                   // delay ms=500
+    b += [3, 1, 2]                                                         // layer momentary n=2
+    b += [4, 3, 1, 2, 20, 0]     // repeatBlock count=3, 1 nested step: delay ms=20
+    return b
+}
+
+@Test func macroEntryDecodesEveryStepKind() {
+    let bytes = sampleMacroPayload()
+    let p = bytes.withUnsafeBufferPointer {
+        decodeKeymapPayload($0.baseAddress!, count: bytes.count)
+    }
+    #expect(p?.macros.count == 1)
+    #expect(p?.macros[0].id == 7)
+    #expect(p?.macros[0].steps == [
+        .keystroke(mods: Modifier.leftShift.rawValue, key: KeyCode.b.rawValue, holdMs: 300),
+        .text("x", msPerChar: 10),
+        .delay(ms: 500),
+        .layer(momentary: true, n: 2),
+        .repeatBlock(count: 3, steps: [.delay(ms: 20)]),
+    ])
+}
+
+@Test func truncatedMacroPayloadIsRejectedNotIndexed() {
+    let full = sampleMacroPayload()
+    for cut in 1..<full.count {
+        let short = Array(full[0..<cut])
+        let p = short.withUnsafeBufferPointer {
+            decodeKeymapPayload($0.baseAddress!, count: short.count)
+        }
+        #expect(p == nil, "macro prefix of length \(cut) should have been rejected")
+    }
+}
+
+@Test func nestedRepeatBlockIsRejectedAtDecode() {
+    // The player uses a single loop counter, not a stack, so a repeat block
+    // whose own steps contain another repeat block must never reach it --
+    // refused here, at decode, rather than defended against during playback.
+    var b: [UInt8] = [1, 1, 1, 0, 1, 0]  // header: 1x1 matrix, 0 layers, 1 macro
+    b += [5]           // rows[]
+    b += [6]           // cols[]
+    b += [1]           // macro id
+    b += [0]           // nameLen=0
+    b += [1]           // stepCount=1
+    b += [4, 2, 1]     // outer repeatBlock: count=2, 1 nested step
+    b += [4, 1, 0]     // nested step is itself a repeatBlock -- must be refused
+    let p = b.withUnsafeBufferPointer {
+        decodeKeymapPayload($0.baseAddress!, count: b.count)
+    }
+    #expect(p == nil)
+}
