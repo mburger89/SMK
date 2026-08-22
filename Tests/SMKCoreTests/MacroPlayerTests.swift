@@ -185,3 +185,34 @@ import Testing
     }
     #expect(effects == [.momentary(1), .toggle(2)])
 }
+
+// MARK: - Unbounded recursion (FIX 1)
+
+@Test func hugeChainOfZeroTickStepsDoesNotOverflowTheStack() {
+    // Regression for the whole-branch review's stack-overflow finding:
+    // loadNextStepAndTick() used to `return` a fresh recursive call for
+    // every step that consumes no tick (.layer, a zero-length .delay, an
+    // exhausted .text step), so a repeat block built entirely of such steps
+    // recursed once per step with no tick ever unwinding the stack in
+    // between. This macro -- one repeatBlock(count: 255, body: ~1350 layer
+    // steps), the exact shape cited in the review -- is well inside the
+    // payload size limit and passes every bounds check, yet would have
+    // recursed roughly 345,000 levels deep in a single tick() call: a
+    // FreeRTOS stack-overflow panic on ESP32-C6, silent memory corruption on
+    // RP2040 (no MPU stack guard), on every press since the keymap lives in
+    // flash. The `while true` loop this was rewritten as processes any
+    // number of zero-tick steps in constant stack space -- this test's own
+    // survival (and the correct effect count) is the regression guard.
+    let bodyLength = 1350
+    let repeatCount = 255
+    let body = (0..<bodyLength).map { MacroStep.layer(momentary: false, n: $0 % 16) }
+    var player = MacroPlayer()
+    player.start(MacroDefinition(id: 0, steps: [
+        .repeatBlock(count: repeatCount, steps: body)
+    ]))
+
+    guard case .finished(let effects) = player.tick() else {
+        Issue.record("expected the whole chain to finish within a single tick() call"); return
+    }
+    #expect(effects.count == bodyLength * repeatCount)
+}

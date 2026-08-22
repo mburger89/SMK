@@ -144,53 +144,75 @@ struct MacroPlayer {
         }
     }
 
-    /// Pulls the next atomic step off the cursor (transparently expanding
-    /// repeat blocks) and begins executing it, returning that step's first
-    /// tick of output. Returns `.finished` once the whole macro is done.
+    /// Pulls steps off the cursor (transparently expanding repeat blocks),
+    /// applying each one that consumes no tick of its own -- `.layer`, a
+    /// zero-length `.delay`, an empty `.text` step -- inline and moving on
+    /// to the next, until one actually produces output (or the macro runs
+    /// out). Returns `.finished` once the whole macro is done.
+    ///
+    /// This is a loop, not recursion, on purpose: a step that consumes no
+    /// tick used to `return` a fresh recursive call to this same function,
+    /// so a repeat block built entirely of such steps recursed once per
+    /// step with no tick ever unwinding the stack in between -- unbounded
+    /// by any size limit this format's own bounds checks enforce (a
+    /// well-under-the-payload-limit `repeatBlock(count: 255, body: ~1350
+    /// zero-tick steps)` recurses roughly 345,000 levels deep in a single
+    /// call). That is a stack-overflow panic on ESP32-C6 and silent memory
+    /// corruption on RP2040 (no MPU stack guard), on every press, since the
+    /// keymap lives in flash. A `while true` loop processes any number of
+    /// zero-tick steps in constant stack space.
     private mutating func loadNextStepAndTick() -> Output {
-        guard let step = consumeNextStep() else {
-            activeMacroID = nil
-            return .finished()
-        }
-
-        switch step {
-        case .keystroke(let mods, let key, let holdMs):
-            leafKind = .keystroke
-            leafMods = mods
-            leafKey = key
-            leafRemainingTicks = macroTicks(forMs: holdMs)
-            return tickKeystroke()
-
-        case .delay(let ms):
-            let ticks = macroTicks(forMs: ms)
-            guard ticks > 0 else {
-                // A zero-length delay consumes no tick of its own.
-                return loadNextStepAndTick()
+        while true {
+            guard let step = consumeNextStep() else {
+                activeMacroID = nil
+                return .finished()
             }
-            leafKind = .delay
-            leafRemainingTicks = ticks
-            return tickDelay()
 
-        case .text(let string, let msPerChar):
-            leafTextBytes = Array(string.utf8)
-            leafTextIndex = 0
-            leafTextMsPerChar = msPerChar
-            leafTextReleased = false
-            return beginTextChar()
+            switch step {
+            case .keystroke(let mods, let key, let holdMs):
+                leafKind = .keystroke
+                leafMods = mods
+                leafKey = key
+                leafRemainingTicks = macroTicks(forMs: holdMs)
+                return tickKeystroke()
 
-        case .layer(let momentary, let n):
-            // A layer switch is main-loop arbitration -- this player is
-            // pure and cannot touch `LayerEngine` itself, so it records the
-            // effect for `tick()` to attach to whatever Output this call
-            // eventually produces (see `pendingLayerEffects`) and moves on;
-            // the step itself consumes no tick of its own.
-            pendingLayerEffects.append(momentary ? .momentary(n) : .toggle(n))
-            return loadNextStepAndTick()
+            case .delay(let ms):
+                let ticks = macroTicks(forMs: ms)
+                guard ticks > 0 else {
+                    // A zero-length delay consumes no tick of its own.
+                    continue
+                }
+                leafKind = .delay
+                leafRemainingTicks = ticks
+                return tickDelay()
 
-        case .repeatBlock:
-            // consumeNextStep() always expands repeat blocks into their
-            // body internally and never returns this case; unreachable.
-            return loadNextStepAndTick()
+            case .text(let string, let msPerChar):
+                leafTextBytes = Array(string.utf8)
+                leafTextIndex = 0
+                leafTextMsPerChar = msPerChar
+                leafTextReleased = false
+                guard leafTextIndex < leafTextBytes.count else {
+                    // An empty text step consumes no tick of its own.
+                    leafKind = .none
+                    continue
+                }
+                return beginValidatedTextChar()
+
+            case .layer(let momentary, let n):
+                // A layer switch is main-loop arbitration -- this player is
+                // pure and cannot touch `LayerEngine` itself, so it records
+                // the effect for `tick()` to attach to whatever Output this
+                // call eventually produces (see `pendingLayerEffects`) and
+                // moves on; the step itself consumes no tick of its own.
+                pendingLayerEffects.append(momentary ? .momentary(n) : .toggle(n))
+                continue
+
+            case .repeatBlock:
+                // consumeNextStep() always expands repeat blocks into their
+                // body internally and never returns this case -- unreachable,
+                // but skip rather than recurse if it ever were.
+                continue
+            }
         }
     }
 
@@ -262,16 +284,25 @@ struct MacroPlayer {
 
     // MARK: - Text
 
-    /// Begins the next character of the current text step: validates it
-    /// maps to a keystroke, aborting the whole macro (rather than typing a
-    /// substitute) if it does not, and starts that character's hold ticks.
-    /// Falls through to the next macro step once every character has been
-    /// typed.
+    /// Begins the next character of the current text step, or falls through
+    /// to the next macro step once every character has been typed. The
+    /// fall-through is a single hand-off to `loadNextStepAndTick()` (itself
+    /// a loop, not recursion) -- it fires at most once per character, never
+    /// chained, so it carries none of the unbounded-recursion risk a
+    /// zero-tick *macro step* used to.
     private mutating func beginTextChar() -> Output {
         guard leafTextIndex < leafTextBytes.count else {
             leafKind = .none
             return loadNextStepAndTick()
         }
+        return beginValidatedTextChar()
+    }
+
+    /// Validates the character at `leafTextIndex` maps to a keystroke,
+    /// aborting the whole macro (rather than typing a substitute) if it does
+    /// not, and starts that character's hold ticks. Assumes the caller has
+    /// already checked `leafTextIndex < leafTextBytes.count`.
+    private mutating func beginValidatedTextChar() -> Output {
         guard let (usage, shift) = asciiKeystroke(leafTextBytes[leafTextIndex]) else {
             activeMacroID = nil
             return .finished()
