@@ -127,11 +127,19 @@ struct LayerEngine {
         let hasUsableCells = payload.layers.contains { layer in
             layer.contains { row in !row.isEmpty }
         }
+        // All-or-nothing: an invalid payload must not clobber working
+        // state, and that has to include `macros`, not just `keymaps`. This
+        // used to assign `self.macros = payload.macros` unconditionally,
+        // so a rejected (e.g. `layerCount == 0`) payload still installed
+        // its macros while the keymap fell back to the compiled default --
+        // contradicting the rule stated above. Harmless today only because
+        // the compiled default has no `macro:` cells to trigger them; still
+        // wrong on its own terms.
         if !payload.layers.isEmpty && hasUsableCells {
             self.keymaps = payload.layers
+            self.macros = payload.macros
             kb_log("Keymap loaded successfully")
         }
-        self.macros = payload.macros
     }
 
     // Parses a keymap already available as a C string — used both by
