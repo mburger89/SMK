@@ -117,6 +117,27 @@ struct MacroPlayer {
     // array, never one that grows with the number of `.layer` steps seen.
     static let layerCount = 16
 
+    // FIX 2: caps how many steps `loadNextStepAndTick()`'s loop processes
+    // in one `tick()` call, so a pathological macro degrades into running
+    // slowly across several ticks instead of stalling the board on one.
+    //
+    // Sizing: the reviewer measured the ~345,000-step attack payload
+    // (repeatBlock(count: 255, body: ~1350 .layer steps)) at ~0.1-0.2s on
+    // real hardware, i.e. roughly 1.7M-3.5M steps/sec at 160MHz. At that
+    // rate, 2000 steps costs on the order of 0.6-1.2ms -- a small slice of
+    // the 10ms scan tick (CONFIG_FREERTOS_HZ=100), leaving the rest of the
+    // tick for matrix scan/debounce, HID report send, and BLE servicing,
+    // so the freeze this budget exists to prevent cannot recur even if a
+    // macro keeps hitting the cap tick after tick. On the other side, no
+    // hand-authored macro plausibly chains anywhere near 2000 zero-tick
+    // `.layer`/zero-length-`.delay`/empty-`.text` steps back to back in a
+    // single unbroken run -- a macro editor UI has no reason to ever
+    // generate that shape, and even a generously long real macro's
+    // occasional pair or trio of consecutive layer switches is 2-3 orders
+    // of magnitude under this cap -- so no realistic macro's timing is
+    // ever affected by it.
+    static let stepBudgetPerTick = 2000
+
     // Per-layer state for `.layer` steps consumed so far during the
     // *current* `tick()` call. A `repeatBlock` built entirely of `.layer`
     // steps can chain through hundreds of thousands of them in one
@@ -264,11 +285,30 @@ struct MacroPlayer {
     /// corruption on RP2040 (no MPU stack guard), on every press, since the
     /// keymap lives in flash. A `while true` loop processes any number of
     /// zero-tick steps in constant stack space.
+    ///
+    /// The loop is also capped at `stepBudgetPerTick` steps per call (see
+    /// its doc comment): with the stack/heap risks fixed, the same
+    /// ~345,000-step payload still runs entirely within one `Main.swift`
+    /// `tick()` call with no `vTaskDelay` in between -- a fraction-of-a-
+    /// second freeze with no matrix scan, HID report, or BLE servicing.
+    /// Hitting the cap parks the cursor exactly where it is (every field
+    /// `consumeNextStep()` advances -- `topIndex`/`repeatIndex`/
+    /// `repeatRemaining` -- is a stored property, so there is no separate
+    /// state to save) and returns a neutral all-keys-up report for this
+    /// tick; the next `tick()` call resumes the loop from that same cursor,
+    /// so a pathological macro spreads across extra ticks instead of
+    /// stalling the board on one.
     private mutating func loadNextStepAndTick() -> Output {
+        var stepsThisCall = 0
         while true {
+            if stepsThisCall >= Self.stepBudgetPerTick {
+                return .report(HIDReport())
+            }
+
             guard let step = consumeNextStep() else {
                 return finish()
             }
+            stepsThisCall += 1
 
             switch step {
             case .keystroke(let mods, let key, let holdMs):

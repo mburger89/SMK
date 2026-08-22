@@ -263,21 +263,55 @@ import Testing
     // `MacroPlayer.pendingMomentaryPushCounts`/`momentaryPushCounts`)
     // collapses per-layer effects to fixed-size counters (16 layers exist),
     // so no `LayerEffect` list this produces can ever exceed 16 entries --
-    // asserted below instead of the old exact count.
+    // asserted below on every intermediate tick and the final one alike.
+    //
+    // The per-tick step budget (`MacroPlayer.stepBudgetPerTick`, the
+    // companion CPU-time fix) means this chain can no longer finish inside
+    // one `tick()` call either -- it now spreads across multiple ticks,
+    // each doing bounded work. This test drives `tick()` in a loop instead
+    // of expecting `.finished` on the first call, and checks that it took
+    // more than one tick (the budget is real) but not wildly more than
+    // `totalSteps / stepBudgetPerTick` (the budget is roughly this size,
+    // not a much smaller/broken one that would itself be a regression).
     let bodyLength = 1350
     let repeatCount = 255
+    let totalSteps = bodyLength * repeatCount
     let body = (0..<bodyLength).map { MacroStep.layer(momentary: false, n: $0 % 16) }
     var player = MacroPlayer()
     player.start(MacroDefinition(id: 0, steps: [
         .repeatBlock(count: repeatCount, steps: body)
     ]))
 
-    guard case .finished(let effects) = player.tick() else {
-        Issue.record("expected the whole chain to finish within a single tick() call"); return
+    let maxLayerEffectsPerTick = MacroPlayer.layerCount  // toggle-only body: at most one flip per layer
+    let expectedMaxTicks = (totalSteps + MacroPlayer.stepBudgetPerTick - 1) / MacroPlayer.stepBudgetPerTick
+
+    var ticksTaken = 0
+    var didFinish = false
+    while ticksTaken < totalSteps {
+        ticksTaken += 1
+        switch player.tick() {
+        case .report(let report, let effects):
+            // A neutral, all-keys-up report while the budget-limited loop
+            // keeps chewing through zero-tick `.layer` steps -- never a
+            // held key, never more entries than layers exist.
+            #expect(report == HIDReport())
+            #expect(effects.count <= maxLayerEffectsPerTick)
+        case .finished(let effects):
+            #expect(effects.count <= maxLayerEffectsPerTick)
+            didFinish = true
+        case .idle:
+            Issue.record("macro went idle before finishing"); return
+        }
+        if didFinish { break }
     }
-    // At most one entry per layer (16 layers exist) -- not one per `.layer`
-    // step, and nowhere near `bodyLength * repeatCount` (344,250).
-    #expect(effects.count <= MacroPlayer.layerCount)
+
+    #expect(didFinish)
+    // More than one tick proves the step budget actually limits work per
+    // call (a regression to no budget would finish in exactly 1); at most
+    // double the expected count leaves slack for the leading edge (repeat
+    // bookkeeping) without hiding a budget that shrank drastically.
+    #expect(ticksTaken > 1)
+    #expect(ticksTaken <= expectedMaxTicks * 2)
 }
 
 // MARK: - Momentary layers auto-release when a macro ends
