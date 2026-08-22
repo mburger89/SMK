@@ -117,16 +117,19 @@ func loadCompiledDefaultKeymap(into engine: inout LayerEngine, configJson: Strin
 }
 
 // Applies the layer effects `MacroPlayer.tick()` handed back for a `.layer`
-// macro step -- the player is pure and cannot call these itself (see
-// MacroPlayer.swift's `LayerEffect` doc comment), so this main-loop
-// arbitration is the only place that does. Mirrors the press-transition
-// half of `KeyEventProcessing.processKeyEvents`'s `.toggleLayer`/
-// `.momentaryLayer` handling; there is no corresponding release call here
-// because a macro `.layer` step is a single instant, not a hold -- pairing
-// a momentary push with a later release, if wanted, is the macro's own job,
-// same as it is for a physical key's press/release pair. Applied in order,
-// since a single tick can carry more than one effect (consecutive `.layer`
-// steps each consume no tick of their own).
+// macro step (or for the end of a macro run) -- the player is pure and
+// cannot call these itself (see MacroPlayer.swift's `LayerEffect` doc
+// comment), so this main-loop arbitration is the only place that does.
+// `.momentary`/`.toggle` mirror the press-transition half of
+// `KeyEventProcessing.processKeyEvents`'s `.momentaryLayer`/`.toggleLayer`
+// handling. `.momentaryRelease` is the player's own doing, not a macro
+// step: it releases a momentary layer the same run pushed earlier, emitted
+// when that run terminates (clean finish or an abort alike) so a momentary
+// layer never stays stuck active with no macro left to release it -- there
+// is no "release layer" step type a macro author could write themselves.
+// Applied in order, since a single tick can carry more than one effect
+// (consecutive `.layer` steps each consume no tick of their own, and a
+// terminating tick's pushes-just-now precede that same tick's releases).
 func applyMacroLayerEffects(_ effects: [LayerEffect], to engine: inout LayerEngine) {
     for effect in effects {
         switch effect {
@@ -134,6 +137,8 @@ func applyMacroLayerEffects(_ effects: [LayerEffect], to engine: inout LayerEngi
             engine.addMomentaryLayer(layer)
         case .toggle(let layer):
             engine.toggleLayer(layer)
+        case .momentaryRelease(let layer):
+            engine.removeMomentaryLayer(layer)
         }
     }
 }

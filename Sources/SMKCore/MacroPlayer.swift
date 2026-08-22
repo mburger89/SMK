@@ -12,20 +12,33 @@
 /// is never silently zero.
 func macroTicks(forMs ms: Int) -> Int { (max(0, ms) + 9) / 10 }
 
-/// A layer-state change a `.layer` macro step asks the caller to apply.
-/// `MacroPlayer` cannot touch `LayerEngine` itself (see the file comment --
-/// staying pure is what makes every timing rule here host-testable), so it
-/// hands these back through `tick()`'s `Output` for `Main.swift`, which
-/// already owns the engine, to apply via `engine.toggleLayer`/
-/// `engine.addMomentaryLayer`. Mirrors the two cases `KeyEventProcessing`
-/// forwards for a real key's *press* transition -- a macro step is a single
-/// instant, not a hold, so there is no corresponding release/pop; an
-/// `.momentary` effect is a one-shot push exactly like the wire format's
-/// `op == 0` ("mo"), and pairing it with a later release is the macro
-/// author's responsibility, same as it is for a physical key.
+/// A layer-state change a `.layer` macro step (or the end of a macro run)
+/// asks the caller to apply. `MacroPlayer` cannot touch `LayerEngine`
+/// itself (see the file comment -- staying pure is what makes every timing
+/// rule here host-testable), so it hands these back through `tick()`'s
+/// `Output` for `Main.swift`, which already owns the engine, to apply via
+/// `engine.addMomentaryLayer`/`engine.toggleLayer`/`engine.removeMomentaryLayer`.
+///
+/// `.momentary` and `.toggle` mirror the two cases `KeyEventProcessing`
+/// forwards for a real key's *press* transition, and match the wire
+/// format's `op == 0` ("mo") / `op == 1` ("tg"). The two ops are NOT
+/// symmetric here: the configurator's Layer step editor labels a momentary
+/// step "Momentary layer N *while running*" -- the layer is meant to be
+/// active only for the remainder of the macro, released when it ends.
+/// Unlike a physical key, a macro step has no release edge and the format
+/// has no "release layer" step type, so the author has no way to write
+/// that release even if they wanted to -- the player itself tracks every
+/// layer it pushed and emits a matching `.momentaryRelease` (see `finish()`)
+/// when the macro terminates, on every path (clean completion or an abort),
+/// so `engine.momentaryCounts` always returns to where it started. `.toggle`
+/// is deliberately not tracked this way: a toggle is meant to persist past
+/// the macro, which is the whole point of the two ops being different.
 enum LayerEffect: Equatable {
     case momentary(Int)
     case toggle(Int)
+    /// Releases one momentary layer this player pushed earlier in the same
+    /// run, emitted when the macro terminates. Never produced for `.toggle`.
+    case momentaryRelease(Int)
 }
 
 /// One macro's playback state. A playing macro owns the report it produces:
@@ -92,6 +105,14 @@ struct MacroPlayer {
     // itself right before returning, so it never leaks into the next call.
     private var pendingLayerEffects: [LayerEffect] = []
 
+    // Every layer a `.momentary` step has pushed during the *whole* current
+    // run (not just this tick), in push order, including duplicates if the
+    // same layer was pushed more than once -- one entry per push, so
+    // `finish()` can emit exactly one matching `.momentaryRelease` per
+    // entry and leave `engine.momentaryCounts` balanced. `.toggle` steps
+    // never add here.
+    private var pushedMomentaryLayers: [Int] = []
+
     /// Begins playing `macro`. Ignored while a macro is already playing.
     mutating func start(_ macro: MacroDefinition) {
         guard activeMacroID == nil else { return }
@@ -105,6 +126,22 @@ struct MacroPlayer {
         leafKind = .none
         leafTextReleased = false
         pendingLayerEffects = []
+        pushedMomentaryLayers = []
+    }
+
+    /// Ends the current run and releases every momentary layer it pushed
+    /// (in reverse push order -- LIFO, though release order doesn't affect
+    /// whether the counts balance) so `engine.momentaryCounts` returns to
+    /// where it started. Called from every termination path: clean
+    /// completion in `loadNextStepAndTick()` and the unmappable-character
+    /// abort in `beginValidatedTextChar()` alike -- an abort that skipped
+    /// this would leave the same stuck-layer defect back in the door FIX 2
+    /// closed.
+    private mutating func finish() -> Output {
+        activeMacroID = nil
+        let releases = pushedMomentaryLayers.reversed().map { LayerEffect.momentaryRelease($0) }
+        pushedMomentaryLayers = []
+        return .finished(layerEffects: releases)
     }
 
     /// Advances playback by exactly one scan tick and returns the report
@@ -164,8 +201,7 @@ struct MacroPlayer {
     private mutating func loadNextStepAndTick() -> Output {
         while true {
             guard let step = consumeNextStep() else {
-                activeMacroID = nil
-                return .finished()
+                return finish()
             }
 
             switch step {
@@ -215,7 +251,15 @@ struct MacroPlayer {
                 // the effect for `tick()` to attach to whatever Output this
                 // call eventually produces (see `pendingLayerEffects`) and
                 // moves on; the step itself consumes no tick of its own.
-                pendingLayerEffects.append(momentary ? .momentary(n) : .toggle(n))
+                // Momentary pushes are also remembered so `finish()` can
+                // release them when the macro ends -- toggle is not, since
+                // a toggle is meant to persist past the macro.
+                if momentary {
+                    pendingLayerEffects.append(.momentary(n))
+                    pushedMomentaryLayers.append(n)
+                } else {
+                    pendingLayerEffects.append(.toggle(n))
+                }
                 continue
 
             case .repeatBlock:
@@ -315,8 +359,11 @@ struct MacroPlayer {
     /// already checked `leafTextIndex < leafTextBytes.count`.
     private mutating func beginValidatedTextChar() -> Output {
         guard let (usage, shift) = asciiKeystroke(leafTextBytes[leafTextIndex]) else {
-            activeMacroID = nil
-            return .finished()
+            // Abort still counts as termination: any momentary layer this
+            // run pushed before hitting the unmappable character must still
+            // be released here, or the stuck-layer defect comes back
+            // through this path alone.
+            return finish()
         }
         leafKind = .text
         leafMods = shift ? Modifier.leftShift.rawValue : 0

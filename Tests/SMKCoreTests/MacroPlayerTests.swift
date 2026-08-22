@@ -191,11 +191,14 @@ import Testing
     #expect(releaseEffects == [])
 
     // Tick 3: the trailing .layer step is the last thing in the macro, so
-    // it rides along with `.finished` instead of a report.
+    // it rides along with `.finished` instead of a report -- immediately
+    // followed by both momentary pushes this run ever made (2, then 0)
+    // being released, in reverse order, since the macro is ending in this
+    // same tick.
     guard case .finished(let lastEffects) = player.tick() else {
         Issue.record("expected finished"); return
     }
-    #expect(lastEffects == [.momentary(0)])
+    #expect(lastEffects == [.momentary(0), .momentaryRelease(0), .momentaryRelease(2)])
 }
 
 @Test func toggleLayerStepProducesToggleEffect() {
@@ -254,4 +257,117 @@ import Testing
         Issue.record("expected the whole chain to finish within a single tick() call"); return
     }
     #expect(effects.count == bodyLength * repeatCount)
+}
+
+// MARK: - Momentary layers auto-release when a macro ends
+
+// `applyMacroLayerEffects` (the real consumer of `LayerEffect`) lives in
+// Sources/smk/Main.swift, which cannot be compiled or tested on the host
+// (no ESP-IDF checkout; see Package.swift's comment on the `smk` target).
+// This local duplicate lets these tests exercise the actual contract --
+// MacroPlayer produces the right effects, and applying them via
+// LayerEngine's own public momentary/toggle API produces the right engine
+// state -- entirely within the host-testable SMKCore target.
+private func apply(_ effects: [LayerEffect], to engine: inout LayerEngine) {
+    for effect in effects {
+        switch effect {
+        case .momentary(let layer): engine.addMomentaryLayer(layer)
+        case .toggle(let layer): engine.toggleLayer(layer)
+        case .momentaryRelease(let layer): engine.removeMomentaryLayer(layer)
+        }
+    }
+}
+
+/// Pumps `player.tick()` (applying every effect it produces to `engine`
+/// along the way, exactly like `Main.swift`'s scan loop would) until the
+/// macro finishes or aborts.
+private func runToCompletion(_ player: inout MacroPlayer, applying engine: inout LayerEngine, maxTicks: Int = 10_000) {
+    for _ in 0..<maxTicks {
+        switch player.tick() {
+        case .report(_, let effects):
+            apply(effects, to: &engine)
+        case .finished(let effects):
+            apply(effects, to: &engine)
+            return
+        case .idle:
+            return
+        }
+    }
+    Issue.record("macro did not finish within \(maxTicks) ticks")
+}
+
+@Test func momentaryLayerReleasesWhenMacroFinishes() {
+    // The configurator's Layer step editor labels this step "Momentary
+    // layer 2 *while running*" -- the layer is meant to be active only for
+    // the remainder of the macro. There is no "release layer" step type a
+    // macro author could write themselves, so the player itself must
+    // release it when the macro ends.
+    var engine = LayerEngine()
+    var player = MacroPlayer()
+    player.start(MacroDefinition(id: 0, steps: [
+        .layer(momentary: true, n: 2),
+        .keystroke(mods: 0, key: KeyCode.f1.rawValue, holdMs: 10),
+    ]))
+
+    guard case .report(_, let firstEffects) = player.tick() else {
+        Issue.record("expected the keystroke's hold report"); return
+    }
+    apply(firstEffects, to: &engine)
+    #expect(engine.isLayerActive(2) == true)   // pushed, and the macro is still running
+
+    runToCompletion(&player, applying: &engine)
+    #expect(engine.isLayerActive(2) == false)  // released now that the macro has ended
+}
+
+@Test func toggleLayerStaysActiveAfterMacroFinishes() {
+    // Toggle is deliberately NOT auto-released -- persisting past the
+    // macro is the whole point of `tg` versus `mo`.
+    var engine = LayerEngine()
+    var player = MacroPlayer()
+    player.start(MacroDefinition(id: 0, steps: [.layer(momentary: false, n: 2)]))
+    runToCompletion(&player, applying: &engine)
+    #expect(engine.isLayerActive(2) == true)
+}
+
+@Test func pushingTheSameMomentaryLayerTwiceBalancesOnFinish() {
+    var engine = LayerEngine()
+    var player = MacroPlayer()
+    player.start(MacroDefinition(id: 0, steps: [
+        .layer(momentary: true, n: 2),
+        .layer(momentary: true, n: 2),
+    ]))
+    runToCompletion(&player, applying: &engine)
+    // Two pushes must be matched by exactly two releases -- if the player
+    // only released once, momentaryCounts[2] would still be 1 and this
+    // would incorrectly report active.
+    #expect(engine.isLayerActive(2) == false)
+}
+
+@Test func pushingTwoDifferentMomentaryLayersBalancesOnFinish() {
+    var engine = LayerEngine()
+    var player = MacroPlayer()
+    player.start(MacroDefinition(id: 0, steps: [
+        .layer(momentary: true, n: 2),
+        .layer(momentary: true, n: 3),
+    ]))
+    runToCompletion(&player, applying: &engine)
+    #expect(engine.isLayerActive(2) == false)
+    #expect(engine.isLayerActive(3) == false)
+}
+
+@Test func momentaryLayerReleasesOnAbortToo() {
+    // An unmappable character aborts a macro mid-run (see
+    // unmappableCharacterAbortsRatherThanGuessing). If that path skipped
+    // releasing momentary layers, the stuck-layer defect would come back
+    // through the abort door alone -- releases must happen on every
+    // termination path, not just clean completion.
+    var engine = LayerEngine()
+    var player = MacroPlayer()
+    player.start(MacroDefinition(id: 0, steps: [
+        .layer(momentary: true, n: 2),
+        .text("\u{7F}", msPerChar: 10),
+    ]))
+    runToCompletion(&player, applying: &engine)
+    #expect(player.isActive == false)
+    #expect(engine.isLayerActive(2) == false)
 }
