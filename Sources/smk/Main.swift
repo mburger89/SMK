@@ -116,6 +116,28 @@ func loadCompiledDefaultKeymap(into engine: inout LayerEngine, configJson: Strin
     #endif
 }
 
+// Applies the layer effects `MacroPlayer.tick()` handed back for a `.layer`
+// macro step -- the player is pure and cannot call these itself (see
+// MacroPlayer.swift's `LayerEffect` doc comment), so this main-loop
+// arbitration is the only place that does. Mirrors the press-transition
+// half of `KeyEventProcessing.processKeyEvents`'s `.toggleLayer`/
+// `.momentaryLayer` handling; there is no corresponding release call here
+// because a macro `.layer` step is a single instant, not a hold -- pairing
+// a momentary push with a later release, if wanted, is the macro's own job,
+// same as it is for a physical key's press/release pair. Applied in order,
+// since a single tick can carry more than one effect (consecutive `.layer`
+// steps each consume no tick of their own).
+func applyMacroLayerEffects(_ effects: [LayerEffect], to engine: inout LayerEngine) {
+    for effect in effects {
+        switch effect {
+        case .momentary(let layer):
+            engine.addMomentaryLayer(layer)
+        case .toggle(let layer):
+            engine.toggleLayer(layer)
+        }
+    }
+}
+
 @_cdecl("app_main_swift")
 func app_main_swift() {
     kb_log("Initialising SMK Keyboard...")
@@ -578,8 +600,10 @@ func app_main_swift() {
 
         if macroPlayer.isActive {
             switch macroPlayer.tick() {
-            case .report(let r): report = r
-            case .finished:
+            case .report(let r, let layerEffects):
+                report = r
+                applyMacroLayerEffects(layerEffects, to: &engine)
+            case .finished(let layerEffects):
                 // No lastScan reset here, deliberately: processKeyEvents
                 // runs every tick against the live matrix regardless of
                 // macro state, so a key released mid-playback is already
@@ -594,6 +618,7 @@ func app_main_swift() {
                 // behavior this project deliberately dropped elsewhere for
                 // having no model field behind it.
                 report = HIDReport()
+                applyMacroLayerEffects(layerEffects, to: &engine)
             case .idle: break
             }
         } else {

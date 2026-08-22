@@ -12,14 +12,38 @@
 /// is never silently zero.
 func macroTicks(forMs ms: Int) -> Int { (max(0, ms) + 9) / 10 }
 
+/// A layer-state change a `.layer` macro step asks the caller to apply.
+/// `MacroPlayer` cannot touch `LayerEngine` itself (see the file comment --
+/// staying pure is what makes every timing rule here host-testable), so it
+/// hands these back through `tick()`'s `Output` for `Main.swift`, which
+/// already owns the engine, to apply via `engine.toggleLayer`/
+/// `engine.addMomentaryLayer`. Mirrors the two cases `KeyEventProcessing`
+/// forwards for a real key's *press* transition -- a macro step is a single
+/// instant, not a hold, so there is no corresponding release/pop; an
+/// `.momentary` effect is a one-shot push exactly like the wire format's
+/// `op == 0` ("mo"), and pairing it with a later release is the macro
+/// author's responsibility, same as it is for a physical key.
+enum LayerEffect: Equatable {
+    case momentary(Int)
+    case toggle(Int)
+}
+
 /// One macro's playback state. A playing macro owns the report it produces:
 /// `start(_:)` is ignored while another macro is already active, so a held
 /// macro key does not retrigger/restart mid-playback.
 struct MacroPlayer {
     enum Output: Equatable {
         case idle
-        case report(HIDReport)
-        case finished
+        /// `layerEffects` are the layer changes (in order) that occurred
+        /// while reaching this report -- `.layer` steps consume no tick of
+        /// their own, so a chain of them can precede the step that actually
+        /// produced this tick's report. Empty on every tick that continues
+        /// an already-in-flight keystroke/delay/text step, since those
+        /// don't consume a fresh step off the cursor.
+        case report(HIDReport, layerEffects: [LayerEffect] = [])
+        /// Same `layerEffects` meaning as `report`, for the tick that drains
+        /// the last step(s) of the macro.
+        case finished(layerEffects: [LayerEffect] = [])
     }
 
     private(set) var activeMacroID: Int? = nil
@@ -61,6 +85,13 @@ struct MacroPlayer {
     private var leafTextMsPerChar: Int = 0
     private var leafTextReleased: Bool = false
 
+    // Layer effects collected by `.layer` steps consumed so far during the
+    // *current* `tick()` call -- possibly more than one, since a `.layer`
+    // step consumes no tick and `loadNextStepAndTick()` keeps pulling steps
+    // until one actually produces output. Drained and cleared by `tick()`
+    // itself right before returning, so it never leaks into the next call.
+    private var pendingLayerEffects: [LayerEffect] = []
+
     /// Begins playing `macro`. Ignored while a macro is already playing.
     mutating func start(_ macro: MacroDefinition) {
         guard activeMacroID == nil else { return }
@@ -73,22 +104,43 @@ struct MacroPlayer {
         repeatRemaining = 0
         leafKind = .none
         leafTextReleased = false
+        pendingLayerEffects = []
     }
 
     /// Advances playback by exactly one scan tick and returns the report
-    /// (or lack thereof) the caller should send this tick.
+    /// (or lack thereof) the caller should send this tick, plus any layer
+    /// effects (see `LayerEffect`) that occurred while getting there.
     mutating func tick() -> Output {
         guard activeMacroID != nil else { return .idle }
 
+        let output: Output
         switch leafKind {
         case .none:
-            return loadNextStepAndTick()
+            output = loadNextStepAndTick()
         case .keystroke:
-            return tickKeystroke()
+            output = tickKeystroke()
         case .delay:
-            return tickDelay()
+            output = tickDelay()
         case .text:
-            return tickText()
+            output = tickText()
+        }
+        return attachPendingLayerEffects(to: output)
+    }
+
+    /// Merges any layer effects accumulated this call onto `output` and
+    /// clears them, so a single `tick()` call reports every `.layer` step it
+    /// passed through -- not just the last one -- while still returning
+    /// exactly one `Output` value.
+    private mutating func attachPendingLayerEffects(to output: Output) -> Output {
+        guard !pendingLayerEffects.isEmpty else { return output }
+        defer { pendingLayerEffects = [] }
+        switch output {
+        case .idle:
+            return output
+        case .report(let report, let more):
+            return .report(report, layerEffects: pendingLayerEffects + more)
+        case .finished(let more):
+            return .finished(layerEffects: pendingLayerEffects + more)
         }
     }
 
@@ -98,7 +150,7 @@ struct MacroPlayer {
     private mutating func loadNextStepAndTick() -> Output {
         guard let step = consumeNextStep() else {
             activeMacroID = nil
-            return .finished
+            return .finished()
         }
 
         switch step {
@@ -126,11 +178,13 @@ struct MacroPlayer {
             leafTextReleased = false
             return beginTextChar()
 
-        case .layer:
-            // Layer switching during macro playback is main-loop
-            // arbitration wiring, out of scope for this task (see the
-            // design doc's task breakdown) -- this step is a no-op here
-            // and consumes no tick of its own.
+        case .layer(let momentary, let n):
+            // A layer switch is main-loop arbitration -- this player is
+            // pure and cannot touch `LayerEngine` itself, so it records the
+            // effect for `tick()` to attach to whatever Output this call
+            // eventually produces (see `pendingLayerEffects`) and moves on;
+            // the step itself consumes no tick of its own.
+            pendingLayerEffects.append(momentary ? .momentary(n) : .toggle(n))
             return loadNextStepAndTick()
 
         case .repeatBlock:
@@ -220,7 +274,7 @@ struct MacroPlayer {
         }
         guard let (usage, shift) = asciiKeystroke(leafTextBytes[leafTextIndex]) else {
             activeMacroID = nil
-            return .finished
+            return .finished()
         }
         leafKind = .text
         leafMods = shift ? Modifier.leftShift.rawValue : 0
