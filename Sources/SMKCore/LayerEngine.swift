@@ -138,7 +138,14 @@ struct LayerEngine {
         if !payload.layers.isEmpty && hasUsableCells {
             self.keymaps = payload.layers
             self.macros = payload.macros
-            kb_log("Keymap loaded successfully")
+            // Says "binary" rather than just "loaded" because the JSON
+            // loader below logs from the same message otherwise, and after
+            // the v1->v2 format migration the one thing worth knowing from
+            // a boot log is which format the board actually accepted.
+            // Reading the source to work that out -- as I had to after the
+            // first hardware flash -- is exactly the diagnosis this line
+            // should be saving someone.
+            kb_log("Keymap loaded successfully (binary)")
         }
     }
 
@@ -189,7 +196,9 @@ struct LayerEngine {
 
         if !newKeymaps.isEmpty {
             self.keymaps = newKeymaps
-            kb_log("Keymap loaded successfully")
+            // See the binary loader's note: these two must stay
+            // distinguishable in a boot log.
+            kb_log("Keymap loaded successfully (JSON)")
         }
     }
 
