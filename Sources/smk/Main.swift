@@ -133,12 +133,22 @@ func loadCompiledDefaultKeymap(into engine: inout LayerEngine, configJson: Strin
 func applyMacroLayerEffects(_ effects: [LayerEffect], to engine: inout LayerEngine) {
     for effect in effects {
         switch effect {
-        case .momentary(let layer):
-            engine.addMomentaryLayer(layer)
+        case .momentary(let layer, let count):
+            // `count` collapses what used to be `count` separate
+            // `.momentary` entries (one per push within a tick, or across
+            // a whole run for the matching release below) into one -- see
+            // `LayerEffect`'s doc comment. Applying it via `count`
+            // individual pushes is exactly equivalent, since
+            // `addMomentaryLayer` only ever increments one per-layer `Int`.
+            for _ in 0..<count {
+                engine.addMomentaryLayer(layer)
+            }
         case .toggle(let layer):
             engine.toggleLayer(layer)
-        case .momentaryRelease(let layer):
-            engine.removeMomentaryLayer(layer)
+        case .momentaryRelease(let layer, let count):
+            for _ in 0..<count {
+                engine.removeMomentaryLayer(layer)
+            }
         }
     }
 }

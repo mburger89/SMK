@@ -33,12 +33,26 @@ func macroTicks(forMs ms: Int) -> Int { (max(0, ms) + 9) / 10 }
 /// so `engine.momentaryCounts` always returns to where it started. `.toggle`
 /// is deliberately not tracked this way: a toggle is meant to persist past
 /// the macro, which is the whole point of the two ops being different.
+/// `momentary`/`momentaryRelease` carry a `count` because a single tick can
+/// legitimately push (or need to release) the same layer far more than once
+/// -- a `repeatBlock` whose body is all `.layer` steps chains through all of
+/// them in one `tick()` call (see `loadNextStepAndTick`'s doc comment), and
+/// each repetition is a real push that must be balanced by a real release.
+/// Collapsing those into a single `count`-bearing effect per layer (instead
+/// of one effect per push) is what keeps `pendingLayerEffects` and
+/// `finish()`'s release list bounded to at most 16 entries each -- see
+/// `MacroPlayer`'s `pendingMomentaryPushCounts`/`momentaryPushCounts` doc
+/// comments for why that bound matters. Applying `count` pushes (or
+/// releases) at once via a loop over `engine.addMomentaryLayer`/
+/// `removeMomentaryLayer` is exactly equivalent to applying them one at a
+/// time: both increment/decrement a single per-layer `Int` counter, which is
+/// commutative and order-independent.
 enum LayerEffect: Equatable {
-    case momentary(Int)
+    case momentary(layer: Int, count: Int)
     case toggle(Int)
     /// Releases one momentary layer this player pushed earlier in the same
     /// run, emitted when the macro terminates. Never produced for `.toggle`.
-    case momentaryRelease(Int)
+    case momentaryRelease(layer: Int, count: Int)
 }
 
 /// One macro's playback state. A playing macro owns the report it produces:
@@ -98,20 +112,42 @@ struct MacroPlayer {
     private var leafTextMsPerChar: Int = 0
     private var leafTextReleased: Bool = false
 
-    // Layer effects collected by `.layer` steps consumed so far during the
-    // *current* `tick()` call -- possibly more than one, since a `.layer`
-    // step consumes no tick and `loadNextStepAndTick()` keeps pulling steps
-    // until one actually produces output. Drained and cleared by `tick()`
-    // itself right before returning, so it never leaks into the next call.
-    private var pendingLayerEffects: [LayerEffect] = []
+    // Only 16 layers exist (LayerEngine.toggledLayers/momentaryCounts are
+    // both sized 16), so every per-layer accumulator below is a fixed-size
+    // array, never one that grows with the number of `.layer` steps seen.
+    static let layerCount = 16
 
-    // Every layer a `.momentary` step has pushed during the *whole* current
-    // run (not just this tick), in push order, including duplicates if the
-    // same layer was pushed more than once -- one entry per push, so
-    // `finish()` can emit exactly one matching `.momentaryRelease` per
-    // entry and leave `engine.momentaryCounts` balanced. `.toggle` steps
-    // never add here.
-    private var pushedMomentaryLayers: [Int] = []
+    // Per-layer state for `.layer` steps consumed so far during the
+    // *current* `tick()` call. A `repeatBlock` built entirely of `.layer`
+    // steps can chain through hundreds of thousands of them in one
+    // `loadNextStepAndTick()` call (see that function's doc comment), so
+    // this used to be a `[LayerEffect]` array that grew one element per
+    // step -- a ~345,000-step attack payload built a multi-megabyte array
+    // in one tick() call, on devices with 264-512KB of total RAM. Since
+    // `toggledLayers`/`momentaryCounts` are separate fixed-size arrays and
+    // a layer's push-count/toggle-parity is all that ultimately reaches
+    // them, collecting per-layer counts here first and only turning them
+    // into `LayerEffect` values when `tick()` actually returns (see
+    // `drainPendingLayerEffects()`) is exactly equivalent to the old
+    // one-entry-per-step scheme, and bounds `pendingLayerEffects` to at
+    // most `layerCount` momentary entries plus `layerCount` toggle entries
+    // -- 32 total, regardless of how many `.layer` steps fed into it.
+    // Drained and zeroed by `tick()` itself right before returning, so
+    // nothing leaks into the next call.
+    private var pendingMomentaryPushCounts = [Int](repeating: 0, count: MacroPlayer.layerCount)
+    private var pendingToggleFlips = [Bool](repeating: false, count: MacroPlayer.layerCount)
+
+    // How many times a `.momentary` step has pushed each layer during the
+    // *whole* current run (not just this tick) -- index is the layer
+    // number, value is the outstanding push count. Same rationale as
+    // `pendingMomentaryPushCounts`: this used to be a `[Int]` array with one
+    // entry appended per push (unbounded across a whole run -- e.g.
+    // `repeat 255 { 1200x MO(n), delay(10ms) }` grows it by 306,000 entries
+    // over ~2.5s), and is now a fixed 16-slot array of counts instead.
+    // `finish()` reads this to emit exactly enough `.momentaryRelease`
+    // effects (at most one per layer, each carrying its own count) to leave
+    // `engine.momentaryCounts` balanced. `.toggle` steps never touch this.
+    private var momentaryPushCounts = [Int](repeating: 0, count: MacroPlayer.layerCount)
 
     /// Begins playing `macro`. Ignored while a macro is already playing.
     mutating func start(_ macro: MacroDefinition) {
@@ -125,22 +161,33 @@ struct MacroPlayer {
         repeatRemaining = 0
         leafKind = .none
         leafTextReleased = false
-        pendingLayerEffects = []
-        pushedMomentaryLayers = []
+        pendingMomentaryPushCounts = [Int](repeating: 0, count: MacroPlayer.layerCount)
+        pendingToggleFlips = [Bool](repeating: false, count: MacroPlayer.layerCount)
+        momentaryPushCounts = [Int](repeating: 0, count: MacroPlayer.layerCount)
     }
 
     /// Ends the current run and releases every momentary layer it pushed
-    /// (in reverse push order -- LIFO, though release order doesn't affect
-    /// whether the counts balance) so `engine.momentaryCounts` returns to
-    /// where it started. Called from every termination path: clean
-    /// completion in `loadNextStepAndTick()` and the unmappable-character
-    /// abort in `beginValidatedTextChar()` alike -- an abort that skipped
-    /// this would leave the same stuck-layer defect back in the door FIX 2
-    /// closed.
+    /// (one release per layer with an outstanding push, each carrying that
+    /// layer's full count -- order between layers doesn't affect whether
+    /// the counts balance) so `engine.momentaryCounts` returns to where it
+    /// started. Called from every termination path: clean completion in
+    /// `loadNextStepAndTick()` and the unmappable-character abort in
+    /// `beginValidatedTextChar()` alike -- an abort that skipped this would
+    /// leave the same stuck-layer defect back in the door FIX 2 closed.
     private mutating func finish() -> Output {
         activeMacroID = nil
-        let releases = pushedMomentaryLayers.reversed().map { LayerEffect.momentaryRelease($0) }
-        pushedMomentaryLayers = []
+        // At most `layerCount` (16) entries -- one per layer with an
+        // outstanding push, each carrying that layer's full count, rather
+        // than one entry per push (see `momentaryPushCounts`'s doc
+        // comment). Release order no longer matters now that pushes are
+        // collapsed to counts: `engine.removeMomentaryLayer` only ever
+        // decrements a single per-layer counter, which doesn't care which
+        // layer's counter is touched first.
+        var releases: [LayerEffect] = []
+        for layer in 0..<MacroPlayer.layerCount where momentaryPushCounts[layer] > 0 {
+            releases.append(.momentaryRelease(layer: layer, count: momentaryPushCounts[layer]))
+        }
+        momentaryPushCounts = [Int](repeating: 0, count: MacroPlayer.layerCount)
         return .finished(layerEffects: releases)
     }
 
@@ -164,20 +211,39 @@ struct MacroPlayer {
         return attachPendingLayerEffects(to: output)
     }
 
-    /// Merges any layer effects accumulated this call onto `output` and
-    /// clears them, so a single `tick()` call reports every `.layer` step it
-    /// passed through -- not just the last one -- while still returning
-    /// exactly one `Output` value.
+    /// Turns this call's per-layer counters into a bounded `[LayerEffect]`
+    /// list (at most `layerCount` momentary entries plus `layerCount`
+    /// toggle entries -- 32 total) and zeroes them, regardless of how many
+    /// `.layer` steps fed into them this tick.
+    private mutating func drainPendingLayerEffects() -> [LayerEffect] {
+        var effects: [LayerEffect] = []
+        for layer in 0..<MacroPlayer.layerCount {
+            if pendingMomentaryPushCounts[layer] > 0 {
+                effects.append(.momentary(layer: layer, count: pendingMomentaryPushCounts[layer]))
+                pendingMomentaryPushCounts[layer] = 0
+            }
+            if pendingToggleFlips[layer] {
+                effects.append(.toggle(layer))
+                pendingToggleFlips[layer] = false
+            }
+        }
+        return effects
+    }
+
+    /// Merges any layer effects accumulated this call onto `output`, so a
+    /// single `tick()` call reports every `.layer` step it passed through --
+    /// not just the last one -- while still returning exactly one `Output`
+    /// value.
     private mutating func attachPendingLayerEffects(to output: Output) -> Output {
-        guard !pendingLayerEffects.isEmpty else { return output }
-        defer { pendingLayerEffects = [] }
+        let pending = drainPendingLayerEffects()
+        guard !pending.isEmpty else { return output }
         switch output {
         case .idle:
             return output
         case .report(let report, let more):
-            return .report(report, layerEffects: pendingLayerEffects + more)
+            return .report(report, layerEffects: pending + more)
         case .finished(let more):
-            return .finished(layerEffects: pendingLayerEffects + more)
+            return .finished(layerEffects: pending + more)
         }
     }
 
@@ -249,16 +315,25 @@ struct MacroPlayer {
                 // A layer switch is main-loop arbitration -- this player is
                 // pure and cannot touch `LayerEngine` itself, so it records
                 // the effect for `tick()` to attach to whatever Output this
-                // call eventually produces (see `pendingLayerEffects`) and
-                // moves on; the step itself consumes no tick of its own.
-                // Momentary pushes are also remembered so `finish()` can
-                // release them when the macro ends -- toggle is not, since
-                // a toggle is meant to persist past the macro.
-                if momentary {
-                    pendingLayerEffects.append(.momentary(n))
-                    pushedMomentaryLayers.append(n)
-                } else {
-                    pendingLayerEffects.append(.toggle(n))
+                // call eventually produces (see `pendingMomentaryPushCounts`/
+                // `pendingToggleFlips`) and moves on; the step itself
+                // consumes no tick of its own. Momentary pushes are also
+                // remembered so `finish()` can release them when the macro
+                // ends -- toggle is not, since a toggle is meant to persist
+                // past the macro. `n` comes straight off the wire and is
+                // not bounds-checked upstream, so guard the accumulator
+                // index here the same way `LayerEngine.addMomentaryLayer`/
+                // `toggleLayer` guard theirs -- an out-of-range layer is
+                // already a no-op end-to-end (nothing ever reads a counter
+                // outside 0..<16), so dropping it here is exactly
+                // equivalent, not a behavior change.
+                if n >= 0 && n < MacroPlayer.layerCount {
+                    if momentary {
+                        pendingMomentaryPushCounts[n] += 1
+                        momentaryPushCounts[n] += 1
+                    } else {
+                        pendingToggleFlips[n].toggle()
+                    }
                 }
                 continue
 

@@ -181,7 +181,7 @@ import Testing
         Issue.record("expected the keystroke's hold report"); return
     }
     #expect(held.keys[0] == KeyCode.f1.rawValue)
-    #expect(firstEffects == [.momentary(2)])
+    #expect(firstEffects == [.momentary(layer: 2, count: 1)])
 
     // Tick 2: the release report, no new layer step reached yet.
     guard case .report(let release, let releaseEffects) = player.tick() else {
@@ -193,12 +193,18 @@ import Testing
     // Tick 3: the trailing .layer step is the last thing in the macro, so
     // it rides along with `.finished` instead of a report -- immediately
     // followed by both momentary pushes this run ever made (2, then 0)
-    // being released, in reverse order, since the macro is ending in this
-    // same tick.
+    // being released. Release order is by layer index now (see
+    // `finish()`'s doc comment -- it no longer matters for correctness),
+    // which for layers 0 and 2 happens to read the same as reverse-push
+    // order.
     guard case .finished(let lastEffects) = player.tick() else {
         Issue.record("expected finished"); return
     }
-    #expect(lastEffects == [.momentary(0), .momentaryRelease(0), .momentaryRelease(2)])
+    #expect(lastEffects == [
+        .momentary(layer: 0, count: 1),
+        .momentaryRelease(layer: 0, count: 1),
+        .momentaryRelease(layer: 2, count: 1),
+    ])
 }
 
 @Test func toggleLayerStepProducesToggleEffect() {
@@ -225,10 +231,10 @@ import Testing
     guard case .report(_, let effects) = player.tick() else {
         Issue.record("expected the delay's report"); return
     }
-    #expect(effects == [.momentary(1), .toggle(2)])
+    #expect(effects == [.momentary(layer: 1, count: 1), .toggle(2)])
 }
 
-// MARK: - Unbounded recursion (FIX 1)
+// MARK: - Unbounded recursion (FIX 1) and unbounded allocation (heap-fix review)
 
 @Test func hugeChainOfZeroTickStepsDoesNotOverflowTheStack() {
     // Regression for the whole-branch review's stack-overflow finding:
@@ -243,8 +249,21 @@ import Testing
     // FreeRTOS stack-overflow panic on ESP32-C6, silent memory corruption on
     // RP2040 (no MPU stack guard), on every press since the keymap lives in
     // flash. The `while true` loop this was rewritten as processes any
-    // number of zero-tick steps in constant stack space -- this test's own
-    // survival (and the correct effect count) is the regression guard.
+    // number of zero-tick steps in constant stack space.
+    //
+    // A follow-up review found the loop-based fix had traded that stack
+    // crash for an equally lethal *heap* crash: `pendingLayerEffects` used
+    // to be a `[LayerEffect]` array that grew one element per `.layer` step,
+    // so this exact payload built a ~5.5MB array (LayerEffect's stride is
+    // 16 bytes on 64-bit) in one `tick()` call -- on hardware with
+    // 264-512KB of total RAM. This test used to assert
+    // `effects.count == bodyLength * repeatCount` (344,250), which is the
+    // old bug enshrined as a passing assertion: it demanded exactly the
+    // giant allocation that made the payload lethal. The fix (see
+    // `MacroPlayer.pendingMomentaryPushCounts`/`momentaryPushCounts`)
+    // collapses per-layer effects to fixed-size counters (16 layers exist),
+    // so no `LayerEffect` list this produces can ever exceed 16 entries --
+    // asserted below instead of the old exact count.
     let bodyLength = 1350
     let repeatCount = 255
     let body = (0..<bodyLength).map { MacroStep.layer(momentary: false, n: $0 % 16) }
@@ -256,7 +275,9 @@ import Testing
     guard case .finished(let effects) = player.tick() else {
         Issue.record("expected the whole chain to finish within a single tick() call"); return
     }
-    #expect(effects.count == bodyLength * repeatCount)
+    // At most one entry per layer (16 layers exist) -- not one per `.layer`
+    // step, and nowhere near `bodyLength * repeatCount` (344,250).
+    #expect(effects.count <= MacroPlayer.layerCount)
 }
 
 // MARK: - Momentary layers auto-release when a macro ends
@@ -271,9 +292,12 @@ import Testing
 private func apply(_ effects: [LayerEffect], to engine: inout LayerEngine) {
     for effect in effects {
         switch effect {
-        case .momentary(let layer): engine.addMomentaryLayer(layer)
-        case .toggle(let layer): engine.toggleLayer(layer)
-        case .momentaryRelease(let layer): engine.removeMomentaryLayer(layer)
+        case .momentary(let layer, let count):
+            for _ in 0..<count { engine.addMomentaryLayer(layer) }
+        case .toggle(let layer):
+            engine.toggleLayer(layer)
+        case .momentaryRelease(let layer, let count):
+            for _ in 0..<count { engine.removeMomentaryLayer(layer) }
         }
     }
 }
