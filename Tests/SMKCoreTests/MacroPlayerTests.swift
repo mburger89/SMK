@@ -33,6 +33,27 @@ import Testing
     #expect(player.tick() == .finished())
 }
 
+@Test func zeroHoldMsStillPressesTheKeyForOneTick() {
+    // FIX 4: macroTicks(forMs: 0) == 0, so without a clamp this step would
+    // fall straight to tickKeystroke()'s release branch and the key would
+    // never be pressed at all -- a keystroke that "runs" but types nothing.
+    // The editor's UI sliders bound holdMs away from 0, but an imported or
+    // hand-edited macro's JSON decode defaults do not.
+    var player = MacroPlayer()
+    player.start(MacroDefinition(id: 0, steps: [
+        .keystroke(mods: 0, key: KeyCode.b.rawValue, holdMs: 0)
+    ]))
+    guard case .report(let held, _) = player.tick() else {
+        Issue.record("expected the key to be pressed for at least one tick"); return
+    }
+    #expect(held.keys[0] == KeyCode.b.rawValue)
+    guard case .report(let release, _) = player.tick() else {
+        Issue.record("expected a release report"); return
+    }
+    #expect(release.keys[0] == 0)
+    #expect(player.tick() == .finished())
+}
+
 @Test func keystrokeCarriesModifiers() {
     var player = MacroPlayer()
     player.start(MacroDefinition(id: 0, steps: [
@@ -66,6 +87,24 @@ import Testing
     _ = player.tick()   // release between characters
     guard case .report(let second, _) = player.tick() else {
         Issue.record("expected 'b'"); return
+    }
+    #expect(second.keys[0] == KeyCode.b.rawValue)
+}
+
+@Test func zeroMsPerCharStillTypesEachCharacterForOneTick() {
+    // FIX 4: same clamp as the keystroke case, for text. Without it,
+    // "cpm": 0 (which the JSON decode path doesn't bound away, unlike the
+    // editor's UI slider) would emit one empty report per character and
+    // run for the "right" total duration while typing nothing at all.
+    var player = MacroPlayer()
+    player.start(MacroDefinition(id: 0, steps: [.text("ab", msPerChar: 0)]))
+    guard case .report(let first, _) = player.tick() else {
+        Issue.record("expected 'a' to actually be pressed"); return
+    }
+    #expect(first.keys[0] == KeyCode.a.rawValue)
+    _ = player.tick()   // release between characters
+    guard case .report(let second, _) = player.tick() else {
+        Issue.record("expected 'b' to actually be pressed"); return
     }
     #expect(second.keys[0] == KeyCode.b.rawValue)
 }

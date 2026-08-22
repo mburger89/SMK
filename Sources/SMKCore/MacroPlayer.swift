@@ -173,7 +173,18 @@ struct MacroPlayer {
                 leafKind = .keystroke
                 leafMods = mods
                 leafKey = key
-                leafRemainingTicks = macroTicks(forMs: holdMs)
+                // `macroTicks` rounds up specifically so a sub-tick duration
+                // is never silently zero -- but it cannot save an actual
+                // `holdMs == 0` (the round-up formula is `(0 + 9) / 10 ==
+                // 0`), and the JSON decode path's defaults don't bound it
+                // away the way the editor's UI sliders do. Without this
+                // clamp the step falls straight to the release branch below
+                // and the key is never pressed at all: the report goes
+                // out with the key already released, on every hold this
+                // short. `max(1, ...)` matches the round-up rule's own
+                // stated intent -- every keystroke holds for at least one
+                // tick.
+                leafRemainingTicks = max(1, macroTicks(forMs: holdMs))
                 return tickKeystroke()
 
             case .delay(let ms):
@@ -310,7 +321,13 @@ struct MacroPlayer {
         leafKind = .text
         leafMods = shift ? Modifier.leftShift.rawValue : 0
         leafKey = usage
-        leafRemainingTicks = macroTicks(forMs: leafTextMsPerChar)
+        // Same reasoning as the keystroke step's clamp above: an imported
+        // or hand-edited macro's "cpm": 0 survives JSON decode (only the
+        // editor's UI sliders bound it away), and without this, a
+        // `msPerChar == 0` text step would emit one empty report per
+        // character and type nothing while still running for the right
+        // total duration.
+        leafRemainingTicks = max(1, macroTicks(forMs: leafTextMsPerChar))
         leafTextReleased = false
         return tickText()
     }
