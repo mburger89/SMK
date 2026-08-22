@@ -182,6 +182,18 @@ func decodeKeymapPayload(_ bytes: UnsafePointer<UInt8>?, count: Int) -> KeymapPa
     let cols = Array(UnsafeBufferPointer(start: bytes + offset, count: colCount))
     offset += colCount
 
+    // `layerRegionBytes` is 0 whenever rowCount or colCount is 0, regardless
+    // of layerCount -- so without this guard a header claiming e.g. 200
+    // layers of a 0x0 matrix would pass the size check below (0 <= count)
+    // and decode into 200 layers that are each an empty array of empty
+    // rows. `LayerEngine.loadKeymap(binary:)`'s own `!layers.isEmpty` check
+    // is true for that (the outer array has 200 elements), so it would
+    // replace a working keymap with one where every cell resolves to
+    // `.none` -- a six-byte payload permanently blanking the keyboard,
+    // recoverable only via the reset-held boot path. A declared layer with
+    // no rows or columns is never valid, so refuse it here instead.
+    guard layerCount == 0 || (rowCount > 0 && colCount > 0) else { return nil }
+
     let layerRegionBytes = layerCount * rowCount * colCount * 2
     guard offset + layerRegionBytes <= count else { return nil }
 
@@ -208,6 +220,16 @@ func decodeKeymapPayload(_ bytes: UnsafePointer<UInt8>?, count: Int) -> KeymapPa
         guard let macro = decodeMacroEntry(bytes, &offset, count) else { return nil }
         macros.append(macro)
     }
+
+    // Every length in this format is validated against bytes remaining
+    // *before* being read, but nothing previously checked that the whole
+    // payload was actually consumed by the header + matrix + layers +
+    // macros it declared -- inconsistent with decodeMacroStep's own
+    // strictness about exactly this for a repeat block's body (see
+    // `guard offset == bodyEnd` below). Trailing garbage past what the
+    // declared counts account for is a format error, not something to
+    // silently ignore.
+    guard offset == count else { return nil }
 
     return KeymapPayload(rows: rows, cols: cols, colsAreDriven: colsAreDriven, layers: layers, macros: macros)
 }

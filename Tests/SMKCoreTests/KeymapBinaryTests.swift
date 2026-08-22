@@ -89,6 +89,52 @@ private func samplePayload(layerCount: Int) -> [UInt8] {
     #expect(p == nil)
 }
 
+@Test func zeroByZeroMatrixWithLayersIsRejected() {
+    // The exact six-byte payload the whole-branch review found: rowCount=0,
+    // colCount=0, layerCount=200. layerRegionBytes is layerCount * rowCount
+    // * colCount * 2, which is 0 whenever rowCount or colCount is 0
+    // regardless of layerCount -- so this used to pass the size check
+    // (offset + 0 <= count) and decode into 200 layers that are each an
+    // empty array of empty rows. A declared layer with no rows or columns
+    // is never valid, so this must be refused at decode.
+    let attack: [UInt8] = [0, 0, 1, 200, 0, 0]
+    let p = attack.withUnsafeBufferPointer {
+        decodeKeymapPayload($0.baseAddress!, count: attack.count)
+    }
+    #expect(p == nil)
+}
+
+@Test func layerCountZeroWithZeroSizedMatrixIsStillAccepted() {
+    // The new rowCount>0/colCount>0 guard must only fire when layerCount >
+    // 0 -- a macro-only payload legitimately has layerCount == 0, and
+    // nothing about that requires a real matrix either. (In practice every
+    // real payload has a non-empty matrix regardless; this just confirms
+    // the guard's `layerCount == 0 ||` escape hatch doesn't overreach.)
+    let b: [UInt8] = [0, 0, 1, 0, 0, 0]  // header only: 0x0 matrix, 0 layers, 0 macros
+    let p = b.withUnsafeBufferPointer {
+        decodeKeymapPayload($0.baseAddress!, count: b.count)
+    }
+    #expect(p?.layers.isEmpty == true)
+    #expect(p?.rows.isEmpty == true)
+    #expect(p?.cols.isEmpty == true)
+}
+
+@Test func trailingBytesAfterAValidPayloadAreRejected() {
+    // decodeMacroStep is strict that a repeat block's body consumes
+    // exactly its declared bodyLength (see repeatBlockBodyLengthMismatchIsRejected
+    // above) -- the top-level payload decode had no equivalent check that
+    // decoding consumed the *whole* buffer. A trailing byte past everything
+    // the header's declared counts account for is a format error, the same
+    // as a mismatched repeat-block body, and must be refused rather than
+    // silently ignored.
+    var bytes = samplePayload(layerCount: 1)
+    bytes.append(0xFF)
+    let p = bytes.withUnsafeBufferPointer {
+        decodeKeymapPayload($0.baseAddress!, count: bytes.count)
+    }
+    #expect(p == nil)
+}
+
 @Test func sixteenLayersFitTheExistingCeiling() {
     // The claim this entire change rests on. 16 layers of a 5x12 board must
     // fit inside smkKeymapMaxLen with room left for macros -- that is why

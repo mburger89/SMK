@@ -114,7 +114,20 @@ struct LayerEngine {
             return
         }
 
-        if !payload.layers.isEmpty {
+        // `decodeKeymapPayload` now refuses a declared layer with a 0x0
+        // matrix at the source, so `payload.layers` being non-empty should
+        // already guarantee usable cells -- but `getAction`'s only defense
+        // for a keyboard is the data actually loaded here, so check for
+        // real content directly rather than trusting that invariant to
+        // hold forever as the decoder evolves. A layers array whose every
+        // layer is itself empty (no rows, or rows with no cells) is exactly
+        // as unusable as an empty layers array: every `getAction` call
+        // would resolve to `.none`, forever, recoverable only via the
+        // reset-held boot path -- so it must be refused the same way.
+        let hasUsableCells = payload.layers.contains { layer in
+            layer.contains { row in !row.isEmpty }
+        }
+        if !payload.layers.isEmpty && hasUsableCells {
             self.keymaps = payload.layers
             kb_log("Keymap loaded successfully")
         }
