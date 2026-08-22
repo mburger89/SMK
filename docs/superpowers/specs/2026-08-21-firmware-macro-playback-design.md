@@ -127,6 +127,13 @@ decodes to `nvs` 24 KB at 0x9000, `phy_init` 4 KB at 0xf000, and `factory`
 1024 KB at 0x10000 — ending at 0x110000 and leaving roughly **2.9 MB of a
 4 MB part unused**.
 
+> **Correction (2026-08-22).** The part is **2 MB, not 4 MB** — `idf.py build`
+> reports `--flash-size 2MB`. Free space after `factory` is therefore about
+> **0.9 MB**, not 2.9 MB. The figure above was inferred from a partition
+> table rather than measured, and this section is moot anyway since the
+> binary format removed the need for a dedicated partition. Recorded so the
+> number is not carried forward by anyone revisiting this.
+
 An earlier draft of this document proposed a 16 KB blob inside the 24 KB NVS
 partition. That was wrong: `BleHelper.swift:361` calls `nvs_flash_init()`,
 and NimBLE stores bonding keys in that same partition, so a large keymap
