@@ -11,6 +11,7 @@ let smkKeymapOpBegin: UInt8 = 0x01
 let smkKeymapOpChunk: UInt8 = 0x02
 let smkKeymapOpCommit: UInt8 = 0x03
 let smkKeymapOpErase: UInt8 = 0x04
+let smkKeymapOpCaps: UInt8 = 0x05
 
 let smkKeymapStatusOk: UInt8 = 0x00
 let smkKeymapStatusErr: UInt8 = 0x01
@@ -30,20 +31,26 @@ let smkKeymapStatusErr: UInt8 = 0x01
 // Sources/smk/Main.swift); this file just reuses that same-module
 // definition.
 
-// Testable core of the dispatch logic. The four storage operations are
-// injected rather than called directly so host tests can substitute fakes
-// instead of linking against the real (still-C-backed) NVS/flash storage
-// functions declared above. This also makes the opcode/length-validation
-// branching itself observable in isolation — e.g. a CHUNK packet with
-// chunk_len > smkKeymapPacketLen - 4 short-circuits to result = -1
+// Testable core of the dispatch logic. The five storage/capacity operations
+// are injected rather than called directly so host tests can substitute
+// fakes instead of linking against the real (still-C-backed) NVS/flash
+// storage functions declared above. This also makes the opcode/length-
+// validation branching itself observable in isolation — e.g. a CHUNK packet
+// with chunk_len > smkKeymapPacketLen - 4 short-circuits to result = -1
 // without ever invoking `writeChunk`.
+//
+// `caps` reports (macroBytes, macroSlots, keymapMaxLen) — the real per-port
+// values a board has for macro storage and keymap payload size, so the
+// configurator's capacity meter can show actual numbers instead of its
+// conservative floor estimate.
 func smkKeymapDispatchPacket(
     _ packet: UnsafePointer<UInt8>,
     _ response: UnsafeMutablePointer<UInt8>,
     beginWrite: (UInt16) -> Int32,
     writeChunk: (UInt16, UnsafePointer<UInt8>, UInt16) -> Int32,
     commit: (UInt32) -> Int32,
-    erase: () -> Void
+    erase: () -> Void,
+    caps: () -> (macroBytes: UInt16, macroSlots: UInt8, keymapMaxLen: UInt16)
 ) {
     for i in 0..<smkKeymapPacketLen { response[i] = 0 }
     let opcode = packet[0]
@@ -67,12 +74,52 @@ func smkKeymapDispatchPacket(
     case smkKeymapOpErase:
         erase()
         result = 0
+    case smkKeymapOpCaps:
+        let (macroBytes, macroSlots, keymapMaxLen) = caps()
+        response[2] = UInt8(macroBytes & 0xFF)
+        response[3] = UInt8((macroBytes >> 8) & 0xFF)
+        response[4] = macroSlots
+        response[5] = UInt8(keymapMaxLen & 0xFF)
+        response[6] = UInt8((keymapMaxLen >> 8) & 0xFF)
+        result = 0
     default:
         result = -1
     }
 
     response[0] = (result == 0) ? smkKeymapStatusOk : smkKeymapStatusErr
     response[1] = opcode
+}
+
+// The real values every port's `caps` closure supplies. Pulled out as a
+// plain, host-testable function (rather than inlined into the `@_cdecl`
+// wrapper below, which only compiles for embedded targets) so its values
+// are pinned by a test instead of only reviewed by eye.
+//
+// macroBytes reports the whole payload budget (smkKeymapMaxLen), not a
+// macro-only allowance -- there isn't one. The binary format gives macros
+// and layers one shared budget inside the keymap payload rather than a
+// separate flash region, so macro headroom is dynamic: whatever the
+// compiled layers do not use. Only the editor knows that, since it compiles
+// the layers; the board can only report the shared ceiling and let the
+// editor subtract its own layer size from it. macroBytes == keymapMaxLen
+// below is therefore intentional, not a copy-paste bug -- they answer
+// different questions that currently share the same number.
+//
+// macroSlots reports the id space of a one-byte macro slot: ids 0-255, which
+// is 256 distinct values. But the macroSlots field on the wire is *also* one
+// byte, so 256 itself cannot be represented -- 255 (UInt8.max) is reported
+// instead, understating the true id space by exactly one slot. That is
+// deliberate, not a rounding bug: understating is the safe direction (the
+// editor refuses a 256th macro that would in fact have fit, rather than
+// accepting a 256th that does not exist), and 255 macros exhausts the
+// shared payload budget (macroBytes above) many times over long before the
+// slot count would matter for any realistic keymap. Widening this field to
+// two bytes to recover that single slot would churn a wire format three
+// independent implementations (this decoder, the configurator's compiler,
+// and whichever port supplies these values) must agree on -- not worth it
+// to report one more slot than any board can ever actually use.
+func smkKeymapRealCaps() -> (macroBytes: UInt16, macroSlots: UInt8, keymapMaxLen: UInt16) {
+    (macroBytes: UInt16(smkKeymapMaxLen), macroSlots: UInt8.max, keymapMaxLen: UInt16(smkKeymapMaxLen))
 }
 
 #if SMK_TARGET_ESP32C6 || SMK_TARGET_RP2040 || SMK_TARGET_NRF52840 || SMK_TARGET_STM32F4 || SMK_TARGET_STM32WB || SMK_TARGET_SAMD21
@@ -90,7 +137,8 @@ func smk_keymap_dispatch_packet(_ packet: UnsafePointer<UInt8>, _ response: Unsa
         beginWrite: smk_keymap_begin_write,
         writeChunk: smk_keymap_write_chunk,
         commit: smk_keymap_commit,
-        erase: smk_keymap_erase
+        erase: smk_keymap_erase,
+        caps: smkKeymapRealCaps
     )
 }
 

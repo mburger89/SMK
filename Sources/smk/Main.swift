@@ -85,6 +85,74 @@ func smk_default_mode_is_wired() -> Int32
 // coexist with an @_extern(c, ...) forward declaration of the same name
 // ("invalid redeclaration").
 
+// Loads the compiled-in default keymap. Binary (Task 7 -- see
+// generate_default_keymap.sh and the generated
+// Sources/SMKCore/DefaultKeymapGenerated.swift) for the three boards whose
+// default is byte-for-byte the ~/esp/SMK/keymap.json layout (verified by
+// diffing every board's `configJson` "layers" array against that file):
+// SMK_BOARD_NRF52840DK, SMK_BOARD_KBD_RP2040, and this file's `#else` board
+// (smk_kbd / ESP32-C6) -- only their GPIO matrix pins differ between each
+// other, which `Config.fromJson(configJson)` above already handles
+// separately from this call. The other five bring-up boards
+// (SMK_BOARD_FEATHER_NRF52840, SMK_BOARD_STM32F4_BLACKPILL, SMK_BOARD_XIAO_M0,
+// SMK_BOARD_STM32WB_NUCLEO, SMK_BOARD_TEST_BOARD) ship their own smaller /
+// placeholder layouts that keymap.json does not describe (see each board's
+// own `configJson` block below), so they keep parsing their own JSON
+// literal here rather than silently loading the wrong default.
+//
+// `configJson` itself is NOT retired by this: `Config.fromJson(configJson)`
+// (Sources/SMKCore/Config.swift) still parses every board's "matrix" object
+// for its GPIO rowPins/colPins/colsAreDriven ahead of this call, so cJSON
+// stays linked for that regardless of which branch below runs.
+func loadCompiledDefaultKeymap(into engine: inout LayerEngine, configJson: String) {
+    #if SMK_BOARD_FEATHER_NRF52840 || SMK_BOARD_STM32F4_BLACKPILL || SMK_BOARD_XIAO_M0 || SMK_BOARD_STM32WB_NUCLEO || SMK_BOARD_TEST_BOARD
+    engine.loadKeymap(json: configJson)
+    #else
+    defaultKeymapBytes.withUnsafeBufferPointer { ptr in
+        if let base = ptr.baseAddress {
+            engine.loadKeymap(binary: base, count: ptr.count)
+        }
+    }
+    #endif
+}
+
+// Applies the layer effects `MacroPlayer.tick()` handed back for a `.layer`
+// macro step (or for the end of a macro run) -- the player is pure and
+// cannot call these itself (see MacroPlayer.swift's `LayerEffect` doc
+// comment), so this main-loop arbitration is the only place that does.
+// `.momentary`/`.toggle` mirror the press-transition half of
+// `KeyEventProcessing.processKeyEvents`'s `.momentaryLayer`/`.toggleLayer`
+// handling. `.momentaryRelease` is the player's own doing, not a macro
+// step: it releases a momentary layer the same run pushed earlier, emitted
+// when that run terminates (clean finish or an abort alike) so a momentary
+// layer never stays stuck active with no macro left to release it -- there
+// is no "release layer" step type a macro author could write themselves.
+// Applied in order, since a single tick can carry more than one effect
+// (consecutive `.layer` steps each consume no tick of their own, and a
+// terminating tick's pushes-just-now precede that same tick's releases).
+func applyMacroLayerEffects(_ effects: [LayerEffect], to engine: inout LayerEngine) {
+    for effect in effects {
+        switch effect {
+        case .momentary(let layer, let count):
+            // `count` collapses what used to be `count` separate
+            // `.momentary` entries (one per push within a tick, or across
+            // a whole run for the matching release below) into one -- see
+            // `LayerEffect`'s doc comment. Applying it via `count`
+            // individual pushes is exactly equivalent, since
+            // `addMomentaryLayer` only ever increments one per-layer `Int`.
+            for _ in 0..<count {
+                engine.addMomentaryLayer(layer)
+            }
+        case .toggle(let layer):
+            engine.toggleLayer(layer)
+        case .momentaryRelease(let layer, let count):
+            for _ in 0..<count {
+                engine.removeMomentaryLayer(layer)
+            }
+        }
+    }
+}
+
 @_cdecl("app_main_swift")
 func app_main_swift() {
     kb_log("Initialising SMK Keyboard...")
@@ -454,35 +522,54 @@ func app_main_swift() {
 
     // Load a previously-uploaded keymap from the on-device store in place
     // of the compiled default. keymapBufSize must exceed the store's
-    // SMK_KEYMAP_MAX_LEN (4085) by at least 1 byte for the null terminator.
+    // SMK_KEYMAP_MAX_LEN (4085) -- the buffer now holds a raw binary
+    // (frame version 2) payload, not a null-terminated JSON C string, so
+    // the old "+1 for the null terminator" no longer applies; kept as
+    // slack above smkKeymapMaxLen regardless.
     let keymapBufSize = 4096
     var keymapBuf = [Int8](repeating: 0, count: keymapBufSize)
     var loadedFromStore = false
+    // Declared outside the `if !resetHeld` block: smk_keymap_load's return
+    // is also the exact payload byte count `loadKeymap(binary:count:)`
+    // below needs, not just a load/no-load flag.
+    var storedLen: Int32 = -1
     if !resetHeld {
-        let storedLen = keymapBuf.withUnsafeMutableBufferPointer { ptr -> Int32 in
+        storedLen = keymapBuf.withUnsafeMutableBufferPointer { ptr -> Int32 in
             guard let base = ptr.baseAddress else { return -1 }
             return smk_keymap_load(base, UInt32(ptr.count))
         }
         if storedLen >= 0 {
-            keymapBuf[Int(storedLen)] = 0
             loadedFromStore = true
         }
     }
 
     if loadedFromStore {
+        // smk_keymap_load already ran smkKeymapFrameValidate (magic,
+        // frameVersion == 2, length, CRC32) before returning a
+        // non-negative length, so what's sitting in keymapBuf is a
+        // validated version-2 binary payload -- decode it as one, not as
+        // a JSON C string (the two used to be the same null-terminated
+        // buffer by coincidence; they have not been since the frame
+        // format moved to binary). Pass storedLen, the real payload byte
+        // count, not keymapBufSize/ptr.count (the buffer's capacity) --
+        // decodeKeymapPayload's bounds checks are strict by design, and a
+        // count longer than the actual payload makes it reject good data
+        // instead of accepting garbage.
         keymapBuf.withUnsafeBufferPointer { ptr in
             if let base = ptr.baseAddress {
-                engine.loadKeymap(cJsonStr: base)
+                base.withMemoryRebound(to: UInt8.self, capacity: Int(storedLen)) { bytes in
+                    engine.loadKeymap(binary: bytes, count: Int(storedLen))
+                }
             }
         }
         if engine.keymaps.isEmpty {
             kb_log("Stored keymap invalid, falling back to compiled default")
-            engine.loadKeymap(json: configJson)
+            loadCompiledDefaultKeymap(into: &engine, configJson: configJson)
         } else {
             kb_log("Loaded keymap from on-device store")
         }
     } else {
-        engine.loadKeymap(json: configJson)
+        loadCompiledDefaultKeymap(into: &engine, configJson: configJson)
     }
 
     let totalKeys = cfg.rowPins.count * cfg.colPins.count
@@ -493,6 +580,7 @@ func app_main_swift() {
     var lastSentReport = HIDReport()
     var lastSentMode = currentMode
     var pressedActions: [KeyAction] = [KeyAction](repeating: .none, count: totalKeys)
+    var macroPlayer = MacroPlayer()
 
     #if SMK_TARGET_ESP32C6
     // Battery voltage changes slowly, so polling it every scan tick would
@@ -519,7 +607,38 @@ func app_main_swift() {
             currentMode: &currentMode
         )
         lastScan = cleanScan
-        report = result.report
+
+        if !macroPlayer.isActive, let slot = result.macroEvents.first,
+           let macro = engine.macros.first(where: { $0.id == slot }) {
+            macroPlayer.start(macro)
+        }
+
+        if macroPlayer.isActive {
+            switch macroPlayer.tick() {
+            case .report(let r, let layerEffects):
+                report = r
+                applyMacroLayerEffects(layerEffects, to: &engine)
+            case .finished(let layerEffects):
+                // No lastScan reset here, deliberately: processKeyEvents
+                // runs every tick against the live matrix regardless of
+                // macro state, so a key released mid-playback is already
+                // observed the instant it happens -- nothing to repair
+                // once the macro ends. A still-held macro key is exactly
+                // that case: lastScan already shows it down, so this
+                // frame's report clear does NOT produce a fresh press on
+                // the next tick, and the macro fires once per press
+                // rather than auto-repeating for as long as the key is
+                // held. Forcing lastScan back to all-false here was tried
+                // and reverted -- it reintroduced the "Repeat while held"
+                // behavior this project deliberately dropped elsewhere for
+                // having no model field behind it.
+                report = HIDReport()
+                applyMacroLayerEffects(layerEffects, to: &engine)
+            case .idle: break
+            }
+        } else {
+            report = result.report
+        }
 
         #if SMK_RGB_AVAILABLE
         for t in result.transitions {

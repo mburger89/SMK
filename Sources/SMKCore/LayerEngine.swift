@@ -39,6 +39,9 @@ enum KeyAction: Equatable {
     case toggleLayer(Int)
     case transparent
     case toggleConnection
+    /// Runs the macro in slot `n`. Must stay in lockstep with
+    /// `ActionToken.macro` in the configurator.
+    case macro(Int)
 
     static func fromCString(_ cStr: UnsafePointer<Int8>) -> KeyAction {
         if strcmp(cStr, "none") == 0 { return .none }
@@ -59,6 +62,18 @@ enum KeyAction: Equatable {
             let val = Int(atoi(cStr.advanced(by: 3)))
             return .toggleLayer(val)
         }
+        if strncmp(cStr, "macro:", 6) == 0 {
+            let rest = cStr.advanced(by: 6)
+            // atoi returns 0 for non-numeric input, which would silently
+            // turn "macro:abc" into .macro(0) -- a real macro slot. Guard
+            // that the first character after the prefix is actually a
+            // digit before trusting atoi's result.
+            let firstChar = rest.pointee
+            if firstChar >= 0x30 && firstChar <= 0x39 {
+                return .macro(Int(atoi(rest)))
+            }
+            return .none
+        }
 
         return .none
     }
@@ -69,9 +84,69 @@ struct LayerEngine {
     private var momentaryCounts: [Int] = [Int](repeating: 0, count: 16)
 
     private(set) var keymaps: [[[KeyAction]]] = []
-    
+    /// Macros decoded from the version-2 binary payload by
+    /// `loadKeymap(binary:count:)`. Always empty on the JSON
+    /// (`loadKeymap(json:)`/`loadKeymap(cJsonStr:)`) path -- macros never
+    /// rode in the JSON format.
+    private(set) var macros: [MacroDefinition] = []
+
     mutating func loadKeymap(json: String) {
         json.withCString { loadKeymap(cJsonStr: $0) }
+    }
+
+    // Loads a keymap from a version-2 binary payload -- the bytes
+    // immediately following the 11-byte frame header, once
+    // `smkKeymapFrameValidate` has already confirmed the frame's magic,
+    // version, length and CRC. `bytes` must point to at least `count`
+    // readable bytes. See KeymapBinary.swift and
+    // docs/superpowers/specs/2026-08-21-binary-keymap-format-design.md for
+    // the payload layout this decodes.
+    //
+    // Mirrors loadKeymap(cJsonStr:)'s caution around a malformed/empty
+    // result: an undecodable payload or a payload with zero layers leaves
+    // `keymaps` untouched rather than clobbering a previously-loaded (or
+    // compiled-in default) keymap with nothing. `macros` is always replaced
+    // with whatever decoded, including an empty list -- a keymap legitimately
+    // can have zero macros, unlike zero layers.
+    mutating func loadKeymap(binary bytes: UnsafePointer<UInt8>, count: Int) {
+        guard let payload = decodeKeymapPayload(bytes, count: count) else {
+            kb_log("Binary keymap payload invalid")
+            return
+        }
+
+        // `decodeKeymapPayload` now refuses a declared layer with a 0x0
+        // matrix at the source, so `payload.layers` being non-empty should
+        // already guarantee usable cells -- but `getAction`'s only defense
+        // for a keyboard is the data actually loaded here, so check for
+        // real content directly rather than trusting that invariant to
+        // hold forever as the decoder evolves. A layers array whose every
+        // layer is itself empty (no rows, or rows with no cells) is exactly
+        // as unusable as an empty layers array: every `getAction` call
+        // would resolve to `.none`, forever, recoverable only via the
+        // reset-held boot path -- so it must be refused the same way.
+        let hasUsableCells = payload.layers.contains { layer in
+            layer.contains { row in !row.isEmpty }
+        }
+        // All-or-nothing: an invalid payload must not clobber working
+        // state, and that has to include `macros`, not just `keymaps`. This
+        // used to assign `self.macros = payload.macros` unconditionally,
+        // so a rejected (e.g. `layerCount == 0`) payload still installed
+        // its macros while the keymap fell back to the compiled default --
+        // contradicting the rule stated above. Harmless today only because
+        // the compiled default has no `macro:` cells to trigger them; still
+        // wrong on its own terms.
+        if !payload.layers.isEmpty && hasUsableCells {
+            self.keymaps = payload.layers
+            self.macros = payload.macros
+            // Says "binary" rather than just "loaded" because the JSON
+            // loader below logs from the same message otherwise, and after
+            // the v1->v2 format migration the one thing worth knowing from
+            // a boot log is which format the board actually accepted.
+            // Reading the source to work that out -- as I had to after the
+            // first hardware flash -- is exactly the diagnosis this line
+            // should be saving someone.
+            kb_log("Keymap loaded successfully (binary)")
+        }
     }
 
     // Parses a keymap already available as a C string — used both by
@@ -121,7 +196,9 @@ struct LayerEngine {
 
         if !newKeymaps.isEmpty {
             self.keymaps = newKeymaps
-            kb_log("Keymap loaded successfully")
+            // See the binary loader's note: these two must stay
+            // distinguishable in a boot log.
+            kb_log("Keymap loaded successfully (JSON)")
         }
     }
 

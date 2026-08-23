@@ -124,7 +124,7 @@ Produces `build_samd21/smk_samd21.uf2`. Flash by double-tapping the XIAO M0's re
 
 Same flat-file-compilation treatment as `Sources/smk/` — no module boundary in the real build. These files have zero hardware/`@_extern` calls, so `Package.swift` also exposes them as a real `SMKCore` library target for host-side testing (`swift test`, no ESP-IDF/pico-sdk needed). See `docs/superpowers/specs/2026-08-09-host-unit-tests-design.md`.
 
-**A new file here is invisible to the embedded builds until it is listed in all six build files that enumerate SMKCore sources explicitly** — `main/CMakeLists.txt` plus `ports/{rp2040,nrf52840,samd21,stm32f4,stm32wb}/CMakeLists.txt`. `Package.swift` needs no change, since its `SMKCore` target globs the directory — which is exactly the trap: a missing CMake entry still passes `swift test` and only surfaces as a link failure on real hardware.
+**A new file here is invisible to the embedded builds until it is listed in all six build files that enumerate SMKCore sources explicitly** — `main/CMakeLists.txt` plus `ports/{rp2040,nrf52840,samd21,stm32f4,stm32wb}/CMakeLists.txt`. `Package.swift` needs no change, since its `SMKCore` target globs the directory — which is exactly the trap: a missing CMake entry still passes `swift test` and only surfaces as a link failure on real hardware. `KeymapBinary.swift`, `AsciiKeycodes.swift`, `MacroPlayer.swift`, and `DefaultKeymapGenerated.swift` (see below) are the four files the binary-keymap-format work added to all six lists together — a template for what "new SMKCore file" actually means in practice.
 
 | File | Responsibility |
 |---|---|
@@ -134,10 +134,14 @@ Same flat-file-compilation treatment as `Sources/smk/` — no module boundary in
 | `HIDReport.swift` | HID report byte-building |
 | `Config.swift` | matrix-config JSON parsing |
 | `LayerEngine.swift` | keymap JSON loading, layer state, action resolution. Holds `KeyAction`/`Modifier` `fromCString` — the token *grammar*. The key *vocabulary* it dispatches into lives in `KeyCodesGenerated.swift` |
+| `KeymapBinary.swift` | **the binary keymap decoder.** `decodeKeymapPayload` turns a version-2 binary payload (see "Binary Keymap Payload Format" below) into a `KeymapPayload` of layers/macros; `encodeCell`/`decodeCell` are the two-byte cell codec. One of three implementations of this format that must be kept in lockstep — see below |
 | `KeyCodesGenerated.swift` | **GENERATED — do not edit.** `KeyCode` enum, its HID-usage `rawValue`, and `fromCString`. Produced by `./generate_keycodes.sh` from `keycodes.json`, which is the single source of the key vocabulary for this repo *and* smk_configurator. Adding a key means editing the manifest and re-running the script, then committing the regenerated file in **both** repos (same pattern as `generate_ble_uuids.sh`). The configurator's `KeyVocabularyTests` pins the agreement by HID usage |
+| `DefaultKeymapGenerated.swift` | **GENERATED — do not edit.** `defaultKeymapBytes: [UInt8]`, the compiled-in default keymap pre-encoded in the version-2 binary payload format (`KeymapBinary.swift`'s `decodeKeymapPayload`). Produced by `./generate_default_keymap.sh` from `keymap.json` and `keycodes.json` (HID usages come from the same manifest `generate_keycodes.sh` reads — not hardcoded). `KeymapBinaryTests`' `compiledDefaultKeymapRoundTrips` pins the generator against the decoder |
+| `AsciiKeycodes.swift` | maps a printable-ASCII byte to the HID keystroke (usage + shift) that types it, for a macro's "type this text" step. Assumes US QWERTY on the host — see "Binary Keymap Payload Format" below for why it can't be generated from `keycodes.json` |
 | `HIDReportMap.swift` | BLE HID-over-GATT keyboard report map, shared by `Sources/smk/BleHelper.swift` (esp_hidd) and `ports/common/BleHidGatt.swift` (BTstack). Hoisted out of those two files, which held byte-identical copies. Declares the keycode array's Logical/Usage Maximum as 255 — it was 101 (`application`), which silently excluded every usage above it |
 | `LEDChainMapping.swift` | serpentine row/col -> RGB chain-position mapping |
 | `KeyEventProcessing.swift` | press/release edge detection, layer toggle/momentary add-remove, connection-toggle decision, HID report assembly — the scan loop calls this once per cycle |
+| `MacroPlayer.swift` | plays one macro back as HID reports, advanced once per scan tick by the same main loop that calls `KeyEventProcessing.swift` — see "Binary Keymap Payload Format" below for its timing/ownership rules |
 | `Logging.swift` | host-only `kb_log` no-op shim (not compiled into the embedded build) |
 | `KeymapFrame.swift` | shared keymap-store frame format: CRC32 + 11-byte header pack/unpack, extracted from what were three duplicated per-target copies |
 | `KeymapProtocol.swift` | shared BEGIN/CHUNK/COMMIT/ERASE packet dispatch for the runtime keymap upload protocol, transport-agnostic; storage operations are injected so this is host-testable |
@@ -313,7 +317,66 @@ Other known gaps on this port, briefly (build-only pass):
 
 ### Keymap Configuration
 
-The active keymap is the `configJson` string literal in `Sources/smk/Main.swift`. The `keymap.json` at the repo root is a reference copy — changes there do **not** affect the firmware until copied into `Main.swift`.
+The default keymap for the smk_kbd board (`Sources/smk/Main.swift`'s `#else` branch), `SMK_BOARD_NRF52840DK`, and `SMK_BOARD_KBD_RP2040` is `keymap.json` at the repo root, compiled at build time by `./generate_default_keymap.sh` into `Sources/SMKCore/DefaultKeymapGenerated.swift`'s `defaultKeymapBytes` — edit `keymap.json` and re-run the script, then commit the regenerated file (same generated-file pattern as `KeyCodesGenerated.swift`). `Main.swift` loads it via `LayerEngine.loadKeymap(binary:count:)`, not JSON, for those three boards. The other five bring-up boards (`SMK_BOARD_FEATHER_NRF52840`, `SMK_BOARD_STM32F4_BLACKPILL`, `SMK_BOARD_XIAO_M0`, `SMK_BOARD_STM32WB_NUCLEO`, `SMK_BOARD_TEST_BOARD`) ship smaller/placeholder layouts that `keymap.json` does not describe, and keep loading their own per-board `configJson` string literal via `loadKeymap(json:)` — see `loadCompiledDefaultKeymap(into:configJson:)` in `Main.swift` for the board gate.
+
+**cJSON is not retired — do not assume it is.** Every board's `configJson` literal still exists and is still parsed by cJSON regardless of the above: `Config.fromJson(configJson)` reads each board's `"matrix"` object (GPIO `rows`/`cols`/`colsAreDriven`) at boot, independent of where the layer data comes from, so cJSON stays linked on every target. And five of the eight boards above (`SMK_BOARD_FEATHER_NRF52840`, `SMK_BOARD_STM32F4_BLACKPILL`, `SMK_BOARD_XIAO_M0`, `SMK_BOARD_STM32WB_NUCLEO`, `SMK_BOARD_TEST_BOARD`) still load their *layers* as JSON too, via `LayerEngine.loadKeymap(json:)` → `loadKeymap(cJsonStr:)`. Only the **uploaded/stored** keymap path is JSON-free now: `Main.swift`'s stored-keymap boot path (`smk_keymap_load` → `engine.loadKeymap(binary:count:)`) decodes the version-2 binary frame directly, with no cJSON involved. Retiring cJSON from the rest of the boot path is a deferred, separate project — see `docs/superpowers/specs/2026-08-21-retire-cjson-design.md`.
+
+### Binary Keymap Payload Format
+
+The runtime keymap store and the compiled-in default both hold a **version-2 binary payload**, not JSON. Full design rationale (the JSON-vs-binary size measurement, the decision to compile the whole keymap rather than enlarge storage, etc.) is in `docs/superpowers/specs/2026-08-21-binary-keymap-format-design.md` — what follows is the byte contract itself, reproduced in full rather than summarized, since a paraphrase is exactly what drifts out of sync silently. The configurator's own binary compiler does not exist yet (as of this writing) and its `CLAUDE.md` does not document this contract yet either — do not assume that document carries it; this is the authoritative copy until that changes.
+
+```
+header    rowCount(1) colCount(1) colsAreDriven(1)
+          layerCount(1) macroCount(1) reserved(1)
+          rows[rowCount](1 each)   GPIO numbers
+          cols[colCount](1 each)
+layers    layerCount * rowCount * colCount * 2 bytes
+macros    macroCount entries
+```
+
+A cell is two bytes: an action tag, then its parameter.
+
+| Tag | Action | Parameter |
+|---|---|---|
+| 0 | `none` | 0 |
+| 1 | `key:` | HID usage |
+| 2 | `mod:` | modifier bit |
+| 3 | `mo:` | layer index |
+| 4 | `tg:` | layer index |
+| 5 | `trans` | 0 |
+| 6 | `toggle_conn` | 0 |
+| 7 | `macro:` | slot |
+
+A compiled macro is `id(1) + nameLength(1) + name + stepCount(1) + steps`:
+
+| step | opcode | layout |
+|---|---|---|
+| keystroke | `0x01` | `opcode(1) + mods(1) + keycode(1) + holdMs(2)` = 5 |
+| delay | `0x02` | `opcode(1) + ms(2)` = 3 |
+| layer | `0x03` | `opcode(1) + op(1) + index(1)` = 3 |
+| text | `0x04` | `opcode(1) + delivery(1) + msPerChar(1) + length(1) + payload` = 4 + n |
+| repeat | `0x05` | `opcode(1) + count(1) + bodyLength(2) + body` = 4 + body |
+
+All multi-byte fields (`holdMs`, `ms`, `bodyLength`) are little-endian. `mods` bits 0–7 are `Modifier`'s declaration order (`leftCtrl, leftShift, leftAlt, leftGUI, rightCtrl, rightShift, rightAlt, rightGUI`) — the same bit order as a standard USB HID keyboard report, so a `mods` byte ORs straight into a report. `op` is `0x00` momentary (`"mo"`) / `0x01` toggle (`"tg"`). `delivery` is `0x00` keystrokes / `0x01` paste — paste is unimplementable board-side and the editor already refuses to save it, but the byte stays in the stride rather than churning a layout three implementations share.
+
+**Three implementations of this format now exist, and nothing but tests keeps them agreeing** — a change to the tag table, the header layout, or the macro-step layout has to land in all three:
+- `Sources/SMKCore/KeymapBinary.swift` — the decoder (`decodeKeymapPayload`)
+- `generate_default_keymap.sh` — the build-time generator of the compiled-in default
+- the configurator's compiler (`KeymapDocument` → binary payload) — not yet written; lives in `~/esp/smk_configurator`
+
+**The `init?(rawValue:)` landmine — read this before writing any decoder for this format.** `KeyCode` and `Modifier` both override their synthesized `rawValue` *getter* to return real HID usages / bit masks (`KeyCodesGenerated.swift:178`'s own warning comment; `Modifier.swift`), but the compiler still synthesizes `init?(rawValue:)` against **ordinal case position**, not the overridden value. `KeyCode(rawValue: 0x04)` returns whichever case sits fifth in declaration order (ordinal 4, zero-based), not `.a` — whose HID usage just happens to *be* `0x04`. Code that calls `KeyCode(rawValue: wireByte)` to decode a wire byte compiles cleanly and decodes every key wrong, with nothing to catch it short of hardware. `KeymapBinary.swift`'s private `keyCode(fromHIDUsage:)` / `modifier(fromBit:)` are the correct pattern instead: walk `T(rawValue: 0)`, `T(rawValue: 1)`, ... (a valid use of the synthesized initializer as a pure ordinal enumerator) and compare each candidate's real `.rawValue` against the wire byte, rather than ever passing a wire byte to `T(rawValue:)` directly.
+
+**Frame version 2.** The 11-byte store frame (magic/version/length/CRC32, layout unchanged — see `KeymapFrame.swift`) bumps its version byte from 1 (JSON) to 2 (this binary payload). A version-1 frame — written by pre-this-change firmware — fails the version check and is rejected outright, falling back to the compiled-in default, the same safe path an already-corrupt frame takes. This *is* the whole migration story: the frame stays at the same offset and size, so an old frame fails a clean version check instead of being misread as garbage at a shifted offset.
+
+**16 layers now fit.** The previously documented 16-layer ceiling (`LayerEngine` sizes `toggledLayers`/`momentaryCounts` at 16, and the configurator enforces `maxLayerCount = 16`) was never actually reachable at JSON's ~11.9 bytes/cell — real capacity topped out around five layers, and nothing reported the shortfall; a user just failed to upload. At two bytes/cell, for the smk_kbd board's 5×12 matrix: `6 (header) + 5 (rows) + 12 (cols) + (16 layers × 5 rows × 12 cols × 2 bytes) = 1,943 bytes`, against the existing 4,085-byte store (`smkKeymapMaxLen`) — all 16 layers fit with roughly 2 KB left over for macros.
+
+**`AsciiKeycodes.swift` assumes US QWERTY** on the host — the board has no way to detect the host's actual keyboard layout, so a macro's "type this text" step types the wrong characters on a non-QWERTY host; this is the standard assumption boot-protocol keyboards make. It cannot be generated from `keycodes.json` the way `KeyCodesGenerated.swift` is: that manifest maps key *names* to HID usages and carries no shift state, so `'A'` vs `'a'` or `'!'` vs `'1'` have no entry there. It is hand-written and pinned by `AsciiKeycodesTests` against `KeyCode` so it can't silently drift from the generated vocabulary.
+
+**`MacroPlayer.swift`** plays one macro back as HID reports, advanced once per scan tick from `Main.swift`'s main loop. Timing quantizes to the 10 ms scan tick (`macroTicks(forMs:)`, matching `CONFIG_FREERTOS_HZ=100`) and **rounds milliseconds up**, so a sub-tick duration (e.g. 5 ms) still takes one tick rather than silently becoming zero. A playing macro **owns the HID report** for every tick it plays — the scan loop substitutes `macroPlayer.tick()`'s report for the normal per-key report while a macro is active (`report = r` in the `.report` case), rather than merging the two. A macro runs **once per press, not repeatedly while the trigger key is held**: playback starts on the press edge (`KeyEventProcessing.swift`'s `macroEvents`), `MacroPlayer.start(_:)` is a no-op while one is already playing, and no `lastScan` reset happens when playback finishes — so a still-held macro key is already reflected in `lastScan` and does not look like a fresh press once the macro ends (this was tried the other way and reverted; see the comment at the `.finished` case in `Main.swift`).
+
+**`CAPS` opcode `0x05`** (`smkKeymapOpCaps` in `KeymapProtocol.swift`) is a new upload-protocol packet type alongside BEGIN/CHUNK/COMMIT/ERASE that reports real per-port capacity — `macroBytes`, `macroSlots`, `keymapMaxLen` — so the configurator's capacity meter can show real numbers instead of a conservative floor estimate. Two of the reported values look like bugs but aren't:
+- **`macroBytes` equals `keymapMaxLen`** — not a copy-paste error. Macros and layers share one budget inside the keymap payload rather than having a separate flash region, so there is no macro-only allowance to report; the board reports the shared ceiling and only the editor, which compiles the layers, knows how much of it is left for macros.
+- **`macroSlots` is `255` (`UInt8.max`), not `256`**, even though a macro id is a full byte (0–255, 256 distinct values) — because the `macroSlots` field on the wire is itself one byte, which cannot represent 256. Understating by one is the safe direction (the editor refuses a 256th macro that would in fact have fit, rather than accepting one that doesn't exist), and 255 macros exhausts the shared byte budget many times over before the slot count would matter for any real keymap.
 
 ### RGB Backlight (opt-in, off by default)
 

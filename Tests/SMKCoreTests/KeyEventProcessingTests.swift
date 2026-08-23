@@ -161,3 +161,78 @@ import Testing
     #expect(result.connectionEvents == [.toggled(.wired), .toggled(.bluetooth)])
     #expect(currentMode == .bluetooth)
 }
+
+@Test func macroPressEmitsAMacroEvent() {
+    var engine = LayerEngine()
+    engine.loadKeymap(json: """
+    { "layers": [ [ ["macro:2", "key:a"] ] ] }
+    """)
+    var pressedActions: [KeyAction] = [.none, .none]
+    var currentMode = ConnectionMode.bluetooth
+
+    let result = processKeyEvents(
+        cleanScan: [true, false], lastScan: [false, false], colCount: 2,
+        pressedActions: &pressedActions, engine: &engine,
+        hasWiredBridge: false, currentMode: &currentMode
+    )
+    #expect(result.macroEvents == [2])
+}
+
+@Test func macroKeyContributesNothingToTheReport() {
+    var engine = LayerEngine()
+    engine.loadKeymap(json: """
+    { "layers": [ [ ["macro:2"] ] ] }
+    """)
+    var pressedActions: [KeyAction] = [.none]
+    var currentMode = ConnectionMode.bluetooth
+
+    let result = processKeyEvents(
+        cleanScan: [true], lastScan: [false], colCount: 1,
+        pressedActions: &pressedActions, engine: &engine,
+        hasWiredBridge: false, currentMode: &currentMode
+    )
+    #expect(result.report == HIDReport())
+}
+
+@Test func macroReleaseEmitsNoEvent() {
+    var engine = LayerEngine()
+    engine.loadKeymap(json: """
+    { "layers": [ [ ["macro:2"] ] ] }
+    """)
+    var pressedActions: [KeyAction] = [.macro(2)]
+    var currentMode = ConnectionMode.bluetooth
+
+    let result = processKeyEvents(
+        cleanScan: [false], lastScan: [true], colCount: 1,
+        pressedActions: &pressedActions, engine: &engine,
+        hasWiredBridge: false, currentMode: &currentMode
+    )
+    #expect(result.macroEvents.isEmpty)
+}
+
+@Test func heldKeyProducesNoFreshPressTransition() {
+    // Pins the property Main.swift's macro-finish handling relies on: a
+    // key already down in lastScan and still down in cleanScan is NOT a
+    // press edge. This is why Main.swift deliberately does not reset
+    // lastScan to all-false when a macro finishes -- doing so would make
+    // a still-held macro key read as a fresh press and re-trigger the
+    // macro for as long as the key stays down, i.e. reintroduce
+    // auto-repeat. processKeyEvents observes a real release the instant
+    // it happens (every tick, macro or not), so no such reset is needed
+    // to "un-stick" a released key either -- see Main.swift's comment on
+    // the `.finished` case for the full argument.
+    var engine = LayerEngine()
+    engine.loadKeymap(json: """
+    { "layers": [ [ ["key:a"] ] ] }
+    """)
+    var pressedActions: [KeyAction] = [.key(.a)]
+    var currentMode = ConnectionMode.bluetooth
+
+    let result = processKeyEvents(
+        cleanScan: [true], lastScan: [true], colCount: 1,
+        pressedActions: &pressedActions, engine: &engine,
+        hasWiredBridge: false, currentMode: &currentMode
+    )
+    #expect(result.transitions.isEmpty)
+    #expect(result.report.keys[0] == KeyCode.a.rawValue)
+}
