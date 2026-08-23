@@ -24,6 +24,27 @@ set(NRF5_MDK "${NRF5_SDK_PATH}/modules/nrfx/mdk")
 # SDK ships separately from modules/nrfx/mdk, under components/toolchain/cmsis.
 set(NRF5_CMSIS_INCLUDE "${NRF5_SDK_PATH}/components/toolchain/cmsis/include")
 
+# ---------------------------------------------------------------------------
+# Board selection — same pattern as ports/rp2040/CMakeLists.txt's
+# SMK_TARGET_BOARD, but with only two values so far. nrf52840dk (Nordic
+# PCA10056, no bootloader — app owns all of flash from 0x0) is the default,
+# matching this port's original build-only scope. feather_nrf52840 (Adafruit
+# Feather nRF52840 Express) links against a different linker script because
+# that board's factory UF2 bootloader + SoftDevice occupy the low end of
+# flash — see linker/feather_nrf52840.ld's header comment for the address
+# layout and why it must be confirmed against the real board before flashing.
+# ---------------------------------------------------------------------------
+set(SMK_TARGET_BOARD "nrf52840dk" CACHE STRING "nRF52840 board: nrf52840dk or feather_nrf52840")
+if(SMK_TARGET_BOARD STREQUAL "feather_nrf52840")
+    set(NRF52840_LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/linker/feather_nrf52840.ld")
+    set(NRF52840_BOARD_DEFINE "SMK_BOARD_FEATHER_NRF52840")
+elseif(SMK_TARGET_BOARD STREQUAL "nrf52840dk")
+    set(NRF52840_LINKER_SCRIPT "${NRF5_MDK}/nrf52840_xxaa.ld")
+    set(NRF52840_BOARD_DEFINE "SMK_BOARD_NRF52840DK")
+else()
+    message(FATAL_ERROR "Unknown SMK_TARGET_BOARD '${SMK_TARGET_BOARD}' — expected nrf52840dk or feather_nrf52840")
+endif()
+
 # Bare-metal cross-compile boilerplate: without CMAKE_SYSTEM_NAME set to a
 # non-Darwin value, CMake's Platform/Darwin module assumes we're building a
 # macOS host binary and silently injects -arch/-isysroot into every compile
@@ -43,7 +64,7 @@ project(smk_nrf52840 C ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_COMPILER arm-none-eabi-gcc)
 set(CMAKE_ASM_COMPILER arm-none-eabi-gcc)
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -T${NRF5_MDK}/nrf52840_xxaa.ld -L${NRF5_MDK}")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -T${NRF52840_LINKER_SCRIPT} -L${NRF5_MDK}")
 
 set(C_ASM_FLAGS
     -mcpu=cortex-m4
@@ -138,6 +159,8 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/HIDReport.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Config.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LayerEngine.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyCodesGenerated.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/HIDReportMap.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyEventProcessing.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapFrame.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/LedPixelBuffer.swift"
@@ -202,7 +225,7 @@ add_custom_command(
             -enable-experimental-feature Extern
             -parse-as-library
             -DSMK_TARGET_NRF52840
-            -DSMK_BOARD_NRF52840DK
+            -D${NRF52840_BOARD_DEFINE}
             -import-objc-header "${CMAKE_CURRENT_SOURCE_DIR}/BridgingHeader.h"
             -wmo
             # One section per function, so the -Wl,--gc-sections link can
@@ -239,7 +262,7 @@ add_executable(smk_nrf52840
     "${swift_obj}"
 )
 target_include_directories(smk_nrf52840 PRIVATE "${NRF5_MDK}" "${NRF5_CMSIS_INCLUDE}" "${NRF52840_CJSON_DIR}")
-target_compile_definitions(smk_nrf52840 PRIVATE INITIALIZE_USER_MEMORY_AREA)
+target_compile_definitions(smk_nrf52840 PRIVATE INITIALIZE_USER_MEMORY_AREA ${NRF52840_BOARD_DEFINE})
 
 # ---------------------------------------------------------------------------
 # TinyUSB (device stack, HID class, nRF5x device-controller driver) — the
@@ -423,3 +446,29 @@ add_custom_command(TARGET smk_nrf52840 POST_BUILD
     COMMAND arm-none-eabi-objcopy -O ihex $<TARGET_FILE:smk_nrf52840> smk_nrf52840.hex
     COMMENT "Generating smk_nrf52840.hex"
 )
+
+# ---------------------------------------------------------------------------
+# UF2 packaging (feather_nrf52840 only) — this board's factory bootloader
+# flashes via drag-and-drop UF2, not raw SWD. uf2conv.py/uf2families.json
+# are vendored byte-identical from microsoft/uf2 (MIT-licensed, see
+# tools/LICENSE.txt) — same "don't edit vendored files" policy as the
+# STM32WB port's IPCC transport layer.
+#
+# --base MUST match linker/feather_nrf52840.ld's FLASH ORIGIN. Kept as a
+# separate literal here (not derived from the .ld file) because CMake can't
+# introspect a linker script's contents — if you change one, change both,
+# and re-read that file's header comment about confirming the real
+# SoftDevice/app-start offset against the board before flashing.
+# ---------------------------------------------------------------------------
+if(SMK_TARGET_BOARD STREQUAL "feather_nrf52840")
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_custom_command(TARGET smk_nrf52840 POST_BUILD
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tools/uf2conv.py"
+                smk_nrf52840.hex
+                --base 0x27000
+                --family NRF52840
+                --convert
+                --output smk_nrf52840.uf2
+        COMMENT "Generating smk_nrf52840.uf2 (Feather nRF52840 Express)"
+    )
+endif()

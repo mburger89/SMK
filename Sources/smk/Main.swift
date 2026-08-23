@@ -135,6 +135,28 @@ func app_main_swift() {
         ]
     }
     """
+#elseif SMK_BOARD_FEATHER_NRF52840
+    // Adafruit Feather nRF52840 Express — USB-enumeration bring-up only
+    // (see CLAUDE.md's Feather nRF52840 Express section). No matrix is
+    // wired to this board, and its fixed-function pins (P0.00/P0.01 are
+    // the 32.768kHz crystal XL1/XL2, P0.16 drives the onboard NeoPixel)
+    // rule out reusing the nrf52840dk placeholder pin numbers above without
+    // real risk of disturbing them. Empty rows/cols means init_keyboard_pins
+    // is called with zero counts and scan() always returns no presses —
+    // KeyMatrix.swift's row/col loops are no-ops on an empty array, so this
+    // never touches a single GPIO pin.
+    let configJson = """
+    {
+        "matrix": {
+            "rows": [],
+            "cols": [],
+            "colsAreDriven": 0
+        },
+        "layers": [
+            [[]]
+        ]
+    }
+    """
 #elseif SMK_BOARD_STM32F4_BLACKPILL
     // WeAct Black Pill (STM32F411CEU6) — bring-up target, not a real
     // keyboard. All matrix pins are on GPIOB (0-9) per this plan's
@@ -377,8 +399,15 @@ func app_main_swift() {
     }
     #endif
 
-    // Initialize BLE Link
+    // Initialize BLE Link. Skipped on the Feather nRF52840 Express bring-up
+    // board: this pass's scope is USB HID enumeration only (see CLAUDE.md's
+    // Feather nRF52840 Express section) — the BLE code itself is identical
+    // to the nrf52840dk build (not board-gated at the platform_glue.c/
+    // BleHidSdc.swift level), so it stays linked in but dormant here rather
+    // than needing a separate build configuration.
+    #if !SMK_BOARD_FEATHER_NRF52840
     init_ble_hid()
+    #endif
 
     // Battery-level reporting (smk_kbd board / ESP32-C6 only — see
     // BatteryMonitor.swift). RP2040/nRF52840 have no VBAT ADC divider
