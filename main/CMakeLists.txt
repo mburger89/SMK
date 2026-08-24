@@ -36,7 +36,7 @@ set(c_srcs
 # Register C sources and linker fragment
 idf_component_register(SRCS ${c_srcs}
                        INCLUDE_DIRS "../Sources/smk" "../Sources/components"
-                       REQUIRES esp_hid nvs_flash bt cjson driver esp_event esp_driver_uart esp_driver_gpio esp_driver_rmt esp_adc
+                       REQUIRES esp_hid nvs_flash bt driver esp_event esp_driver_uart esp_driver_gpio esp_driver_rmt esp_adc
                        LDFRAGMENTS "linker.lf")
 
 # --- Swift Compilation Step ---
@@ -189,7 +189,6 @@ set(include_dirs
     "${idf_p}/components/esp_partition/include"
     "${idf_p}/components/esp_blockdev/include"
     "${idf_p}/components/esp_hw_support/etm/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../managed_components/espressif__cjson/cJSON"
 )
 
 set(swift_flags "")

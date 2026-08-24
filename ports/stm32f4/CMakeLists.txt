@@ -134,8 +134,8 @@ endif()
 
 # ---------------------------------------------------------------------------
 # Full shared application layer: Sources/smk (Main.swift's scan loop/config
-# parsing, KeyMatrix.swift) + Sources/SMKCore (LayerEngine's cJSON-backed
-# keymap parsing, HIDReport, Debounce, Modifier, ConnectionMode,
+# parsing, KeyMatrix.swift) + Sources/SMKCore (LayerEngine's binary
+# keymap decoding, HIDReport, Debounce, Modifier, ConnectionMode,
 # KeyEventProcessing, KeymapFrame, KeymapProtocol) + this board's own
 # GPIO/clock/keymap-store glue. No RGB (LEDChainMapping.swift/
 # RGBLighting.swift/LedPixelBuffer.swift) — this board has no RGB chain.
@@ -165,12 +165,6 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapProtocol.swift"
 )
 
-# cJSON (portable, no ESP-IDF dependency) — LayerEngine.swift/Config.swift
-# parse JSON via cJSON_* calls imported through BridgingHeader.h's
-# `#include "cJSON.h"`; matches the other three ports' use of the same
-# vendored copy under managed_components/.
-set(STM32F4_CJSON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../managed_components/espressif__cjson/cJSON")
-
 set(swift_obj "${CMAKE_CURRENT_BINARY_DIR}/smk_swift.o")
 add_custom_command(
     OUTPUT "${swift_obj}"
@@ -191,7 +185,6 @@ add_custom_command(
             -Xcc -mfloat-abi=soft
             -Xcc -mcpu=cortex-m4
             -Xcc -mthumb
-            -Xcc -I${STM32F4_CJSON_DIR}
             ${STM32F4_GCC_XCC_INCLUDES}
             -emit-object
             -o "${swift_obj}"
@@ -209,7 +202,6 @@ set(c_srcs
     # smk_cpu_nop() — the opaque call ClockInit.swift's register-poll loops
     # need so LLVM can't delete them. See that file's header comment.
     platform/cortex_m_intrinsics.c
-    "${STM32F4_CJSON_DIR}/cJSON.c"
 )
 
 add_executable(smk_stm32f4
@@ -218,7 +210,7 @@ add_executable(smk_stm32f4
     ${c_srcs}
     "${swift_obj}"
 )
-target_include_directories(smk_stm32f4 PRIVATE "${CMSIS_F4_INCLUDE}" "${CMSIS_CORE_INCLUDE}" "${STM32F4_CJSON_DIR}")
+target_include_directories(smk_stm32f4 PRIVATE "${CMSIS_F4_INCLUDE}" "${CMSIS_CORE_INCLUDE}")
 
 # ---------------------------------------------------------------------------
 # TinyUSB (device stack, HID class, dwc2 OTG_FS driver) — the "wired" USB

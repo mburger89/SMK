@@ -4,8 +4,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "cJSON.h"
-
 // BLE HID — fully Swift now (BleHelper.swift; the former
 // Sources/components/ble_helper.c is deleted). These includes give Swift
 // the real NimBLE types it constructs — struct ble_hs_adv_fields and

@@ -3,7 +3,6 @@
 //
 // The shared Swift sources (Sources/smk/{Main,KeyMatrix}.swift,
 // Sources/SMKCore/*.swift) need:
-//   - cJSON  (config / keymap parsing)
 //   - libc   (strcmp / strncmp / atoi used by LayerEngine)
 //
 // GPIO matrix init (init_keyboard_pins) and USB HID (init_wired_link/
@@ -25,8 +24,6 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
-
-#include "cJSON.h"
 
 // --- Platform glue implemented in ports/stm32wb/platform/platform_glue.c ---
 

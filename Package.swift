@@ -37,15 +37,6 @@ if !hostTestsOnly {
 }
 
 var packageTargets: [Target] = [
-    // Vendored cJSON (managed_components/espressif__cjson), compiled for
-    // the host so SMKCore's JSON-parsing code (Config, LayerEngine) runs
-    // in tests against the exact same parser the firmware ships.
-    .target(
-        name: "CJSON",
-        path: "Sources/CJSON",
-        sources: ["cJSON.c"],
-        publicHeadersPath: "include"
-    ),
     // Hardware-independent logic shared with the embedded build. NOT a
     // real module boundary for the embedded build — main/CMakeLists.txt
     // and ports/rp2040/CMakeLists.txt compile these files directly into
@@ -54,7 +45,6 @@ var packageTargets: [Target] = [
     // build and run them on the host.
     .target(
         name: "SMKCore",
-        dependencies: ["CJSON"],
         path: "Sources/SMKCore",
         swiftSettings: [
             // These files also compile flat into every embedded target's
@@ -127,7 +117,6 @@ if !hostTestsOnly {
                     "-Xcc", "-I\(idfPath)/components/bt/host/nimble/nimble/porting/nimble/include",
                     "-Xcc", "-I\(idfPath)/components/bt/host/nimble/nimble/nimble/host/include",
                     "-Xcc", "-I\(idfPath)/components/bt/host/nimble/nimble/nimble/include",
-                    "-Xcc", "-I\(repoRoot)/managed_components/espressif__cjson/cJSON",
                     "-Xcc", "-I\(repoRoot)/build/config"
                 ])
             ]

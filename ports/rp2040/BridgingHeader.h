@@ -1,7 +1,6 @@
 // Bridging header for the RP2040 / Pico W build of SMK.
 //
 // The shared Swift sources (Sources/smk/{Main,LayerEngine,KeyMatrix}.swift) need:
-//   - cJSON           (config / keymap parsing)
 //   - libc            (strcmp / strncmp / atoi used by LayerEngine)
 //   - the platform glue prototypes (also declared via @_extern in Swift, listed
 //     here for clarity and C-side type checking).
@@ -15,8 +14,6 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
-
-#include "cJSON.h"
 
 // --- Platform glue: mostly plain Swift now, narrow C remainder noted per-block below ---
 

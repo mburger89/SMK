@@ -141,8 +141,8 @@ message(STATUS "Using Swift compiler: ${SWIFTC_PATH}")
 
 # ---------------------------------------------------------------------------
 # Full shared application layer: Sources/smk (Main.swift's scan loop/config
-# parsing, KeyMatrix.swift) + Sources/SMKCore (LayerEngine's cJSON-backed
-# keymap parsing, HIDReport, Debounce, Modifier, ConnectionMode,
+# parsing, KeyMatrix.swift) + Sources/SMKCore (LayerEngine's binary
+# keymap decoding, HIDReport, Debounce, Modifier, ConnectionMode,
 # KeyEventProcessing) + this board's own GPIO glue. No RGB
 # (LEDChainMapping.swift/RGBLighting.swift) — this board has no RGB chain,
 # same as plain Pico/Pico W. See ports/rp2040/CMakeLists.txt's
@@ -179,12 +179,6 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../common/BleHidGatt.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/BleHidSdc.swift"
 )
-
-# cJSON (portable, no ESP-IDF dependency) — LayerEngine.swift/Config.swift
-# parse JSON via cJSON_* calls imported through BridgingHeader.h's
-# `#include "cJSON.h"`; matches ports/rp2040/CMakeLists.txt's use of the
-# same vendored copy under managed_components/.
-set(NRF52840_CJSON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../managed_components/espressif__cjson/cJSON")
 
 # swiftc's bundled ClangImporter (used both to precompile BridgingHeader.h
 # and to satisfy its `#include <string.h>`/`<stdlib.h>` etc.) has no idea
@@ -238,7 +232,6 @@ add_custom_command(
             -Xcc -mfloat-abi=soft
             -Xcc -mcpu=cortex-m4
             -Xcc -mthumb
-            -Xcc -I${NRF52840_CJSON_DIR}
             ${NRF52840_GCC_XCC_INCLUDES}
             -emit-object
             -o "${swift_obj}"
@@ -256,7 +249,6 @@ set(c_srcs
     # Instantiates profile_data[] from the generated smk_hid.h for the
     # shared BleHidGatt.swift's @_extern binding — see that file's comment.
     ../common/smk_hid_gatt_data.c
-    "${NRF52840_CJSON_DIR}/cJSON.c"
 )
 
 add_executable(smk_nrf52840
@@ -265,7 +257,7 @@ add_executable(smk_nrf52840
     ${c_srcs}
     "${swift_obj}"
 )
-target_include_directories(smk_nrf52840 PRIVATE "${NRF5_MDK}" "${NRF5_CMSIS_INCLUDE}" "${NRF52840_CJSON_DIR}")
+target_include_directories(smk_nrf52840 PRIVATE "${NRF5_MDK}" "${NRF5_CMSIS_INCLUDE}")
 target_compile_definitions(smk_nrf52840 PRIVATE INITIALIZE_USER_MEMORY_AREA ${NRF52840_BOARD_DEFINE})
 
 # ---------------------------------------------------------------------------
