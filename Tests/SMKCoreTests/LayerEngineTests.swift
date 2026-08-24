@@ -3,18 +3,14 @@ import Testing
 
 @Test func layerEngineLoadsBasicKeymapAndResolvesLayerZero() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["key:a", "key:b"] ] ] }
-    """)
+    engine.loadTestKeymap([[["key:a", "key:b"]]])
     #expect(engine.getAction(row: 0, col: 0) == .key(.a))
     #expect(engine.getAction(row: 0, col: 1) == .key(.b))
 }
 
 @Test func layerEngineOutOfRangePositionReturnsNone() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["key:a"] ] ] }
-    """)
+    engine.loadTestKeymap([[["key:a"]]])
     #expect(engine.getAction(row: 5, col: 5) == .none)
 }
 
@@ -42,47 +38,51 @@ import Testing
 
 @Test func layerEngineTransparentFallsThroughToLowerActiveLayer() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["key:a"] ], [ ["trans"] ] ] }
-    """)
+    engine.loadTestKeymap([[["key:a"]], [["trans"]]])
     engine.addMomentaryLayer(1)
     #expect(engine.getAction(row: 0, col: 0) == .key(.a))
 }
 
 @Test func layerEngineHigherActiveLayerOverridesLower() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["key:a"] ], [ ["key:b"] ] ] }
-    """)
+    engine.loadTestKeymap([[["key:a"]], [["key:b"]]])
     engine.addMomentaryLayer(1)
     #expect(engine.getAction(row: 0, col: 0) == .key(.b))
 }
 
-@Test func layerEngineLoadKeymapLeavesKeymapsEmptyOnMalformedJSON() {
+// These three used to feed malformed JSON ("not json", "{}", an empty
+// "layers" array). With cJSON retired the equivalent malformed inputs are
+// bytes: one that cannot decode at all, and one that decodes cleanly but
+// declares no layers. Both must leave `keymaps` untouched -- the load path
+// is all-or-nothing by design (see LayerEngine.loadKeymap(binary:count:)).
+@Test func layerEngineLoadKeymapLeavesKeymapsEmptyOnUndecodablePayload() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: "not json")
+    // Header claims a 5x12 matrix but the payload stops after the header,
+    // so the bounds check rejects it before any cell is read.
+    let truncated: [UInt8] = [5, 12, 1, 1, 0, 0]
+    truncated.withUnsafeBufferPointer {
+        engine.loadKeymap(binary: $0.baseAddress!, count: truncated.count)
+    }
     #expect(engine.keymaps.isEmpty)
 }
 
-@Test func layerEngineLoadKeymapLeavesKeymapsEmptyWhenLayersKeyMissing() {
+@Test func layerEngineLoadKeymapLeavesKeymapsEmptyWhenPayloadDeclaresNoLayers() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: "{}")
-    #expect(engine.keymaps.isEmpty)
-}
-
-@Test func layerEngineLoadKeymapLeavesKeymapsEmptyWhenLayersArrayIsEmpty() {
-    var engine = LayerEngine()
-    engine.loadKeymap(json: #"{"layers": []}"#)
+    let noLayers: [UInt8] = [1, 1, 0, 0, 0, 0, 0, 0]   // 1x1 matrix, zero layers
+    noLayers.withUnsafeBufferPointer {
+        engine.loadKeymap(binary: $0.baseAddress!, count: noLayers.count)
+    }
     #expect(engine.keymaps.isEmpty)
 }
 
 @Test func layerEngineLoadKeymapKeepsPreviousKeymapWhenSubsequentLoadFails() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["key:a"] ] ] }
-    """)
+    engine.loadTestKeymap([[["key:a"]]])
     #expect(!engine.keymaps.isEmpty)
-    engine.loadKeymap(json: "not json")
+    let truncated: [UInt8] = [5, 12, 1, 1, 0, 0]
+    truncated.withUnsafeBufferPointer {
+        engine.loadKeymap(binary: $0.baseAddress!, count: truncated.count)
+    }
     #expect(!engine.keymaps.isEmpty)
     #expect(engine.getAction(row: 0, col: 0) == .key(.a))
 }
@@ -97,7 +97,7 @@ import Testing
     // decode (decodeKeymapPayload) and here (the `hasUsableCells` check),
     // so a previously-loaded working keymap must survive the attack intact.
     var engine = LayerEngine()
-    engine.loadKeymap(json: #"{"layers": [ [ ["key:a"] ] ]}"#)
+    engine.loadTestKeymap([[["key:a"]]])
     #expect(engine.getAction(row: 0, col: 0) == .key(.a))
 
     let attack: [UInt8] = [0, 0, 1, 200, 0, 0]
