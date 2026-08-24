@@ -34,3 +34,23 @@ struct Config {
         return cfg
     }
 }
+
+extension Config {
+    /// Builds the GPIO matrix config from a decoded binary keymap payload.
+    /// The payload header already carries every field `fromJson` dug out of
+    /// a `"matrix"` object -- `rows[]`, `cols[]` and `colsAreDriven` -- so a
+    /// board's matrix and its layers come from one artifact instead of two
+    /// representations that can disagree.
+    ///
+    /// Explicit loops rather than `map`: SMKCore compiles under Embedded
+    /// Swift for every board, and the rest of this module builds arrays the
+    /// same way.
+    init(payload: KeymapPayload) {
+        self.init()
+        rowPins.reserveCapacity(payload.rows.count)
+        for pin in payload.rows { rowPins.append(Int32(pin)) }
+        colPins.reserveCapacity(payload.cols.count)
+        for pin in payload.cols { colPins.append(Int32(pin)) }
+        colsAreDriven = payload.colsAreDriven
+    }
+}
