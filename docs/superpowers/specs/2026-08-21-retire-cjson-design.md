@@ -1,7 +1,19 @@
 # Retire cJSON from the firmware — design
 
 Date: 2026-08-21
-Status: **deferred.** Written up while the context was fresh; not scheduled.
+Status: **implemented 2026-08-23**, per
+`docs/superpowers/plans/2026-08-23-retire-cjson.md`. (Was: deferred, written
+up while the context was fresh, not scheduled.)
+
+> **Measured, after the fact.** The "Why bother" section below leads with an
+> estimated 15-25 KB of flash. The real figure for cJSON's own linked text is
+> **7.8 KB** -- `--gc-sections` had already dropped the printer, minifier and
+> comparison helpers, leaving only the parser to remove. The realised
+> per-target saving is larger than that, because each board's `configJson`
+> string literal went too and its binary payload replacement is several times
+> smaller; the measurements are in
+> `docs/superpowers/notes/2026-08-23-cjson-flash-sizes.md`. Quote those
+> numbers, not the estimate.
 Depends on: `2026-08-21-binary-keymap-format-design.md` landing first, in both
 this repo and `~/esp/smk_configurator`.
 

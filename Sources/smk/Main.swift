@@ -187,6 +187,16 @@ func app_main_swift() {
         return Config(payload: payload)
     }
     if cfg.rowPins.isEmpty || cfg.colPins.isEmpty {
+        // KNOWN CONSEQUENCE, deliberately preserved rather than fixed here:
+        // feather_nrf52840 declares an empty matrix on purpose (nothing is
+        // wired to that board), so it takes this branch and app_main_swift
+        // returns *before* init_wired_link() further down ever runs -- so
+        // USB never initialises on the one board whose entire bring-up goal
+        // is USB enumeration. This predates the cJSON retirement: the JSON
+        // path hit the identical check with the identical result, so the
+        // migration changed nothing about it. Fixing it is a separate
+        // change; note that CLAUDE.md's Feather section currently attributes
+        // that board's silence solely to a missing SCB->VTOR relocation.
         kb_log("Critical Error: no matrix defined for this board")
         return
     }

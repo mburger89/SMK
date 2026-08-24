@@ -36,11 +36,11 @@ Ensure your ESP-IDF environment is sourced. The standard installer puts the real
 ```
 
 ### 2. Configure Hardware & Keymap
-Currently, the hardware configuration and keymap are defined in `Sources/smk/Main.swift`. You can modify the `configJson` string to match your keyboard's matrix and desired layers.
+Each board's hardware configuration and keymap live in `boards/<name>.json`. Edit the one for your board, then re-run `./generate_default_keymap.sh` and commit the regenerated `Sources/SMKCore/DefaultKeymapGenerated.swift` — the firmware itself has no JSON parser, so the board files are compiled to a binary payload at build time.
 
-The checked-in `configJson` targets the **smk_kbd** board (ESP32-C6-MINI-1, 59-key 5×12, BLE + battery) — see `CLAUDE.md` for its full GPIO map. If you're building different hardware, update the pin lists and `colsAreDriven` flag to match your wiring.
+A build with no `SMK_BOARD_*` flag — which includes an ESP-IDF build of this repo as checked in — gets `boards/smk_kbd.json`, the **smk_kbd** board (ESP32-C6-MINI-1, 59-key 5×12, BLE + battery); see `CLAUDE.md` for its full GPIO map. If you're building different hardware, update the pin lists and `colsAreDriven` flag to match your wiring.
 
-**JSON Schema:**
+**Board file schema:**
 - `matrix`: Defines the `rows` and `cols` GPIO pins, plus `colsAreDriven` (0/1) — whether columns are the strobed/output side (1) or rows are (0, default). This depends on your diode orientation; see `CLAUDE.md`'s "Matrix scan loop" section.
 - `layers`: An array of layers, where each layer is a 2D array of strings.
   - `key:<char>`: Standard keycode (e.g., `key:a`, `key:enter`).
