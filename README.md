@@ -36,7 +36,7 @@ Ensure your ESP-IDF environment is sourced. The standard installer puts the real
 ```
 
 ### 2. Configure Hardware & Keymap
-Each board's hardware configuration and keymap live in `boards/<name>.json`. Edit the one for your board, then re-run `./generate_default_keymap.sh` and commit the regenerated `Sources/SMKCore/DefaultKeymapGenerated.swift` — the firmware itself has no JSON parser, so the board files are compiled to a binary payload at build time.
+Each board's hardware configuration and keymap live in `boards/<name>.json`. Edit the one for your board, then re-run `./generate_default_keymap.sh` and commit both regenerated files (`Sources/SMKCore/DefaultKeymapGenerated.swift` and `Tests/SMKCoreTests/BoardPayloadsGenerated.swift`) — the firmware itself has no JSON parser, so the board files are compiled to a binary payload at build time.
 
 A build with no `SMK_BOARD_*` flag — which includes an ESP-IDF build of this repo as checked in — gets `boards/smk_kbd.json`, the **smk_kbd** board (ESP32-C6-MINI-1, 59-key 5×12, BLE + battery); see `CLAUDE.md` for its full GPIO map. If you're building different hardware, update the pin lists and `colsAreDriven` flag to match your wiring.
 

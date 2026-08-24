@@ -82,8 +82,22 @@ BOARDS = [
 ]
 
 
+# Keys a board file may carry. Anything else is a typo or a feature this
+# generator does not implement -- `macros`, in particular, is supported by
+# the payload format and by MacroPlayer, so a board file quietly growing one
+# would be silently dropped (macro_count is hardcoded to 0 below). Refuse
+# rather than ignore.
+BOARD_KEYS = {"comment", "board", "define", "matrix", "layers", "layersFrom"}
+
+
 def compile_board(name):
     spec = json.load(open("boards/%s.json" % name))
+    unknown = set(spec) - BOARD_KEYS
+    if unknown:
+        raise SystemExit("%s: unrecognized key(s) %s -- this generator would "
+                         "silently ignore them" % (name, sorted(unknown)))
+    if ("layers" in spec) == ("layersFrom" in spec):
+        raise SystemExit("%s: needs exactly one of `layers` or `layersFrom`" % name)
     matrix = spec["matrix"]
     rows = matrix["rows"]
     cols = matrix["cols"]
