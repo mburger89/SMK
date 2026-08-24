@@ -1,0 +1,35 @@
+{
+    "comment": [
+        "SMK test board (Seeed XIAO ESP32-C6) — 3x3 macropad bring-up board",
+        "built to exercise hardware the smk_kbd board never has: the",
+        "RMT LED driver and BatteryMonitor. Pin map is a contract shared with",
+        "the PCB generator and the smk_configurator app — all three must",
+        "agree or the firmware scans pins that aren't wired:",
+        "ROW0-2 = GPIO1, 2, 21 (sense inputs, pull-down)",
+        "COL0-2 = GPIO22, 23, 16 (strobe outputs, push-pull)",
+        "LED data (9x SK6812MINI-E) = GPIO20 (SMK_RGB_GPIO default for this",
+        "board, see main/Kconfig.projbuild)",
+        "VBAT sense = GPIO0/ADC1_CH0 (Sources/smk/BatteryMonitor.swift)",
+        "Encoder A/B = GPIO17, 19 — wired but unread. This firmware cannot",
+        "decode quadrature; those pins are simply not referenced here.",
+        "colsAreDriven:1 — same COL2ROW wiring as the other boards here",
+        "(diode anode at the column/switch side) — see KeyMatrix.swift.",
+        "",
+        "The 3x3 matrix's ninth position (row 0, col 2) is the rotary",
+        "encoder's push switch, wired as an ordinary matrix key."
+    ],
+    "board": "test_board",
+    "define": "SMK_BOARD_TEST_BOARD",
+    "matrix": {
+        "rows": [1, 2, 21],
+        "cols": [22, 23, 16],
+        "colsAreDriven": 1
+    },
+    "layers": [
+        [
+            ["key:1", "key:2", "key:3"],
+            ["key:4", "key:5", "key:6"],
+            ["key:7", "key:8", "key:9"]
+        ]
+    ]
+}

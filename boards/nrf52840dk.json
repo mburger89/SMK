@@ -1,0 +1,17 @@
+{
+    "comment": [
+        "nrf52840dk board (Nordic PCA10056) — GPIO map deferred to hardware",
+        "bring-up (no board schematic consulted in this pass, per",
+        "docs/superpowers/specs/2026-08-09-nrf52840-support-design.md's",
+        "build-only scope). Placeholder pin numbers here MUST be replaced",
+        "before this board is ever flashed."
+    ],
+    "board": "nrf52840dk",
+    "define": "SMK_BOARD_NRF52840DK",
+    "matrix": {
+        "rows": [0, 1, 2, 3, 4],
+        "cols": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+        "colsAreDriven": 0
+    },
+    "layersFrom": "keymap.json"
+}

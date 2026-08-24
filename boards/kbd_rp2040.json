@@ -1,0 +1,28 @@
+{
+    "comment": [
+        "smk_kbd_rp2040 board (RP2040 QFN-56 chip-down) — GPIO map per",
+        "generate_kbd_rp2040.py (source of truth for this board's pin",
+        "assignments; see that file's header docstring for verification notes):",
+        "ROW0-4 = GPIO0-4 (sense inputs, pull-down)",
+        "COL0-11 = GPIO5-16 (strobe outputs)",
+        "RGB_GPIO = GPIO17 (SK6812MINI-E chain, via level shifter U7)",
+        "VBAT_SENSE = GPIO26/ADC0 — reserved, not used by the matrix",
+        "GPIO18-23 + GPIO28 are the CYW43439 BLE UART link (BT_REG_ON,",
+        "BT_DEV_WAKE, BT_UART_*, BT_HOST_WAKE) — see ports/rp2040/BleHidKbdUart.swift",
+        "colsAreDriven:1 for the same reason as the ESP32 board (boards/smk_kbd.json) — this",
+        "board's matrix is also COL2ROW (diode anode at the column/switch",
+        "side) — see KeyMatrix.swift.",
+        "",
+        "Row 4 layout is irregular per the PCB: 5 keys (cols 0-4), one 2U key",
+        "(col 5), no switch at col 6, then 5 more keys (cols 7-11) — 59",
+        "physical keys total over the 5x12 = 60 matrix positions."
+    ],
+    "board": "kbd_rp2040",
+    "define": "SMK_BOARD_KBD_RP2040",
+    "matrix": {
+        "rows": [0, 1, 2, 3, 4],
+        "cols": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+        "colsAreDriven": 1
+    },
+    "layersFrom": "keymap.json"
+}

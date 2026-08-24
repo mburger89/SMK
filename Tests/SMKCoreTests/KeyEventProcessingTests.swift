@@ -3,9 +3,7 @@ import Testing
 
 @Test func keyEventProcessingBuildsReportForHeldKey() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["key:a", "none"] ] ] }
-    """)
+    engine.loadTestKeymap([[["key:a", "none"]]])
     var pressedActions: [KeyAction] = [.none, .none]
     var currentMode = ConnectionMode.bluetooth
 
@@ -25,9 +23,7 @@ import Testing
 
 @Test func keyEventProcessingClearsActionOnRelease() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["key:a"] ] ] }
-    """)
+    engine.loadTestKeymap([[["key:a"]]])
     var pressedActions: [KeyAction] = [.key(.a)]
     var currentMode = ConnectionMode.bluetooth
 
@@ -48,9 +44,7 @@ import Testing
 
 @Test func keyEventProcessingMomentaryLayerActivatesWhileHeld() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["mo:1"] ], [ ["key:b"] ] ] }
-    """)
+    engine.loadTestKeymap([[["mo:1"]], [["key:b"]]])
     var pressedActions: [KeyAction] = [.none]
     var currentMode = ConnectionMode.bluetooth
 
@@ -71,9 +65,7 @@ import Testing
 
 @Test func keyEventProcessingToggleLayerStaysActiveAfterRelease() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["tg:1"] ] ] }
-    """)
+    engine.loadTestKeymap([[["tg:1"]]])
     var pressedActions: [KeyAction] = [.none]
     var currentMode = ConnectionMode.bluetooth
 
@@ -92,9 +84,7 @@ import Testing
 
 @Test func keyEventProcessingTogglesConnectionModeWhenWiredBridgeAvailable() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["toggle_conn"] ] ] }
-    """)
+    engine.loadTestKeymap([[["toggle_conn"]]])
     var pressedActions: [KeyAction] = [.none]
     var currentMode = ConnectionMode.bluetooth
 
@@ -110,9 +100,7 @@ import Testing
 
 @Test func keyEventProcessingIgnoresConnectionToggleWithoutWiredBridge() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["toggle_conn"] ] ] }
-    """)
+    engine.loadTestKeymap([[["toggle_conn"]]])
     var pressedActions: [KeyAction] = [.none]
     var currentMode = ConnectionMode.bluetooth
 
@@ -128,9 +116,7 @@ import Testing
 
 @Test func keyEventProcessingAddsModifierBitsSeparatelyFromKeys() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["mod:leftShift", "key:a"] ] ] }
-    """)
+    engine.loadTestKeymap([[["mod:leftShift", "key:a"]]])
     var pressedActions: [KeyAction] = [.none, .none]
     var currentMode = ConnectionMode.bluetooth
 
@@ -146,9 +132,7 @@ import Testing
 
 @Test func keyEventProcessingCapturesModeAtEachToggleInstantWhenTwoKeysToggleInOneCycle() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["toggle_conn", "toggle_conn"] ] ] }
-    """)
+    engine.loadTestKeymap([[["toggle_conn", "toggle_conn"]]])
     var pressedActions: [KeyAction] = [.none, .none]
     var currentMode = ConnectionMode.bluetooth
 
@@ -164,9 +148,7 @@ import Testing
 
 @Test func macroPressEmitsAMacroEvent() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["macro:2", "key:a"] ] ] }
-    """)
+    engine.loadTestKeymap([[["macro:2", "key:a"]]])
     var pressedActions: [KeyAction] = [.none, .none]
     var currentMode = ConnectionMode.bluetooth
 
@@ -180,9 +162,7 @@ import Testing
 
 @Test func macroKeyContributesNothingToTheReport() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["macro:2"] ] ] }
-    """)
+    engine.loadTestKeymap([[["macro:2"]]])
     var pressedActions: [KeyAction] = [.none]
     var currentMode = ConnectionMode.bluetooth
 
@@ -196,9 +176,7 @@ import Testing
 
 @Test func macroReleaseEmitsNoEvent() {
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["macro:2"] ] ] }
-    """)
+    engine.loadTestKeymap([[["macro:2"]]])
     var pressedActions: [KeyAction] = [.macro(2)]
     var currentMode = ConnectionMode.bluetooth
 
@@ -222,9 +200,7 @@ import Testing
     // to "un-stick" a released key either -- see Main.swift's comment on
     // the `.finished` case for the full argument.
     var engine = LayerEngine()
-    engine.loadKeymap(json: """
-    { "layers": [ [ ["key:a"] ] ] }
-    """)
+    engine.loadTestKeymap([[["key:a"]]])
     var pressedActions: [KeyAction] = [.key(.a)]
     var currentMode = ConnectionMode.bluetooth
 

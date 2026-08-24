@@ -151,8 +151,6 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeymapProtocol.swift"
 )
 
-set(SAMD21_CJSON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../managed_components/espressif__cjson/cJSON")
-
 set(swift_obj "${CMAKE_CURRENT_BINARY_DIR}/smk_swift.o")
 add_custom_command(
     OUTPUT "${swift_obj}"
@@ -173,7 +171,6 @@ add_custom_command(
             -Xcc -mfloat-abi=soft
             -Xcc -mcpu=cortex-m0plus
             -Xcc -mthumb
-            -Xcc -I${SAMD21_CJSON_DIR}
             ${SAMD21_GCC_XCC_INCLUDES}
             -emit-object
             -o "${swift_obj}"
@@ -194,7 +191,6 @@ set(c_srcs
     # armv6m has no LDREX/STREX — Swift's refcounting needs these helpers
     # (pico-sdk supplies them on RP2040; here we provide them ourselves).
     platform/armv6m_atomics.c
-    "${SAMD21_CJSON_DIR}/cJSON.c"
 )
 
 add_executable(smk_samd21
@@ -202,7 +198,7 @@ add_executable(smk_samd21
     ${c_srcs}
     "${swift_obj}"
 )
-target_include_directories(smk_samd21 PRIVATE "${SAMD21_INCLUDE}" "${CMSIS_CORE_INCLUDE}" "${SAMD21_CJSON_DIR}")
+target_include_directories(smk_samd21 PRIVATE "${SAMD21_INCLUDE}" "${CMSIS_CORE_INCLUDE}")
 
 # ---------------------------------------------------------------------------
 # TinyUSB (device stack, HID class, microchip/samd driver) — the "wired"

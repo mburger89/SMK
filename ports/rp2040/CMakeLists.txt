@@ -193,8 +193,6 @@ set(PLATFORM_C_SRCS
     ../common/usb_descriptors.c
     ../common/embedded_swift_glue.c
     platform/platform_glue.c
-    # Portable cJSON (no ESP-IDF dependency)
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../managed_components/espressif__cjson/cJSON/cJSON.c"
 )
 
 if(SMK_IS_KBD_RP2040)
@@ -381,11 +379,10 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# Include paths for C sources (cJSON, tusb_config.h, platform headers)
+# Include paths for C sources (tusb_config.h, platform headers)
 # ---------------------------------------------------------------------------
 target_include_directories(smk_rp2040 PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/platform"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../managed_components/espressif__cjson/cJSON"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/components"
 )
 

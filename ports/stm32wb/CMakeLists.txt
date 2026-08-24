@@ -141,8 +141,8 @@ endif()
 
 # ---------------------------------------------------------------------------
 # Full shared application layer: Sources/smk (Main.swift's scan loop/config
-# parsing, KeyMatrix.swift) + Sources/SMKCore (LayerEngine's cJSON-backed
-# keymap parsing, HIDReport, Debounce, Modifier, ConnectionMode,
+# parsing, KeyMatrix.swift) + Sources/SMKCore (LayerEngine's binary
+# keymap decoding, HIDReport, Debounce, Modifier, ConnectionMode,
 # KeyEventProcessing, KeymapFrame, KeymapProtocol) + this board's own
 # GPIO/clock/keymap-store glue. No RGB (LEDChainMapping.swift/
 # RGBLighting.swift/LedPixelBuffer.swift) — this board has no RGB chain.
@@ -183,12 +183,6 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/../common/BleHidGatt.swift"
 )
 
-# cJSON (portable, no ESP-IDF dependency) — LayerEngine.swift/Config.swift
-# parse JSON via cJSON_* calls imported through BridgingHeader.h's
-# `#include "cJSON.h"`; matches the other four ports' use of the same
-# vendored copy under managed_components/.
-set(STM32WB_CJSON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../managed_components/espressif__cjson/cJSON")
-
 set(swift_obj "${CMAKE_CURRENT_BINARY_DIR}/smk_swift.o")
 add_custom_command(
     OUTPUT "${swift_obj}"
@@ -209,7 +203,6 @@ add_custom_command(
             -Xcc -mfloat-abi=soft
             -Xcc -mcpu=cortex-m4
             -Xcc -mthumb
-            -Xcc -I${STM32WB_CJSON_DIR}
             ${STM32WB_GCC_XCC_INCLUDES}
             -emit-object
             -o "${swift_obj}"
@@ -278,7 +271,6 @@ set(c_srcs
     # shared BleHidGatt.swift's @_extern binding — see that file's comment.
     ../common/smk_hid_gatt_data.c
     ${stm32wb_ipcc_srcs}
-    "${STM32WB_CJSON_DIR}/cJSON.c"
 )
 
 add_executable(smk_stm32wb
@@ -287,7 +279,7 @@ add_executable(smk_stm32wb
     ${c_srcs}
     "${swift_obj}"
 )
-target_include_directories(smk_stm32wb PRIVATE "${CMSIS_WB_INCLUDE}" "${CMSIS_CORE_INCLUDE}" "${STM32WB_CJSON_DIR}")
+target_include_directories(smk_stm32wb PRIVATE "${CMSIS_WB_INCLUDE}" "${CMSIS_CORE_INCLUDE}")
 
 # ---------------------------------------------------------------------------
 # TinyUSB (device stack, HID class, fsdev driver) — the "wired" USB HID

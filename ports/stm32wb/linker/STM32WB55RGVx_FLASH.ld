@@ -93,9 +93,13 @@ SECTIONS
      pointer, adds the increment, stores it back and returns, with no
      comparison against any bound. `._user_heap_stack` therefore only
      *reserves* _Min_Heap_Size + _Min_Stack_Size; it does not cap anything,
-     and the heap really does grow unbounded past it. (SMK mallocs at boot:
-     cJSON parsing Main.swift's configJson comfortably exceeds the 0x800
-     reserved here.) An earlier revision of this file placed these two
+     and the heap really does grow unbounded past it. (SMK mallocs at boot
+     regardless: decoding the compiled-in keymap payload allocates the
+     layer arrays, and Embedded Swift's own allocations follow. This used
+     to say cJSON parsing Main.swift's configJson exceeded the 0x800
+     reserved here, which was true until cJSON was retired -- the argument
+     does not depend on which allocator runs, only on _sbrk being
+     unbounded.) An earlier revision of this file placed these two
      sections after ._user_heap_stack, which put them 0x800 above `end` —
      directly in the heap's growth path. That was invisible at the time only
      because Task 6 calls nothing in hci_tl.c/shci_tl.c, so both objects were

@@ -2,7 +2,6 @@
 //
 // The shared Swift sources (Sources/smk/{Main,KeyMatrix}.swift,
 // Sources/SMKCore/*.swift) need:
-//   - cJSON  (config / keymap parsing)
 //   - libc   (strcmp / strncmp / atoi used by LayerEngine)
 //
 // GPIO matrix init (init_keyboard_pins), the clock bring-up, and USB HID
@@ -17,8 +16,6 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
-
-#include "cJSON.h"
 
 // --- Platform glue implemented in ports/samd21/platform/platform_glue.c ---
 

@@ -677,6 +677,14 @@ git commit -m "Trigger macro playback from key presses"
 
 ---
 
+> **TASKS 5, 7 AND 8 ARE SUPERSEDED -- do not implement them.** The binary
+> keymap format (`docs/superpowers/specs/2026-08-21-binary-keymap-format-design.md`)
+> fits 16 layers plus macros inside the existing 4085-byte ceiling, which
+> removes the need for a per-port ceiling, RP2040's four-sector region and
+> boot migration, and ESP32-C6's dedicated partition. The spec this plan
+> implements carries the same notice in its own header. Tasks 1-4, 6 and 9
+> shipped in PR #12; these three were dropped on purpose, not forgotten.
+
 ### Task 5: Per-port keymap ceiling
 
 **Files:**

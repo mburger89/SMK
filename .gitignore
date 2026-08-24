@@ -61,3 +61,6 @@ openocd_esp32c6.sh
 # GitHub Pages site build output
 site/dist/
 site/**/__pycache__/
+
+# symlink to ../smk_shared (shared datasheets + KiCad library)
+/shared

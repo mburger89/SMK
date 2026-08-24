@@ -1,10 +1,8 @@
-#if canImport(CJSON)
-import CJSON
-#endif
-
 // Host-only: strcmp/strncmp/atoi come from the bridging header (newlib) on
 // the embedded builds, but the host SMKCore build needs them imported
-// explicitly since cJSON.h only pulls in <stddef.h>, not <string.h>.
+// explicitly -- KeyAction.fromCString and KeyCode.fromCString below are
+// still C-string token parsers, they just no longer arrive via a JSON
+// parser.
 #if canImport(Darwin)
 import Darwin
 #elseif canImport(Glibc)
@@ -85,14 +83,9 @@ struct LayerEngine {
 
     private(set) var keymaps: [[[KeyAction]]] = []
     /// Macros decoded from the version-2 binary payload by
-    /// `loadKeymap(binary:count:)`. Always empty on the JSON
-    /// (`loadKeymap(json:)`/`loadKeymap(cJsonStr:)`) path -- macros never
-    /// rode in the JSON format.
+    /// `loadKeymap(binary:count:)`, the only keymap loader there is since
+    /// cJSON was retired.
     private(set) var macros: [MacroDefinition] = []
-
-    mutating func loadKeymap(json: String) {
-        json.withCString { loadKeymap(cJsonStr: $0) }
-    }
 
     // Loads a keymap from a version-2 binary payload -- the bytes
     // immediately following the 11-byte frame header, once
@@ -102,8 +95,7 @@ struct LayerEngine {
     // docs/superpowers/specs/2026-08-21-binary-keymap-format-design.md for
     // the payload layout this decodes.
     //
-    // Mirrors loadKeymap(cJsonStr:)'s caution around a malformed/empty
-    // result: an undecodable payload or a payload with zero layers leaves
+    // An undecodable payload or a payload with zero layers leaves
     // `keymaps` untouched rather than clobbering a previously-loaded (or
     // compiled-in default) keymap with nothing. `macros` is always replaced
     // with whatever decoded, including an empty list -- a keymap legitimately
@@ -138,67 +130,11 @@ struct LayerEngine {
         if !payload.layers.isEmpty && hasUsableCells {
             self.keymaps = payload.layers
             self.macros = payload.macros
-            // Says "binary" rather than just "loaded" because the JSON
-            // loader below logs from the same message otherwise, and after
-            // the v1->v2 format migration the one thing worth knowing from
-            // a boot log is which format the board actually accepted.
-            // Reading the source to work that out -- as I had to after the
-            // first hardware flash -- is exactly the diagnosis this line
-            // should be saving someone.
+            // Still says "binary" though it is now the only loader: the
+            // v1(JSON)->v2(binary) migration is what this line was added to
+            // make legible in a boot log, and a board flashed with older
+            // firmware can still be in front of you.
             kb_log("Keymap loaded successfully (binary)")
-        }
-    }
-
-    // Parses a keymap already available as a C string — used both by
-    // loadKeymap(json:) above (compiled-in default) and by Main.swift's
-    // stored-keymap boot path (a null-terminated buffer read from the
-    // on-device keymap store), which is already a C buffer and shouldn't be
-    // round-tripped through a Swift String just to get back to one.
-    mutating func loadKeymap(cJsonStr: UnsafePointer<Int8>) {
-        guard let root = cJSON_Parse(cJsonStr) else {
-            kb_log("JSON Parse Error")
-            return
-        }
-        defer { cJSON_Delete(root) }
-
-        guard let layersArray = cJSON_GetObjectItem(root, "layers") else {
-            kb_log("JSON Missing 'layers' key")
-            return
-        }
-
-        let layerCount = cJSON_GetArraySize(layersArray)
-        if layerCount == 0 { return }
-
-        var newKeymaps: [[[KeyAction]]] = []
-
-        for i in 0..<layerCount {
-            guard let layerObj = cJSON_GetArrayItem(layersArray, i) else { continue }
-            let rowCount = cJSON_GetArraySize(layerObj)
-            var layer: [[KeyAction]] = []
-
-            for r in 0..<rowCount {
-                guard let rowObj = cJSON_GetArrayItem(layerObj, r) else { continue }
-                let colCount = cJSON_GetArraySize(rowObj)
-                var row: [KeyAction] = []
-
-                for c in 0..<colCount {
-                    guard let cellObj = cJSON_GetArrayItem(rowObj, c) else { continue }
-                    if let cStr = cellObj.pointee.valuestring {
-                        row.append(KeyAction.fromCString(cStr))
-                    } else {
-                        row.append(.none)
-                    }
-                }
-                layer.append(row)
-            }
-            newKeymaps.append(layer)
-        }
-
-        if !newKeymaps.isEmpty {
-            self.keymaps = newKeymaps
-            // See the binary loader's note: these two must stay
-            // distinguishable in a boot log.
-            kb_log("Keymap loaded successfully (JSON)")
         }
     }
 
