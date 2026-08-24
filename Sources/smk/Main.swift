@@ -85,35 +85,25 @@ func smk_default_mode_is_wired() -> Int32
 // coexist with an @_extern(c, ...) forward declaration of the same name
 // ("invalid redeclaration").
 
-// Loads the compiled-in default keymap. Binary (Task 7 -- see
-// generate_default_keymap.sh and the generated
-// Sources/SMKCore/DefaultKeymapGenerated.swift) for the three boards whose
-// default is byte-for-byte the ~/esp/SMK/keymap.json layout (verified by
-// diffing every board's `configJson` "layers" array against that file):
-// SMK_BOARD_NRF52840DK, SMK_BOARD_KBD_RP2040, and this file's `#else` board
-// (smk_kbd / ESP32-C6) -- only their GPIO matrix pins differ between each
-// other, which `Config.fromJson(configJson)` above already handles
-// separately from this call. The other five bring-up boards
-// (SMK_BOARD_FEATHER_NRF52840, SMK_BOARD_STM32F4_BLACKPILL, SMK_BOARD_XIAO_M0,
-// SMK_BOARD_STM32WB_NUCLEO, SMK_BOARD_TEST_BOARD) ship their own smaller /
-// placeholder layouts that keymap.json does not describe (see each board's
-// own `configJson` block below), so they keep parsing their own JSON
-// literal here rather than silently loading the wrong default.
+// Loads this board's compiled-in default keymap -- the binary payload
+// generated from boards/<name>.json into
+// Sources/SMKCore/DefaultKeymapGenerated.swift by ./generate_default_keymap.sh.
 //
-// `configJson` itself is NOT retired by this: `Config.fromJson(configJson)`
-// (Sources/SMKCore/Config.swift) still parses every board's "matrix" object
-// for its GPIO rowPins/colPins/colsAreDriven ahead of this call, so cJSON
-// stays linked for that regardless of which branch below runs.
-func loadCompiledDefaultKeymap(into engine: inout LayerEngine, configJson: String) {
-    #if SMK_BOARD_FEATHER_NRF52840 || SMK_BOARD_STM32F4_BLACKPILL || SMK_BOARD_XIAO_M0 || SMK_BOARD_STM32WB_NUCLEO || SMK_BOARD_TEST_BOARD
-    engine.loadKeymap(json: configJson)
-    #else
+// Every board takes this path. The five bring-up boards that used to parse
+// their own JSON literal here were migrated when cJSON was retired
+// (docs/superpowers/specs/2026-08-21-retire-cjson-design.md); the layout a
+// board gets is selected by the same SMK_BOARD_* flags that used to select
+// its literal, in the generated file's own `#if` chain.
+//
+// The board's GPIO matrix comes from the *same* payload, via
+// `Config(payload:)` in app_main_swift below -- one artifact, so the matrix
+// and the layers cannot disagree about how many rows and columns exist.
+func loadCompiledDefaultKeymap(into engine: inout LayerEngine) {
     defaultKeymapBytes.withUnsafeBufferPointer { ptr in
         if let base = ptr.baseAddress {
             engine.loadKeymap(binary: base, count: ptr.count)
         }
     }
-    #endif
 }
 
 // Applies the layer effects `MacroPlayer.tick()` handed back for a `.layer`
@@ -157,286 +147,47 @@ func applyMacroLayerEffects(_ effects: [LayerEffect], to engine: inout LayerEngi
 func app_main_swift() {
     kb_log("Initialising SMK Keyboard...")
 
-    // Board pin maps. Exactly one of these is compiled in, selected by the
-    // build (SMK_BOARD_NRF52840DK / SMK_BOARD_KBD_RP2040 in
-    // ports/nrf52840/CMakeLists.txt / ports/rp2040/CMakeLists.txt
-    // respectively; the ESP32 main/CMakeLists.txt defines SMK_BOARD_TEST_BOARD
-    // when Kconfig's SMK_BOARD choice selects the test board, and otherwise
-    // defines neither, falling into the #else branch below for the
-    // reference smk_kbd board — see main/Kconfig.projbuild's SMK_BOARD
-    // choice for why the ESP32-C6 build alone picks its board via Kconfig
-    // rather than a hardcoded CMake define like every other target here).
+    // Board pin map. Exactly one board's layout is compiled in, selected by
+    // the build's SMK_BOARD_* flag (ports/*/CMakeLists.txt for every target
+    // except ESP32-C6, whose main/CMakeLists.txt defines SMK_BOARD_TEST_BOARD
+    // only when Kconfig's SMK_BOARD choice selects the test board, and
+    // otherwise defines nothing so the generated file's `#else` -- the
+    // reference smk_kbd board -- applies; see main/Kconfig.projbuild for why
+    // that one target picks its board via Kconfig rather than a hardcoded
+    // CMake define). The layouts themselves live in boards/*.json.
+    //
     // All boards share the same keymap-cell vocabulary, but NOT the same
-    // matrix topology: smk_kbd_rp2040, the ESP32-C6 smk_kbd board, and the
-    // SMK test board are all COL2ROW (`colsAreDriven: true` — diode anode
-    // at the column/switch side), while the nRF52840DK board below is the
-    // opposite (`colsAreDriven: false`) — see KeyMatrix.swift for what that
-    // flag actually changes about the scan direction.
-#if SMK_BOARD_NRF52840DK
-    // nrf52840dk board (Nordic PCA10056) — GPIO map deferred to hardware
-    // bring-up (no board schematic consulted in this pass, per
-    // docs/superpowers/specs/2026-08-09-nrf52840-support-design.md's
-    // build-only scope). Placeholder pin numbers below MUST be replaced
-    // before this board is ever flashed.
-    let configJson = """
-    {
-        "matrix": {
-            "rows": [0, 1, 2, 3, 4],
-            "cols": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            "colsAreDriven": 0
-        },
-        "layers": [
-            [
-                ["key:1", "key:2", "key:3", "key:4", "key:5", "key:6", "key:7", "key:8", "key:9", "key:0", "key:minus", "key:backspace"],
-                ["key:tab", "key:q", "key:w", "key:e", "key:r", "key:t", "key:y", "key:u", "key:i", "key:o", "key:p", "key:backslash"],
-                ["key:escape", "key:a", "key:s", "key:d", "key:f", "key:g", "key:h", "key:j", "key:k", "key:l", "key:semicolon", "key:enter"],
-                ["mod:leftShift", "key:z", "key:x", "key:c", "key:v", "key:b", "key:n", "key:m", "key:comma", "key:period", "key:slash", "mod:rightShift"],
-                ["mod:leftCtrl", "mod:leftGUI", "mod:leftAlt", "mo:1", "mod:leftShift", "key:space", "none", "mod:rightShift", "mo:1", "mod:rightAlt", "mod:rightGUI", "mod:rightCtrl"]
-            ],
-            [
-                ["toggle_conn", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans", "trans", "key:left", "key:down", "key:up", "key:right", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans", "trans", "none", "trans", "trans", "trans", "trans", "trans"]
-            ]
-        ]
-    }
-    """
-#elseif SMK_BOARD_FEATHER_NRF52840
-    // Adafruit Feather nRF52840 Express — USB-enumeration bring-up only
-    // (see CLAUDE.md's Feather nRF52840 Express section). No matrix is
-    // wired to this board, and its fixed-function pins (P0.00/P0.01 are
-    // the 32.768kHz crystal XL1/XL2, P0.16 drives the onboard NeoPixel)
-    // rule out reusing the nrf52840dk placeholder pin numbers above without
-    // real risk of disturbing them. Empty rows/cols means init_keyboard_pins
-    // is called with zero counts and scan() always returns no presses —
-    // KeyMatrix.swift's row/col loops are no-ops on an empty array, so this
-    // never touches a single GPIO pin.
-    let configJson = """
-    {
-        "matrix": {
-            "rows": [],
-            "cols": [],
-            "colsAreDriven": 0
-        },
-        "layers": [
-            [[]]
-        ]
-    }
-    """
-#elseif SMK_BOARD_STM32F4_BLACKPILL
-    // WeAct Black Pill (STM32F411CEU6) — bring-up target, not a real
-    // keyboard. All matrix pins are on GPIOB (0-9) per this plan's
-    // single-port constraint (see ports/stm32f4/GPIORegisters.swift).
-    // Placeholder pin numbers and layout below MUST be replaced once a
-    // real STM32F4 keyboard PCB is designed.
-    let configJson = """
-    {
-        "matrix": {
-            "rows": [0, 1, 2, 3, 4],
-            "cols": [5, 6, 7, 8, 9],
-            "colsAreDriven": 0
-        },
-        "layers": [
-            [
-                ["key:1", "key:2", "key:3", "key:4", "key:5"],
-                ["key:q", "key:w", "key:e", "key:r", "key:t"],
-                ["key:a", "key:s", "key:d", "key:f", "key:g"],
-                ["mod:leftShift", "key:z", "key:x", "key:c", "key:v"],
-                ["mod:leftCtrl", "mo:1", "key:space", "mo:1", "mod:rightCtrl"]
-            ],
-            [
-                ["toggle_conn", "trans", "trans", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans"],
-                ["trans", "none", "trans", "none", "trans"]
-            ]
-        ]
-    }
-    """
-#elseif SMK_BOARD_XIAO_M0
-    // Seeed XIAO M0 (SAMD21G18A) — bring-up target, not a real keyboard.
-    // 3x3 placeholder matrix on the XIAO's PORT-group-A pins (the shared
-    // GPIORegisters bank is single-group, same constraint as the STM32
-    // ports): rows = PA02/PA04/PA10 (XIAO D0/D1/D2), cols = PA11/PA08/PA09
-    // (D3/D4/D5). Placeholder pin numbers and layout below MUST be replaced
-    // once a real SAMD21 keyboard/macropad PCB is designed — nothing is
-    // wired to these pins on a bare XIAO M0.
-    let configJson = """
-    {
-        "matrix": {
-            "rows": [2, 4, 10],
-            "cols": [11, 8, 9],
-            "colsAreDriven": 1
-        },
-        "layers": [
-            [
-                ["key:1", "key:2", "key:3"],
-                ["key:4", "key:5", "key:6"],
-                ["key:7", "key:8", "key:9"]
-            ]
-        ]
-    }
-    """
-#elseif SMK_BOARD_STM32WB_NUCLEO
-    // NUCLEO-WB55RG (STM32WB55RGVx) — bring-up target, not a real keyboard.
-    // All matrix pins are on GPIOB (0-9) per this plan's single-port
-    // constraint (see ports/stm32wb/GPIORegisters.swift). Placeholder pin
-    // numbers and layout below MUST be replaced once a real STM32WB
-    // keyboard PCB is designed.
-    let configJson = """
-    {
-        "matrix": {
-            "rows": [0, 1, 2, 3, 4],
-            "cols": [5, 6, 7, 8, 9],
-            "colsAreDriven": 0
-        },
-        "layers": [
-            [
-                ["key:1", "key:2", "key:3", "key:4", "key:5"],
-                ["key:q", "key:w", "key:e", "key:r", "key:t"],
-                ["key:a", "key:s", "key:d", "key:f", "key:g"],
-                ["mod:leftShift", "key:z", "key:x", "key:c", "key:v"],
-                ["mod:leftCtrl", "mo:1", "key:space", "mo:1", "mod:rightCtrl"]
-            ],
-            [
-                ["toggle_conn", "trans", "trans", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans"],
-                ["trans", "none", "trans", "none", "trans"]
-            ]
-        ]
-    }
-    """
-#elseif SMK_BOARD_KBD_RP2040
-    // smk_kbd_rp2040 board (RP2040 QFN-56 chip-down) — GPIO map per
-    // generate_kbd_rp2040.py (source of truth for this board's pin
-    // assignments; see that file's header docstring for verification notes):
-    //   ROW0-4 = GPIO0-4 (sense inputs, pull-down)
-    //   COL0-11 = GPIO5-16 (strobe outputs)
-    //   RGB_GPIO = GPIO17 (SK6812MINI-E chain, via level shifter U7)
-    //   VBAT_SENSE = GPIO26/ADC0 — reserved, not used by the matrix
-    //   GPIO18-23 + GPIO28 are the CYW43439 BLE UART link (BT_REG_ON,
-    //   BT_DEV_WAKE, BT_UART_*, BT_HOST_WAKE) — see ports/rp2040/BleHidKbdUart.swift
-    // colsAreDriven:1 for the same reason as the ESP32 board below — this
-    // board's matrix is also COL2ROW (diode anode at the column/switch
-    // side) — see KeyMatrix.swift.
+    // matrix topology: smk_kbd_rp2040, the ESP32-C6 smk_kbd board and the
+    // SMK test board are all COL2ROW (`colsAreDriven: true` -- diode anode
+    // at the column/switch side), while nrf52840dk is the opposite
+    // (`colsAreDriven: false`) -- see KeyMatrix.swift for what that flag
+    // changes about the scan direction.
     //
-    // Row 4 layout is irregular per the PCB: 5 keys (cols 0-4), one 2U key
-    // (col 5), no switch at col 6, then 5 more keys (cols 7-11) — 59
-    // physical keys total over the 5x12 = 60 matrix positions.
-    let configJson = """
-    {
-        "matrix": {
-            "rows": [0, 1, 2, 3, 4],
-            "cols": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            "colsAreDriven": 1
-        },
-        "layers": [
-            [
-                ["key:1", "key:2", "key:3", "key:4", "key:5", "key:6", "key:7", "key:8", "key:9", "key:0", "key:minus", "key:backspace"],
-                ["key:tab", "key:q", "key:w", "key:e", "key:r", "key:t", "key:y", "key:u", "key:i", "key:o", "key:p", "key:backslash"],
-                ["key:escape", "key:a", "key:s", "key:d", "key:f", "key:g", "key:h", "key:j", "key:k", "key:l", "key:semicolon", "key:enter"],
-                ["mod:leftShift", "key:z", "key:x", "key:c", "key:v", "key:b", "key:n", "key:m", "key:comma", "key:period", "key:slash", "mod:rightShift"],
-                ["mod:leftCtrl", "mod:leftGUI", "mod:leftAlt", "mo:1", "mod:leftShift", "key:space", "none", "mod:rightShift", "mo:1", "mod:rightAlt", "mod:rightGUI", "mod:rightCtrl"]
-            ],
-            [
-                ["toggle_conn", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans", "trans", "key:left", "key:down", "key:up", "key:right", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans", "trans", "none", "trans", "trans", "trans", "trans", "trans"]
-            ]
-        ]
-    }
-    """
-#elseif SMK_BOARD_TEST_BOARD
-    // SMK test board (Seeed XIAO ESP32-C6) — 3x3 macropad bring-up board
-    // built to exercise hardware the smk_kbd board below never has: the
-    // RMT LED driver and BatteryMonitor. Pin map is a contract shared with
-    // the PCB generator and the smk_configurator app — all three must
-    // agree or the firmware scans pins that aren't wired:
-    //   ROW0-2 = GPIO1, 2, 21 (sense inputs, pull-down)
-    //   COL0-2 = GPIO22, 23, 16 (strobe outputs, push-pull)
-    //   LED data (9x SK6812MINI-E) = GPIO20 (SMK_RGB_GPIO default for this
-    //   board, see main/Kconfig.projbuild)
-    //   VBAT sense = GPIO0/ADC1_CH0 (Sources/components/battery_adc.c)
-    //   Encoder A/B = GPIO17, 19 — wired but unread. This firmware cannot
-    //   decode quadrature; those pins are simply not referenced here.
-    // colsAreDriven:1 — same COL2ROW wiring as every other board in this
-    // file (diode anode at the column/switch side) — see KeyMatrix.swift.
+    // Both the matrix and the layers come from the one compiled-in binary
+    // payload. It is decoded twice on purpose -- once here for the matrix,
+    // once in loadCompiledDefaultKeymap below for the layers -- rather than
+    // adding a payload-taking entry point to LayerEngine for a boot-time-only
+    // saving of a few hundred bytes of transient allocation.
     //
-    // The 3x3 matrix's ninth position (row 0, col 2) is the rotary
-    // encoder's push switch, wired as an ordinary matrix key.
-    let configJson = """
-    {
-        "matrix": {
-            "rows": [1, 2, 21],
-            "cols": [22, 23, 16],
-            "colsAreDriven": 1
-        },
-        "layers": [
-            [
-                ["key:1", "key:2", "key:3"],
-                ["key:4", "key:5", "key:6"],
-                ["key:7", "key:8", "key:9"]
-            ]
-        ]
+    // Note this is always the *compiled-in* payload, never a stored one: an
+    // uploaded keymap carries its own rows/cols header, but letting it
+    // re-map GPIO would let a configurator bug leave a board unable to scan
+    // even the keys needed to recover. A stored keymap contributes layers
+    // and macros only (see the store path further down).
+    let cfg: Config = defaultKeymapBytes.withUnsafeBufferPointer { ptr in
+        guard let base = ptr.baseAddress,
+              let payload = decodeKeymapPayload(base, count: ptr.count) else {
+            // Unreachable short of a generator bug -- these bytes are
+            // compiled in, not read from storage. Returning an empty Config
+            // makes the check below fail loudly rather than scanning
+            // undefined pins.
+            kb_log("Critical Error: compiled-in keymap payload did not decode")
+            return Config()
+        }
+        return Config(payload: payload)
     }
-    """
-#else
-    // smk_kbd board (ESP32-C6-MINI-1) — GPIO map per that PCB's
-    // README (source of truth for firmware pin assignments):
-    //   ROW0-3 = IO0-IO3, ROW4 = IO5 (sense inputs, pull-down)
-    //   COL0-11 = IO6, IO7, IO8, IO14, IO15, IO18, IO19, IO20, IO21, IO22,
-    //             IO23, IO17 (strobe outputs)
-    //   IO4 is reserved for the battery-sense ADC (VBAT/2 divider) on this
-    //   board and must NOT be used by the matrix.
-    // colsAreDriven:1 because this board's matrix is COL2ROW (diode anode
-    // at the column/switch side) — see KeyMatrix.swift for why that means
-    // columns must be the driven/output side, not rows.
-    //
-    // Row 4 layout is irregular per the PCB: 5 keys (cols 0-4), one 2U key
-    // (col 5), no switch at col 6, then 5 more keys (cols 7-11) — 59
-    // physical keys total over the 5x12 = 60 matrix positions.
-    //
-    // This board has no per-key RGB chain and no CH9350 wired-HID bridge —
-    // see notes below on both. Also the default for plain Pico/Pico W builds
-    // (SMK_TARGET_BOARD unset) — rewire your own dev board to match, or edit
-    // this JSON, per the RP2040 port README.
-    let configJson = """
-    {
-        "matrix": {
-            "rows": [0, 1, 2, 3, 5],
-            "cols": [6, 7, 8, 14, 15, 18, 19, 20, 21, 22, 23, 17],
-            "colsAreDriven": 1
-        },
-        "layers": [
-            [
-                ["key:1", "key:2", "key:3", "key:4", "key:5", "key:6", "key:7", "key:8", "key:9", "key:0", "key:minus", "key:backspace"],
-                ["key:tab", "key:q", "key:w", "key:e", "key:r", "key:t", "key:y", "key:u", "key:i", "key:o", "key:p", "key:backslash"],
-                ["key:escape", "key:a", "key:s", "key:d", "key:f", "key:g", "key:h", "key:j", "key:k", "key:l", "key:semicolon", "key:enter"],
-                ["mod:leftShift", "key:z", "key:x", "key:c", "key:v", "key:b", "key:n", "key:m", "key:comma", "key:period", "key:slash", "mod:rightShift"],
-                ["mod:leftCtrl", "mod:leftGUI", "mod:leftAlt", "mo:1", "mod:leftShift", "key:space", "none", "mod:rightShift", "mo:1", "mod:rightAlt", "mod:rightGUI", "mod:rightCtrl"]
-            ],
-            [
-                ["toggle_conn", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans", "trans", "key:left", "key:down", "key:up", "key:right", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans", "trans"],
-                ["trans", "trans", "trans", "trans", "trans", "trans", "none", "trans", "trans", "trans", "trans", "trans"]
-            ]
-        ]
-    }
-    """
-#endif
-
-    let cfg = Config.fromJson(configJson)
     if cfg.rowPins.isEmpty || cfg.colPins.isEmpty {
-        kb_log("Critical Error: No matrix defined in JSON")
+        kb_log("Critical Error: no matrix defined for this board")
         return
     }
 
@@ -564,12 +315,12 @@ func app_main_swift() {
         }
         if engine.keymaps.isEmpty {
             kb_log("Stored keymap invalid, falling back to compiled default")
-            loadCompiledDefaultKeymap(into: &engine, configJson: configJson)
+            loadCompiledDefaultKeymap(into: &engine)
         } else {
             kb_log("Loaded keymap from on-device store")
         }
     } else {
-        loadCompiledDefaultKeymap(into: &engine, configJson: configJson)
+        loadCompiledDefaultKeymap(into: &engine)
     }
 
     let totalKeys = cfg.rowPins.count * cfg.colPins.count
