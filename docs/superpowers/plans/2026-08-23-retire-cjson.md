@@ -1,6 +1,6 @@
 # Retire cJSON From The Firmware — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Remove cJSON from every SMK firmware target by compiling each board's matrix *and* layers into the version-2 binary keymap payload at build time, so no board parses JSON at boot.
 
@@ -9,6 +9,31 @@
 **Tech Stack:** Swift 6 / Embedded Swift, Swift Testing (`import Testing`, bare `@Test func`), Python 3 (build-time generator), ESP-IDF (ESP32-C6), pico-sdk (RP2040/RP2350), CMake + Ninja (nRF52840, STM32F4, STM32WB, SAMD21).
 
 **Spec:** `docs/superpowers/specs/2026-08-21-retire-cjson-design.md`
+
+> **STATUS: COMPLETE**, 2026-08-23, on branch `retire-cjson` (commits
+> `4b9c555`..`a9ec579`). All ten tasks executed; every checkbox below is
+> ticked because it was actually done, not because the plan was filed. All
+> eleven builds link and 127 host tests pass. Measured saving: 16-93 KB of
+> `.text` per target -- see
+> `docs/superpowers/notes/2026-08-23-cjson-flash-sizes.md`.
+>
+> Deviations from the plan as written, all deliberate:
+> - Task 1 (baseline) ran first rather than in the plan's stated order, so
+>   the before-measurement was taken on an untouched tree.
+> - Task 2 additionally moved each board's comment block into a `comment`
+>   key in its JSON file, and corrected two stale references inside those
+>   comments (a deleted `battery_adc.c` path, and "below"/"in this file"
+>   pointing at a Main.swift board chain that no longer exists).
+> - Task 8 also removed `espressif/cjson` from `main/idf_component.yml`
+>   (the actual managed-component dependency, which the plan's file list
+>   missed) and updated a stale cJSON reference in the STM32WB linker
+>   script's heap comment.
+> - Task 9's measurement found the spec's 15-25 KB estimate was low, not
+>   high, for a reason nobody had identified: cJSON pulled newlib's
+>   floating-point conversion machinery in transitively.
+> - A pre-existing bug was found and deliberately NOT fixed: see the
+>   feather_nrf52840 note in `CLAUDE.md` and the comment at
+>   `Sources/smk/Main.swift`'s empty-matrix check.
 
 ## Global Constraints
 
@@ -71,7 +96,7 @@ changes, on a clean build of the current tree.
 **Interfaces:**
 - Produces: a committed before-column that Task 8 fills in the after-column of
 
-- [ ] **Step 1: Build every target on the unmodified tree**
+- [x] **Step 1: Build every target on the unmodified tree**
 
 Run each of these from the repo root. All seven succeed on this machine —
 every dependency checkout and toolchain was verified present before this
@@ -97,7 +122,7 @@ export CMSIS_WB_PATH=~/cmsis-device-wb STM32CUBEWB_PATH=~/STM32CubeWB
 ( . ~/.espressif/v6.0.1/esp-idf/export.sh && idf.py build )
 ```
 
-- [ ] **Step 2: Record the text sizes**
+- [x] **Step 2: Record the text sizes**
 
 For the ARM targets, `arm-none-eabi-size` reports the linked image:
 
@@ -120,7 +145,7 @@ If an `.elf` path differs from the guess above, find it with
 `ls build_*/*.elf` rather than assuming — the build directory names are
 per-board and the plan's list is from a tree state that may have moved.
 
-- [ ] **Step 3: Write the note file**
+- [x] **Step 3: Write the note file**
 
 Create `docs/superpowers/notes/2026-08-23-cjson-flash-sizes.md` with a table
 carrying one row per target and a `text` / `data` / `bss` column set, with
@@ -132,7 +157,7 @@ check on the spec's 15–25 KB estimate:
 arm-none-eabi-nm --print-size --size-sort build_stm32f4/smk_stm32f4.elf | grep -i cjson
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/superpowers/notes/2026-08-23-cjson-flash-sizes.md
@@ -155,7 +180,7 @@ be tested on this machine.
 **Interfaces:**
 - Produces: eight board files, each `{"board", "define", "matrix", and one of "layers"/"layersFrom"}`
 
-- [ ] **Step 1: Copy each literal out mechanically**
+- [x] **Step 1: Copy each literal out mechanically**
 
 The eight literals sit at these exact line ranges in `Sources/smk/Main.swift`
 (the `"""`-delimited body, not the `#if` line):
@@ -185,7 +210,7 @@ stripped; the JSON body is otherwise untouched. Verify each file parses:
 for f in boards/*.json; do python3 -c "import json,sys; json.load(open('$f'))" || echo "BAD $f"; done
 ```
 
-- [ ] **Step 2: Add the `board` and `define` keys**
+- [x] **Step 2: Add the `board` and `define` keys**
 
 Each file gains two keys at the top level, alongside the `matrix` and
 `layers` it already has. For `boards/nrf52840dk.json`:
@@ -202,7 +227,7 @@ Each file gains two keys at the top level, alongside the `matrix` and
 `boards/smk_kbd.json` gets `"define": null` — it is the `#else` fallback of
 the generated `#if` chain, so it has no flag of its own.
 
-- [ ] **Step 3: Deduplicate the three boards that share `keymap.json`**
+- [x] **Step 3: Deduplicate the three boards that share `keymap.json`**
 
 `nrf52840dk`, `kbd_rp2040` and `smk_kbd` carry layers byte-identical to the
 repo-root `keymap.json` — that equivalence is already established and is why
@@ -230,7 +255,7 @@ All three must print `MATCH`. If one does not, **stop** — the premise that
 those three share a layout is wrong, and that board keeps its own inline
 `"layers"` instead. Report which board and how it differs.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add boards/
@@ -250,7 +275,7 @@ git commit -m "Move the eight board layouts out of Main.swift into boards/"
 - Consumes: `boards/*.json` from Task 2
 - Produces: `defaultKeymapBytes: [UInt8]` (board-guarded, same name as today), and `generatedBoardPayloads: [GeneratedBoardPayload]` for tests
 
-- [ ] **Step 1: Replace the single-keymap driver with a board loop**
+- [x] **Step 1: Replace the single-keymap driver with a board loop**
 
 `generate_default_keymap.sh` already has the whole cell encoder (`encode_cell`,
 `usage_by_token`, `modifier_bits`, the `TAG_*` constants) and the header/
@@ -355,7 +380,7 @@ def compile_board(name):
 compiled = [(name,) + compile_board(name) for name in BOARDS]
 ```
 
-- [ ] **Step 2: Emit the board-guarded `defaultKeymapBytes`**
+- [x] **Step 2: Emit the board-guarded `defaultKeymapBytes`**
 
 Replace the existing `lines = list(BANNER)` output block with one that walks
 `compiled` and writes a `#if`/`#elseif`/`#else` chain. The public name stays
@@ -401,7 +426,7 @@ out = pathlib.Path("Sources/SMKCore/DefaultKeymapGenerated.swift")
 out.write_text("\n".join(lines))
 ```
 
-- [ ] **Step 3: Emit the host-test fixture**
+- [x] **Step 3: Emit the host-test fixture**
 
 Every board's payload must be reachable from the host build to be
 round-tripped, and only one is (the `#else` one). Emit a second, test-only
@@ -432,12 +457,12 @@ test_out.write_text("\n".join(test_lines))
 print("wrote %s and %s (%d boards)" % (out, test_out, len(compiled)))
 ```
 
-- [ ] **Step 4: Run the generator**
+- [x] **Step 4: Run the generator**
 
 Run: `./generate_default_keymap.sh`
 Expected: prints `wrote Sources/SMKCore/DefaultKeymapGenerated.swift and Tests/SMKCoreTests/BoardPayloadsGenerated.swift (8 boards)`.
 
-- [ ] **Step 5: Verify the smk_kbd payload did not change**
+- [x] **Step 5: Verify the smk_kbd payload did not change**
 
 This is the regression that matters: the `#else` board's bytes must be
 identical to what the previous generator emitted, since nothing about that
@@ -452,12 +477,12 @@ added `#if` chain and the seven other boards' blocks. If the smk_kbd bytes
 moved, **stop** — something in the encoder changed and the format contract
 is at risk.
 
-- [ ] **Step 6: Run the host tests**
+- [x] **Step 6: Run the host tests**
 
 Run: `SMK_HOST_TESTS_ONLY=1 swift test`
 Expected: PASS, including the existing `compiledDefaultKeymapRoundTrips`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add generate_default_keymap.sh Sources/SMKCore/DefaultKeymapGenerated.swift Tests/SMKCoreTests/BoardPayloadsGenerated.swift
@@ -479,7 +504,7 @@ test. That is mechanical and catches the whole class."
 **Interfaces:**
 - Consumes: `generatedBoardPayloads` (Task 3), `decodeKeymapPayload` / `KeyAction` (`Sources/SMKCore/KeymapBinary.swift`)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Tests are host-only, so `Foundation` is available for reading and parsing
 the board JSON — the thing the firmware is losing the ability to do is
@@ -565,7 +590,7 @@ private func expectedAction(_ token: String) -> KeyAction {
 }
 ```
 
-- [ ] **Step 2: Run the test**
+- [x] **Step 2: Run the test**
 
 Run: `SMK_HOST_TESTS_ONLY=1 swift test --filter BoardPayload`
 
@@ -576,7 +601,7 @@ Expected: PASS for all eight boards. A failure here means a board's layout
 changed in extraction — go back to Task 2 and re-extract that board with
 `sed` rather than patching the JSON to match the bytes.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add Tests/SMKCoreTests/BoardPayloadRoundTripTests.swift
@@ -595,7 +620,7 @@ git commit -m "Round-trip every board's compiled payload against its JSON"
 - Produces: `Config.init(payload: KeymapPayload)`
 - Consumes: `KeymapPayload` (`Sources/SMKCore/KeymapBinary.swift:116-122`)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `Tests/SMKCoreTests/ConfigTests.swift`. This test is the
 **equivalence pin** the spec asks for — it exists to prove the new path
@@ -634,12 +659,12 @@ private let repoRootForConfigTests = URL(fileURLWithPath: #filePath)
 
 and `import Foundation` at the top of the file if it is not already there.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `SMK_HOST_TESTS_ONLY=1 swift test --filter Config`
 Expected: FAIL to compile — `Config` has no `init(payload:)`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Add to `Sources/SMKCore/Config.swift`, above `fromJson`:
 
@@ -663,12 +688,12 @@ Add to `Sources/SMKCore/Config.swift`, above `fromJson`:
     }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `SMK_HOST_TESTS_ONLY=1 swift test`
 Expected: PASS — all eight boards agree between the two paths.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/SMKCore/Config.swift Tests/SMKCoreTests/ConfigTests.swift
@@ -685,7 +710,7 @@ git commit -m "Build Config from a decoded keymap payload"
 **Interfaces:**
 - Consumes: `Config.init(payload:)` (Task 5), `defaultKeymapBytes` (Task 3)
 
-- [ ] **Step 1: Delete the eight literals**
+- [x] **Step 1: Delete the eight literals**
 
 Delete `Sources/smk/Main.swift` lines 175–435 entirely — the whole
 `#if SMK_BOARD_NRF52840DK` … `#endif` chain, including each board's comment
@@ -696,7 +721,7 @@ board's comment verbatim into a `"comment"` key at the top of its
 `boards/<name>.json` file (JSON has no comment syntax; a string key is the
 conventional substitute and the generator ignores unknown keys).
 
-- [ ] **Step 2: Replace the config and keymap load**
+- [x] **Step 2: Replace the config and keymap load**
 
 `Sources/smk/Main.swift:437`'s `let cfg = Config.fromJson(configJson)`
 becomes a decode of the compiled-in payload:
@@ -723,7 +748,7 @@ becomes a decode of the compiled-in payload:
     }
 ```
 
-- [ ] **Step 3: Simplify `loadCompiledDefaultKeymap`**
+- [x] **Step 3: Simplify `loadCompiledDefaultKeymap`**
 
 The five-board `#if` in `Sources/smk/Main.swift:107-116` exists only to send
 the JSON boards down the JSON path. Every board is a binary board now, so
@@ -752,7 +777,7 @@ func loadCompiledDefaultKeymap(into engine: inout LayerEngine) {
 Update both call sites (`Sources/smk/Main.swift:567` and `:572`) to drop the
 `configJson:` argument.
 
-- [ ] **Step 4: Leave the stored-keymap path's matrix alone — deliberately**
+- [x] **Step 4: Leave the stored-keymap path's matrix alone — deliberately**
 
 An uploaded keymap payload carries its own `rows`/`cols` header, and it is
 tempting to let a stored keymap re-map the GPIO matrix. **Do not.** Today
@@ -764,13 +789,13 @@ otherwise leave a board unable to scan its own reset key. Keep
 at the `cfg` site saying the stored payload's matrix header is ignored on
 purpose.
 
-- [ ] **Step 5: Verify the host build**
+- [x] **Step 5: Verify the host build**
 
 Run: `SMK_HOST_TESTS_ONLY=1 swift test`
 Expected: PASS. (`Main.swift` is not in the host target, so this only proves
 nothing in SMKCore broke — Task 9 is what compiles `Main.swift`.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Sources/smk/Main.swift boards/
@@ -793,7 +818,7 @@ comes first.
 **Interfaces:**
 - Produces: `payloadBytes(rows:cols:colsAreDriven:layers:)`, `LayerEngine.loadTestKeymap(_:rows:cols:colsAreDriven:)`
 
-- [ ] **Step 1: Write the builder and its drift pin**
+- [x] **Step 1: Write the builder and its drift pin**
 
 ```swift
 import Foundation
@@ -891,7 +916,7 @@ builder and asserts byte-equality with what the shell generator produced:
 }
 ```
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 Run: `SMK_HOST_TESTS_ONLY=1 swift test --filter builderMatchesShellGenerator`
 Expected: PASS. A failure means the Swift builder and the Python generator
@@ -903,7 +928,7 @@ If `KeyAction`'s case names differ from the `switch` above, read them from
 `default:` arm, because an unhandled case must fail the build here rather
 than encode as something wrong.
 
-- [ ] **Step 3: Migrate the 22 call sites**
+- [x] **Step 3: Migrate the 22 call sites**
 
 Mechanical. Each `loadKeymap(json:)` call takes a JSON string containing a
 `"layers"` array; it becomes a `loadTestKeymap` call with the same grid.
@@ -937,7 +962,7 @@ grep -rn "loadKeymap(json:" Tests/
 
 Work through them one file at a time, running the suite after each file.
 
-- [ ] **Step 4: Migrate `ConfigTests.swift`**
+- [x] **Step 4: Migrate `ConfigTests.swift`**
 
 Four sites call `Config.fromJson` (`Tests/SMKCoreTests/ConfigTests.swift:8,
 18, 23, 29`). Two of them assert malformed-input behaviour (`"not json"`,
@@ -961,12 +986,12 @@ garbage pins:
 Keep `configFromPayloadMatchesConfigFromJson` (Task 5) for now — it is
 deleted in Task 8 along with `fromJson` itself.
 
-- [ ] **Step 5: Run the full suite**
+- [x] **Step 5: Run the full suite**
 
 Run: `SMK_HOST_TESTS_ONLY=1 swift test`
 Expected: PASS, with zero remaining `loadKeymap(json:` hits in `Tests/`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Tests/
@@ -984,14 +1009,14 @@ earlier would have meant a broken tree between tasks.
 - Modify: `Sources/SMKCore/Config.swift`, `Sources/SMKCore/LayerEngine.swift`, `Package.swift`, `main/CMakeLists.txt`, `ports/{rp2040,nrf52840,samd21,stm32f4,stm32wb}/CMakeLists.txt`, `Sources/smk/Bridging.h`, `ports/{rp2040,nrf52840,stm32f4,stm32wb,samd21}/BridgingHeader.h`
 - Delete: `Sources/CJSON/`, `Tests/SMKCoreTests/CJSONSmokeTests.swift`
 
-- [ ] **Step 1: Delete the Swift entry points**
+- [x] **Step 1: Delete the Swift entry points**
 
 - `Sources/SMKCore/Config.swift`: delete `static func fromJson` (lines 10–34) and the `#if canImport(CJSON) import CJSON #endif` header (lines 1–3).
 - `Sources/SMKCore/LayerEngine.swift`: delete `loadKeymap(json:)` (lines 93–94) and `loadKeymap(cJsonStr:)` (line 157 through the end of that method), plus the file's `import CJSON` and the `#include <string.h>` rationale comment at line 7 if it exists only for cJSON.
 - `Tests/SMKCoreTests/ConfigTests.swift`: delete `configFromPayloadMatchesConfigFromJson` — its whole purpose was pinning the migration, and it cannot compile without `fromJson`.
 - Update `Sources/SMKCore/LayerEngine.swift:86-90`'s doc comment on `macros`, which currently says macros are "always empty on the JSON path" — there is no JSON path.
 
-- [ ] **Step 2: Delete the build wiring**
+- [x] **Step 2: Delete the build wiring**
 
 ```bash
 git rm -r Sources/CJSON Tests/SMKCoreTests/CJSONSmokeTests.swift
@@ -1007,7 +1032,7 @@ Then, by hand:
 - `ports/samd21/CMakeLists.txt`: delete `SAMD21_CJSON_DIR` (154), the `-Xcc -I` (176), the `cJSON.c` source (197), and the `target_include_directories` entry (205).
 - All six bridging headers: delete `#include "cJSON.h"` and the "cJSON (config / keymap parsing)" comment line.
 
-- [ ] **Step 3: Confirm nothing references it**
+- [x] **Step 3: Confirm nothing references it**
 
 ```bash
 grep -rn -i "cjson" --exclude-dir=build --exclude-dir=.git --exclude-dir=managed_components . \
@@ -1020,12 +1045,12 @@ ESP-IDF managed dependency directory, not this repo's source — leave it on
 disk; ESP-IDF's component manager owns it, and it is no longer in any
 `REQUIRES`, so it is not linked.
 
-- [ ] **Step 4: Run the host tests**
+- [x] **Step 4: Run the host tests**
 
 Run: `SMK_HOST_TESTS_ONLY=1 swift test`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
@@ -1039,7 +1064,7 @@ git commit -m "Delete cJSON from the firmware"
 **Files:**
 - Modify: `docs/superpowers/notes/2026-08-23-cjson-flash-sizes.md`
 
-- [ ] **Step 1: Clean-build all seven targets**
+- [x] **Step 1: Clean-build all seven targets**
 
 Same environment exports as Task 1. Delete the build directories first so no
 stale object file hides a missing include:
@@ -1057,7 +1082,7 @@ Every one must link. A link failure naming a `cJSON_*` symbol means a Swift
 file still calls it; a failure naming a missing header means a bridging
 header was missed.
 
-- [ ] **Step 2: Re-measure and fill in the table**
+- [x] **Step 2: Re-measure and fill in the table**
 
 Same `arm-none-eabi-size` / `idf.py size` commands as Task 1, Step 2. Fill
 the after-columns in `docs/superpowers/notes/2026-08-23-cjson-flash-sizes.md`
@@ -1068,7 +1093,7 @@ Report the real number even if it is disappointing. The spec predicted
 saving is smaller, that is the finding, and it belongs in the note rather
 than being quietly omitted.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add docs/superpowers/notes/2026-08-23-cjson-flash-sizes.md
@@ -1082,7 +1107,7 @@ git commit -m "Record the measured flash saving from retiring cJSON"
 **Files:**
 - Modify: `CLAUDE.md`, `README.md`, `docs/superpowers/specs/2026-08-21-retire-cjson-design.md`
 
-- [ ] **Step 1: Update `CLAUDE.md`**
+- [x] **Step 1: Update `CLAUDE.md`**
 
 The "Keymap Configuration" section currently states the opposite of what is
 now true, at length — "**cJSON is not retired — do not assume it is**",
@@ -1106,13 +1131,13 @@ Also update the `Sources/SMKCore/` file table's `Config.swift` row
 ("matrix-config JSON parsing") and `LayerEngine.swift` row ("keymap JSON
 loading").
 
-- [ ] **Step 2: Update `README.md`**
+- [x] **Step 2: Update `README.md`**
 
 Its "Known Issues / TODOs" section does not mention cJSON, so nothing needs
 removing there — but if any build-prerequisite text names cJSON, update it.
 Check with `grep -n -i "json" README.md`.
 
-- [ ] **Step 3: Mark the spec done**
+- [x] **Step 3: Mark the spec done**
 
 `docs/superpowers/specs/2026-08-21-retire-cjson-design.md`'s header says
 `Status: **deferred.** Written up while the context was fresh; not
@@ -1121,7 +1146,7 @@ implemented, and append the measured flash numbers from Task 9 — the spec's
 "Why bother" section leads with a flash figure that was a guess, and leaving
 a guess next to a measurement invites someone to quote the guess.
 
-- [ ] **Step 4: Verify every claim**
+- [x] **Step 4: Verify every claim**
 
 Read the edited sections back against the tree. A false statement in
 `CLAUDE.md` is worse than an absent one — this project has been bitten by
@@ -1130,7 +1155,7 @@ enforcement rule that was untrue when written, and the macro-playback spec's
 storage section outlived its own supersession long enough to be planned
 twice).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add CLAUDE.md README.md docs/superpowers/specs/2026-08-21-retire-cjson-design.md
