@@ -20,7 +20,7 @@
 <main class="site-main">
 
 <h1>Keymap Reference</h1>
-<p class="lede">The active keymap is the <code>configJson</code> string literal in <code>Sources/smk/Main.swift</code>. The <code>keymap.json</code> at the repo root is a reference copy only — edits there don't affect the firmware until copied into <code>Main.swift</code>.</p>
+<p class="lede">Each board's keymap lives in <code>boards/&lt;name&gt;.json</code> at the repo root, and is compiled to a binary payload by <code>./generate_default_keymap.sh</code> — the firmware has no JSON parser. Three boards (<code>smk_kbd</code>, <code>nrf52840dk</code>, <code>kbd_rp2040</code>) share one layout via <code>"layersFrom": "keymap.json"</code>, so edits to <code>keymap.json</code>'s <code>layers</code> do reach those boards; re-run the generator and commit its two regenerated files.</p>
 
 <h2>Schema</h2>
 <ul>

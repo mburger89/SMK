@@ -40,8 +40,8 @@
   <tr><td><code>Debounce.swift</code></td><td><code>DebouncedMatrix</code> — counter-based debounce</td></tr>
   <tr><td><code>ConnectionMode.swift</code></td><td>wired/Bluetooth toggle</td></tr>
   <tr><td><code>HIDReport.swift</code></td><td>HID report byte-building</td></tr>
-  <tr><td><code>Config.swift</code></td><td>matrix-config JSON parsing</td></tr>
-  <tr><td><code>LayerEngine.swift</code></td><td>keymap JSON loading, layer state, action resolution</td></tr>
+  <tr><td><code>Config.swift</code></td><td>the board's GPIO matrix, built from a decoded binary payload header (<code>Config(payload:)</code>)</td></tr>
+  <tr><td><code>LayerEngine.swift</code></td><td>keymap loading (binary payloads only), layer state, action resolution</td></tr>
   <tr><td><code>LEDChainMapping.swift</code></td><td>serpentine row/col → RGB chain-position mapping</td></tr>
   <tr><td><code>KeyEventProcessing.swift</code></td><td>press/release edge detection, layer add/remove, HID report assembly — called once per scan cycle</td></tr>
   <tr><td><code>Logging.swift</code></td><td>host-only <code>kb_log</code> no-op shim (not compiled into the embedded build)</td></tr>
@@ -50,7 +50,7 @@
 </table>
 
 <h2>Key Architectural Patterns</h2>
-<p><strong>Matrix scan direction</strong> depends on <code>matrix.colsAreDriven</code> in the board's JSON config, since different boards wire diodes/strobe direction oppositely — columns strobed and rows sensed on ESP32-C6's smk_kbd board (COL2ROW), rows strobed and columns sensed on RP2040 boards.</p>
+<p><strong>Matrix scan direction</strong> depends on <code>colsAreDriven</code> in the board's compiled-in payload header (from <code>boards/&lt;name&gt;.json</code>), since different boards wire diodes/strobe direction oppositely — columns strobed and rows sensed on ESP32-C6's smk_kbd board (COL2ROW), rows strobed and columns sensed on RP2040 boards.</p>
 <p><strong>Layer resolution</strong> (<code>LayerEngine.getAction</code>) iterates layers from highest index to 0, skipping inactive layers and transparent keys, returning the first non-transparent action. Layer 0 is always active.</p>
 <p><strong>HID dispatch</strong>: each scan tick builds a <code>HIDReport</code> from all currently pressed key/modifier actions, then sends it via <code>send_keyboard_report</code> (BLE) or <code>send_wired_report</code> (CH9350 UART) depending on the active <code>ConnectionMode</code>.</p>
 
