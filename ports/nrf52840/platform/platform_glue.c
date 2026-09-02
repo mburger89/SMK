@@ -30,9 +30,73 @@ extern void app_main_swift(void); // shared entry point (Sources/smk/Main.swift)
 // wiring in Task 5's mpsl_glue_poll() below it.
 extern void kb_usb_task(void);
 extern void mpsl_glue_init(void); // MPSL bring-up (Task 5, ports/nrf52840/MpslGlue.swift)
+// USB VBUS/regulator power-event init (ports/nrf52840/MpslGlue.swift).
+// Must run on every board, MPSL or not: TinyUSB's dcd_nrf5x.c only ever
+// enables NRF_USBD and asserts the D+ pull-up from inside
+// tusb_hal_nrf_power_event(), which nothing else calls.
+extern void smk_usb_power_init(void);
 extern void mpsl_glue_poll(void); // pumps MPSL's low-priority work queue (Task 5)
 extern void sdc_transport_poll(void); // drains SDC HCI events/data into BTstack (Task 7, platform/ble_hid_sdc.c)
 extern void btstack_run_loop_embedded_execute_once(void); // pumps BTstack's timers/callbacks (Task 7 fix round, Critical #2)
+
+// --- Boot-stage LED probe (feather_nrf52840 bring-up only) -----------------
+// This board has no logging channel at all (kb_log is a no-op, no RTT, no
+// UART wired), so "the board is silent" is indistinguishable from "the app
+// never started", "it hung in USB power init", and "it's looping fine but
+// USB won't come up". The three onboard LEDs are the only output this
+// board has, so they're used as a three-stage boot probe:
+//   red   on  = main() reached (VTOR relocated)
+//   green on  = smk_usb_power_init() returned (USB pull-up asserted)
+//   blue blink = the scan loop is turning (vTaskDelay is being called)
+// Pin numbers are the Seeed XIAO nRF52840 mapping (P0.26 red, P0.30 green,
+// P0.06 blue, all active LOW). This board's JSON declares an empty matrix,
+// so none of these can collide with a scanned pin.
+//
+// Raw MMIO rather than the nrfx GPIO driver, matching this port's existing
+// register-poke style (GPIORegisters.swift, MpslGlue.swift's NVIC/POWER
+// access): NRF_P0 base 0x50000000, PIN_CNF[n] @ 0x700 + 4n (DIR=output +
+// INPUT=disconnect => 0x3), OUTSET @ 0x508, OUTCLR @ 0x50C.
+#if SMK_BOARD_FEATHER_NRF52840
+#define SMK_P0_BASE 0x50000000UL
+#define SMK_LED_RED 26U
+#define SMK_LED_GREEN 30U
+#define SMK_LED_BLUE 6U
+
+static void smk_led_init(uint32_t pin) {
+    // Drive high (LED off, active-low) before enabling the output, so the
+    // LED never flashes on during configuration.
+    *(volatile uint32_t *)(SMK_P0_BASE + 0x508) = (1UL << pin);
+    *(volatile uint32_t *)(SMK_P0_BASE + 0x700 + 4UL * pin) = 0x3UL;
+}
+
+static void smk_led_on(uint32_t pin) {
+    *(volatile uint32_t *)(SMK_P0_BASE + 0x50C) = (1UL << pin); // active low
+}
+
+static void smk_led_off(uint32_t pin) {
+    *(volatile uint32_t *)(SMK_P0_BASE + 0x508) = (1UL << pin);
+}
+#endif
+
+// C-linkage probe hook so Swift (MpslGlue.swift's smk_usb_power_init) can
+// mark its own sub-steps with the same LEDs. Defined unconditionally so the
+// Swift side always links; the body compiles away on other boards.
+//
+// The stage number is displayed as a 3-bit binary code across the three
+// LEDs (bit 0 = red, bit 1 = green, bit 2 = blue), so a single glance at a
+// hung board names the exact last line reached — three separate on/off
+// calls could not distinguish "stopped here" from "skipped this branch".
+// Stages are listed at each call site; whatever code is showing when the
+// board goes quiet is where it stopped.
+void smk_boot_stage(uint32_t stage) {
+#if SMK_BOARD_FEATHER_NRF52840
+    if (stage & 1u) { smk_led_on(SMK_LED_RED); } else { smk_led_off(SMK_LED_RED); }
+    if (stage & 2u) { smk_led_on(SMK_LED_GREEN); } else { smk_led_off(SMK_LED_GREEN); }
+    if (stage & 4u) { smk_led_on(SMK_LED_BLUE); } else { smk_led_off(SMK_LED_BLUE); }
+#else
+    (void)stage;
+#endif
+}
 
 // --- Logging -----------------------------------------------------------
 // Placeholder: no-op until a real logging channel (RTT or UART) is wired
@@ -65,10 +129,34 @@ void kb_log(const char *msg) {
 // init_ble_hid() for where this run loop gets installed via
 // btstack_run_loop_init()).
 void vTaskDelay(uint32_t ticks) {
+#if SMK_BOARD_FEATHER_NRF52840
+    // Stage 3: the scan loop is turning. Divided down so the blink is
+    // visible to the eye rather than a blur at the tick rate.
+    static uint32_t smk_blink_counter = 0;
+    if (++smk_blink_counter >= 20) {
+        smk_blink_counter = 0;
+        static uint32_t smk_blink_state = 0;
+        smk_blink_state ^= 1u;
+        // Alternate the full code and red-only: a *blinking* board is
+        // running, a steady code is a board stopped at that stage.
+        smk_boot_stage(smk_blink_state ? 7u : 1u);
+    }
+#endif
     kb_usb_task();
+    // The radio-side pumps are skipped on feather_nrf52840: main() never
+    // calls mpsl_glue_init() there and app_main_swift() never calls
+    // init_ble_hid(), so MPSL, the SoftDevice Controller and BTstack's run
+    // loop are all uninitialised on that board — pumping them every tick
+    // would be driving three subsystems through undefined state. This
+    // became reachable only once the scan loop started running on a
+    // matrix-less board (see Sources/smk/Main.swift's hasMatrix); before
+    // that, app_main_swift() returned before the loop and vTaskDelay was
+    // never called here at all.
+#if !SMK_BOARD_FEATHER_NRF52840
     mpsl_glue_poll();
     sdc_transport_poll();
     btstack_run_loop_embedded_execute_once();
+#endif
     if (ticks == 0) ticks = 1;
     for (volatile uint32_t i = 0; i < ticks * 100000u; i++) {
         __asm__ volatile("nop");
@@ -142,9 +230,23 @@ int main(void) {
     // and MPSL claiming RTC0/TIMER0/RADIO interrupts was the most likely
     // immediate trigger of the stale-VTOR crash before this fix.
     smk_relocate_vector_table();
+    smk_led_init(SMK_LED_RED);
+    smk_led_init(SMK_LED_GREEN);
+    smk_led_init(SMK_LED_BLUE);
+    smk_boot_stage(1); // stage 1: main() is running
 #else
     mpsl_glue_init(); // bring up MPSL before the scan loop starts (Task 5)
 #endif
+    // Every board, MPSL or not — see the extern declaration above. Runs
+    // before app_main_swift()'s init_wired_link()/tusb_rhport_init(), the
+    // same ordering TinyUSB's own nRF BSP uses (board_init() before
+    // tusb_init()).
+    // Green/blue are driven from inside smk_usb_power_init itself now (see
+    // MpslGlue.swift), which brackets its two blocking sub-steps:
+    //   red + blue steady        = hung inside the USB DETECTED handler
+    //   red + green + blue steady = hung inside the USB READY handler
+    //   red + green, blue blinking = booted through to the scan loop
+    smk_usb_power_init();
     app_main_swift(); // never returns (infinite scan loop)
     return 0;
 }
