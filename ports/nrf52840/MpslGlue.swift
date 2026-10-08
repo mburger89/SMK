@@ -15,6 +15,7 @@
 // ~/nRF5_SDK/modules/nrfx/mdk/nrf52840.h during this task (POWER_CLOCK_IRQn
 // = 0, RADIO_IRQn = 1, SWI0_EGU0_IRQn = 20 — all match the plan's claimed
 // values exactly).
+private let powerClockIRQn: Int32 = 0
 private let radioIRQn: Int32 = 1
 // An otherwise-unused peripheral IRQ, per MPSL's "low_prio_irq" contract
 // (nrfxlib/mpsl/doc/mpsl.rst): any IRQ not already claimed by a real
@@ -166,21 +167,56 @@ func tusb_hal_nrf_power_event(_ event: UInt32)
 // machine from whatever VBUS/regulator state already exists at boot
 // (mirrors family.c's board_init(): "USB power may already be ready at
 // this time -> no event generated, we need to invoke the handler based
-// on the status initially"). Called from mpsl_glue_init() below, which
-// platform_glue.c's main() runs before app_main_swift() (and therefore
-// before UsbHid.swift's init_wired_link() / tusb_rhport_init()) — same
-// ordering as family.c's board_init() running before tusb_init().
-private func smkUsbPowerInit() {
+// on the status initially"). Called from platform_glue.c's main() on
+// EVERY board, before app_main_swift() (and therefore before
+// UsbHid.swift's init_wired_link() / tusb_rhport_init()) — same ordering
+// as family.c's board_init() running before tusb_init().
+//
+// This used to live inside mpsl_glue_init() below, which main() skips
+// entirely on feather_nrf52840 (a USB-HID-only bring-up board) — so on
+// that board tusb_hal_nrf_power_event() was never called at all, and
+// dcd_nrf5x.c sets NRF_USBD->ENABLE and NRF_USBD->USBPULLUP *only* from
+// inside that function. The result was a board that flashed and ran but
+// never asserted its D+ pull-up, i.e. presented no USB device whatsoever
+// to the host — found on real hardware, and a separate cause from both
+// the SCB->VTOR relocation bug and Main.swift's empty-matrix early
+// return. USB power init is a property of having a USB peripheral, not of
+// running a radio stack, so it is deliberately not coupled to MPSL again.
+@_cdecl("smk_usb_power_init")
+func smk_usb_power_init() {
+    smk_boot_stage(2) // entered smk_usb_power_init
     powerIntenSet.pointee = powerIntenUSBDetectedMsk | powerIntenUSBRemovedMsk | powerIntenUSBPwrRdyMsk
+    smk_boot_stage(3) // POWER INTENSET written
+
+    // On boards that run MPSL, mpsl_init() already enables this NVIC line
+    // ("MPSL enables interrupts for the reserved instances, as well as for
+    // POWER_CLOCK and low_prio_irq", mpsl.rst) — but nothing does on a
+    // board that skips MPSL, and without the line enabled the USB VBUS
+    // events set above would never reach POWER_CLOCK_IRQHandler. ISER is
+    // write-1-to-set, so doing it here unconditionally is a no-op on the
+    // boards where MPSL got there first.
+    nvicEnableIRQ(powerClockIRQn)
+    smk_boot_stage(4) // POWER_CLOCK NVIC line enabled
 
     let status = powerUSBRegStatus.pointee
+    smk_boot_stage(5) // USBREGSTATUS read
     if status & powerUSBRegVbusDetectMsk != 0 {
         tusb_hal_nrf_power_event(usbEvtDetected)
     }
+    smk_boot_stage(6) // DETECTED handled (or skipped)
     if status & powerUSBRegOutputRdyMsk != 0 {
         tusb_hal_nrf_power_event(usbEvtReady)
     }
+    smk_boot_stage(7) // READY handled (or skipped) — power init complete
 }
+
+// Boot-stage LED probe hook (ports/nrf52840/platform/platform_glue.c) —
+// bring-up diagnostics for feather_nrf52840, a no-op on every other board.
+// This port has no logging channel at all, so the onboard LEDs are the
+// only way to see how far boot gets. The argument is shown as a 3-bit
+// binary code on the three onboard LEDs.
+@_extern(c, "smk_boot_stage")
+func smk_boot_stage(_ stage: UInt32)
 
 @_cdecl("mpsl_glue_init")
 func mpsl_glue_init() {
@@ -203,9 +239,10 @@ func mpsl_glue_init() {
     // per mpsl.rst, "MPSL enables interrupts for the reserved instances,
     // as well as for POWER_CLOCK and low_prio_irq" — mpsl_init() above
     // already did it, same as RADIO/RTC0/TIMER0's "reserved instances"
-    // auto-enable. Only the USB-specific event *source* bits (INTENSET)
-    // need enabling here, since MPSL only cares about CLOCK's own bits.
-    smkUsbPowerInit()
+    // auto-enable. The USB-specific event *source* bits (INTENSET) are
+    // set by smk_usb_power_init() above, which main() calls separately on
+    // every board — see that function for why it is no longer called from
+    // here.
 }
 
 // RADIO/RTC0/TIMER0 are "reserved instances" MPSL claims and auto-enables
@@ -254,7 +291,13 @@ func TIMER0_IRQHandler() {
 // _USBREMOVED/_USBPWRRDY), so the two forwards are independent.
 @_cdecl("POWER_CLOCK_IRQHandler")
 func POWER_CLOCK_IRQHandler() {
+    // Skipped on feather_nrf52840: main() never calls mpsl_glue_init() on
+    // that board, so MPSL's internal state is uninitialised and handing it
+    // an interrupt is undefined. The USB-side forwards below are what that
+    // board actually needs from this line.
+    #if !SMK_BOARD_FEATHER_NRF52840
     MPSL_IRQ_CLOCK_Handler()
+    #endif
 
     if powerEventsUSBDetected.pointee != 0 {
         powerEventsUSBDetected.pointee = 0 // write 0 clears an EVENTS_ register on nRF52

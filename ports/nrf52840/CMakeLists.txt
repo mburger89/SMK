@@ -76,6 +76,16 @@ set(C_ASM_FLAGS
     # provided by libc's crt0) after SystemInit. We link with -nostartfiles
     # (no crt0), so redirect it straight to our own main().
     -D__START=main
+    # ...but crt0 is also what would have zeroed .bss, and the startup file's
+    # own bss-clearing block is compiled out unless this is defined. Without
+    # it, .bss holds whatever was in RAM at reset. That is fatal rather than
+    # merely untidy for a Swift build: every lazy global's swift_once token
+    # lives in .bss, and a token that comes up nonzero sends swift_once down
+    # its "another thread is already initializing this" path, which spins
+    # forever on a single-core no-RTOS target. Found on real hardware — the
+    # board booted (LED probe reached main) and then hung dead on the very
+    # first access to a Swift global, long before USB could come up.
+    -D__STARTUP_CLEAR_BSS
 )
 add_compile_options(${C_ASM_FLAGS})
 add_link_options(${C_ASM_FLAGS} -nostartfiles -Wl,--gc-sections)

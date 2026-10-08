@@ -186,19 +186,18 @@ func app_main_swift() {
         }
         return Config(payload: payload)
     }
-    if cfg.rowPins.isEmpty || cfg.colPins.isEmpty {
-        // KNOWN CONSEQUENCE, deliberately preserved rather than fixed here:
-        // feather_nrf52840 declares an empty matrix on purpose (nothing is
-        // wired to that board), so it takes this branch and app_main_swift
-        // returns *before* init_wired_link() further down ever runs -- so
-        // USB never initialises on the one board whose entire bring-up goal
-        // is USB enumeration. This predates the cJSON retirement: the JSON
-        // path hit the identical check with the identical result, so the
-        // migration changed nothing about it. Fixing it is a separate
-        // change; note that CLAUDE.md's Feather section currently attributes
-        // that board's silence solely to a missing SCB->VTOR relocation.
-        kb_log("Critical Error: no matrix defined for this board")
-        return
+    // A board may legitimately declare no matrix: feather_nrf52840 is a
+    // USB-enumeration bring-up board with nothing wired to it, and declares
+    // a 0x0 matrix precisely so no GPIO is ever touched. Such a board has no
+    // keys to scan, but it must still bring its transports up and keep the
+    // main loop turning -- vTaskDelay() is what pumps TinyUSB on the ARM
+    // ports, so bailing out here left USB uninitialised on the one board
+    // whose entire bring-up goal is USB enumeration. Everything downstream
+    // is guarded on this flag rather than skipped wholesale, so the scan
+    // loop still runs (doing nothing per tick) and keeps USB serviced.
+    let hasMatrix = !(cfg.rowPins.isEmpty || cfg.colPins.isEmpty)
+    if !hasMatrix {
+        kb_log("No matrix defined for this board: key scanning disabled")
     }
 
     // Initialize Hardware with dynamic pins
@@ -267,14 +266,20 @@ func app_main_swift() {
     // feels too short or too long). This runs before the store is even
     // consulted, so it works even if a bad uploaded keymap somehow makes
     // the upload/erase command itself unreachable.
+    // Skipped entirely on a board with no matrix -- there is no row 0 /
+    // col 0 to hold, and scan() returns an empty array there, so indexing
+    // it would trap.
     let resetHoldScans = 100
-    var resetHeld = true
-    for _ in 0..<resetHoldScans {
-        if !matrix.scan()[0] { // row 0, col 0
-            resetHeld = false
-            break
+    var resetHeld = false
+    if hasMatrix {
+        resetHeld = true
+        for _ in 0..<resetHoldScans {
+            if !matrix.scan()[0] { // row 0, col 0
+                resetHeld = false
+                break
+            }
+            vTaskDelay(1)
         }
-        vTaskDelay(1)
     }
     if resetHeld {
         smk_keymap_erase()

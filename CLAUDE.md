@@ -16,8 +16,8 @@ SMK (Swift Matrix Keyboard) is keyboard firmware written in **Embedded Swift** t
 | Pico 2 | RP2350 ARM (Cortex-M33) | CMake / Ninja + pico-sdk (`SMK_TARGET_BOARD=pico2`) | USB HID (TinyUSB); boot + USB HID enumeration hardware-verified on a Seeed XIAO RP2350 (same RP2350 chip, built with `PICO_BOARD=pico2`) — re-verified 2026-08-16 on the post-`ports/common` refactor build, enumerated as "SMK Keyboard" with both HID interfaces registered; matrix scan not yet verified against real switches (no matrix wired on that board) |
 | Pico 2 W | RP2350 ARM (Cortex-M33) | CMake / Ninja + pico-sdk (`SMK_TARGET_BOARD=pico2_w`) | USB HID + BLE (BTstack, scaffolded); build-only, not yet hardware-verified |
 | smk_kbd_rp2040 | RP2040 ARM (chip-down + CYW43439) | CMake / Ninja + pico-sdk (`SMK_TARGET_BOARD=smk_kbd_rp2040`) | USB HID + per-key RGB (working) + BLE (BTstack over dedicated UART; PatchRAM firmware data embedded in `ports/rp2040/platform/cyw43439_patchram.c`, sourced from Murata's public `cyw-bt-patch` repo per their CYW43439→"1YN" module mapping — matched by part number, not yet hardware-confirmed via `lmp_subversion` since the board is still at fab) |
-| nRF52840 | Arm Cortex-M4F | CMake / Ninja (no pico-sdk equivalent — vendored nRF5 SDK + sdk-nrfxlib + TinyUSB + BTstack) | USB HID + BLE HID (SoftDevice Controller over BTstack); build-only, not yet hardware-verified |
-| nRF52840 Feather (`SMK_TARGET_BOARD=feather_nrf52840`) | Arm Cortex-M4F, same chip as nrf52840dk | CMake / Ninja, same source tree as nRF52840 above (`./build_nrf52840.sh feather`) | USB HID only for this bring-up pass (BLE init call skipped — see `Sources/smk/Main.swift`'s `SMK_BOARD_FEATHER_NRF52840` branch); **IN PROGRESS, not working yet** — the physical board used for this bring-up session enumerates over USB as "Feather nRF52840 Express" when running its (prior, unrelated) application firmware, but its **bootloader identifies itself as `nice!nano`** (confirmed via its USB product string once actually entered — see below), meaning the real board is most likely a nice!nano or compatible clone, not a genuine Adafruit board — the board/file naming here is aspirational, kept as-is because the bootloader/flash-layout conventions matched regardless. A real bug was found and fixed this session: flashed firmware never enumerated any USB device at all, traced by reading the vendored nRF5 SDK's startup code (`gcc_startup_nrf52840.S`/`system_nrf52.c`) to a missing `SCB->VTOR` relocation — the SDK's startup assumes VTOR stays at its power-on default (0x0), correct for `nrf52840dk`'s flash-origin-0x0 build but wrong once the app is linked at `0x27000` for bootloader coexistence; any interrupt (MPSL's, in particular) dispatched through the stale table at 0x0 instead of the real one, causing total silence. Fixed in `ports/nrf52840/platform/platform_glue.c` (`smk_relocate_vector_table()`, called first thing in `main()`) — rebuilt and reflashed via `adafruit-nrfutil` DFU-over-serial (the empirically-proven-working flash path on this board; drag-and-drop UF2 never got a mass-storage volume to mount, a known unresolved class of issue per nice!nano's own troubleshooting docs), but hardware re-confirmation of the fix is still pending as of this writing — the USB connection became unreliable partway through this session (stopped enumerating at all, even across a port change) before the post-fix build could be verified booting |
+| nRF52840 | Arm Cortex-M4F | CMake / Ninja (no pico-sdk equivalent — vendored nRF5 SDK + sdk-nrfxlib + TinyUSB + BTstack) | USB HID + BLE HID (SoftDevice Controller over BTstack); build-only, not yet hardware-verified. Shares every source file and the `.bss`-zeroing fix with the `feather_nrf52840` board below, whose USB HID path *is* hardware-verified — so this board's remaining risk is its placeholder GPIO map and the BLE half, not the C-runtime/USB bring-up |
+| nRF52840 Feather (`SMK_TARGET_BOARD=feather_nrf52840`) | Arm Cortex-M4F, same chip as nrf52840dk | CMake / Ninja, same source tree as nRF52840 above (`./build_nrf52840.sh feather`) | USB HID only for this board (BLE init call skipped — see `Sources/smk/Main.swift`'s `SMK_BOARD_FEATHER_NRF52840` branch); **USB HID enumeration hardware-verified 2026-09-02** — enumerated as "SMK Keyboard" (VID 0x16C0 / PID 0x05DF) with both HID interfaces registered (boot keyboard on usage page 0x01, vendor keymap-upload channel on 0xFF00); matrix scan is not verified and cannot be on this board (no matrix wired, 0x0 matrix declared on purpose). **The board name is wrong and kept only for continuity**: the physical board is a **Seeed XIAO nRF52840 Sense** (`INFO_UF2.TXT`: Board-ID `Seeed_XIAO_nRF52840_Sense`, UF2 bootloader 0.6.1, S140 v7.3.0), not an Adafruit Feather and not the nice!nano an earlier session guessed. Bringing this up took four real bugs, all found on hardware — see the "nRF52840 Feather board" section below |
 | STM32F4 (WeAct Black Pill) | Arm Cortex-M4F | CMake / Ninja (hand-rolled — vendored cmsis-device-f4 + CMSIS_6 + TinyUSB, hand-written linker script) | USB HID (TinyUSB's `dwc2` driver); build-only, not yet hardware-verified |
 | STM32WB (NUCLEO-WB55RG) | Arm Cortex-M4 (+ on-chip Cortex-M0+ radio coprocessor running ST's own firmware) | CMake / Ninja (hand-rolled — vendored cmsis-device-wb + CMSIS_6 + TinyUSB + BTstack + STM32CubeWB's IPCC transport layer) | USB HID (TinyUSB's `fsdev` driver) + BLE HID (ST's HCI-Layer wireless coprocessor over BTstack); build-only, not yet hardware-verified |
 | SAMD21 (Seeed XIAO M0) | Arm Cortex-M0+ (armv6m, no LDREX/STREX — `ports/samd21/platform/armv6m_atomics.c` supplies `__atomic_*` via PRIMASK critical sections) | CMake / Ninja (hand-rolled — vendored TinyUSB `hw/mcu/microchip/samd21` DFP + linker script) | USB HID (TinyUSB's `dcd_samd` driver); **IN PROGRESS, not working yet** — DFLL48M clock bring-up and `tusb_rhport_init` both confirmed correct on real hardware (worked around a bootloader-locked GCLK2 USB clock channel — see `ports/samd21/ClockInit.swift`), but the device still never completes USB enumeration with a host. A UART debug channel (`ports/samd21/UartDebug.swift`, PA06/SERCOM0, 115200 8N1 TX-only) was added after LED-blink bit-decoding of the USB INTFLAG/EPINTFLAG registers proved unreliable; reading it needs a USB-to-TTL serial adapter (RX → XIAO D6, GND → GND), not yet available during this bring-up session |
@@ -213,6 +213,8 @@ Everything else that used to live here — GPIO pin configuration, Kconfig-backe
 
 The `DebouncedMatrix` wraps raw scans and requires 5 consecutive agreeing samples before reporting a state change.
 
+**A board may declare a 0x0 matrix** (`feather_nrf52840` does, on purpose — nothing is wired to it). `app_main_swift` handles that with a `hasMatrix` flag rather than bailing out: scanning and the boot-time factory-reset key check are skipped, but transports still initialise and the main loop still turns. Do not restore an early `return` there — `vTaskDelay()` is what pumps TinyUSB on the ARM ports, so a firmware that never reaches its loop can never service USB.
+
 **Layer resolution** (`LayerEngine.getAction`): iterates layers from highest index to 0, skipping inactive layers and transparent keys, returning the first non-transparent action. Layer 0 is always active.
 
 **HID dispatch**: On each tick, a `HIDReport` is built from all currently pressed key/modifier actions, then sent via either `send_keyboard_report` (BLE) or `send_wired_report` (CH9350 UART) based on `ConnectionMode`.
@@ -256,17 +258,92 @@ Files identical across ports live once here instead of as per-port copies:
 **The GPIO pin map for this board (`boards/nrf52840dk.json`'s `matrix`) is a placeholder, not a verified pin assignment.** No board schematic was consulted when choosing it — see that file's own `comment` ("GPIO map deferred to hardware bring-up... Placeholder pin numbers here MUST be replaced before this board is ever flashed"). It MUST be replaced with real, schematic-verified pin assignments before this board is ever flashed to physical hardware — using the placeholder numbers as-is risks driving pins that aren't wired the way the firmware assumes.
 
 Other known gaps on this port, briefly (this is a build-only pass — see `docs/superpowers/specs/2026-08-09-nrf52840-support-design.md`):
+- **The `.bss`-zeroing bug that killed the `feather_nrf52840` board applied here too**, and is now fixed for both (`__STARTUP_CLEAR_BSS` in `ports/nrf52840/CMakeLists.txt` — see the Feather section below for why a missing `.bss` clear hangs any Swift build on its first lazy global). Nothing on this board has been run on hardware, so treat the rest of its boot path as unproven in the same way.
 - **Runtime keymap store is a no-op stub** (`ports/nrf52840/KeymapStoreStub.swift`) — a keymap upload over USB HID is accepted and dispatched, but every write silently fails; nothing persists across reboots yet.
 - **LE bonding does not survive a reboot** (Task 7's known gap — no persistent bonding-info storage wired up yet).
 - **No real clock**: `hal_time_ms()` (`ports/nrf52840/platform/ble_hid_sdc.c` — now a slim C remainder; the SDC transport itself is `ports/nrf52840/BleHidSdc.swift`, including a verified Swift `hci_transport_t` mirror), `tusb_time_millis_api()` (`ports/nrf52840/UsbHid.swift`), and the `vTaskDelay` busy-loop (`ports/nrf52840/platform/platform_glue.c`) are all uncalibrated per-call/per-loop counters, not real millisecond clocks, until a real hardware timer (`NRF_RTC`, once MPSL claims it) is wired up.
 
-### nRF52840 Feather board (`SMK_TARGET_BOARD=feather_nrf52840`) — IN PROGRESS, read before flashing real hardware
+### nRF52840 Feather board (`SMK_TARGET_BOARD=feather_nrf52840`) — USB HID verified on hardware 2026-09-02
 
-This is a separate board variant of the same nRF52840 target above (`./build_nrf52840.sh feather`), still bring-up-in-progress, not confirmed working yet — see the Supported Targets table entry for the full story (board identity turned out to be a nice!nano/clone rather than a genuine Adafruit Feather, and a real missing-`SCB->VTOR`-relocation bug was found and fixed but not yet hardware-reconfirmed). It exists as a USB-enumeration bring-up test only — no matrix is wired, and `boards/feather_nrf52840.json` declares an empty `rows`/`cols` matrix specifically so no GPIO pin is ever touched, since this board's fixed-function pins (P0.00/P0.01 are the 32.768kHz crystal XL1/XL2, P0.16 drives the onboard NeoPixel, per the Adafruit Feather Express pinout — not reconfirmed against the actual nice!nano-identified board) directly collide with the `nrf52840dk` placeholder matrix above. BLE init (`init_ble_hid()`) and MPSL init (`mpsl_glue_init()`) are both skipped for this board, keeping the bring-up scope to USB HID only.
+A separate board variant of the same nRF52840 target above (`./build_nrf52840.sh feather`). It
+exists as a USB-enumeration bring-up target only: no matrix is wired, and
+`boards/feather_nrf52840.json` declares an empty `rows`/`cols` matrix specifically so no GPIO pin
+is ever touched. BLE init (`init_ble_hid()`) and MPSL init (`mpsl_glue_init()`) are both skipped
+for this board, keeping its scope to USB HID.
 
-**A second, independent reason this board cannot enumerate USB, found 2026-08-23 and NOT yet fixed.** `Sources/smk/Main.swift`'s `app_main_swift` rejects an empty matrix (`cfg.rowPins.isEmpty || cfg.colPins.isEmpty`) by logging `Critical Error` and **returning** — and this board's config declares exactly that, deliberately, so no GPIO is touched. That early return happens *before* `init_wired_link()`, so TinyUSB is never initialised on the one board whose entire bring-up goal is USB enumeration. This is orthogonal to the `SCB->VTOR` fix above and predates it; both would have to be right for the board to enumerate. It is annotated in place at that check in `Main.swift`. Fixing it means letting a zero-key board proceed past the matrix check (or exempting this board), which is a behaviour change nobody has made yet.
+**The board name is wrong, and deliberately kept.** The physical board is a **Seeed XIAO nRF52840
+Sense** — confirmed by reading its `INFO_UF2.TXT` (Board-ID `Seeed_XIAO_nRF52840_Sense`, UF2
+Bootloader 0.6.1, **SoftDevice S140 version 7.3.0**). It is neither an Adafruit Feather nor the
+nice!nano an earlier session inferred from a bootloader USB product string. The name stays because
+the flash layout and bootloader conventions match regardless, and renaming the board would churn
+the linker script, the CMake board id, `boards/*.json`, and the generated default keymap for no
+functional gain. **S140 v7.3.0 confirms `FLASH ORIGIN = 0x27000` in
+`ports/nrf52840/linker/feather_nrf52840.ld` is exactly right** — that was previously an unverified
+assumption.
 
-**Flashing this board — drag-and-drop UF2 did not work in the one bring-up session so far** (the bootloader enters fine — confirmed via USB re-enumeration and a breathing red LED once the timing/technique was right — but no mass-storage volume ever mounted on macOS, a known unresolved class of issue per nice!nano's own troubleshooting docs, which point to a host driver/OS-level cause rather than the board). **`adafruit-nrfutil` DFU-over-serial is the flash path that actually worked**, twice, end to end:
+Its onboard LEDs are P0.26 red, P0.30 green, P0.06 blue, all **active LOW**.
+
+#### The four bugs this bring-up found — read these before touching the port
+
+All four had to be right before a single byte reached the host. Three of them were invisible to
+every build-only pass, and the first affects **both** nRF52840 boards.
+
+1. **`.bss` was never zeroed** (`ports/nrf52840/CMakeLists.txt`) — the one that actually killed it,
+   and it would have broken *any* Swift code on this port, not just USB. The build defines
+   `-D__START=main` to skip newlib's `crt0`, but `crt0` is also what zeroes `.bss`, and
+   `gcc_startup_nrf52840.S`'s own bss-clearing block only compiles in under `__STARTUP_CLEAR_BSS`,
+   which nothing defined. Every Swift lazy global's `swift_once` token therefore came up holding
+   whatever was in RAM at reset; a nonzero token sends `swift_once` down its "another thread is
+   already initializing this" path, which **spins forever** on a single-core no-RTOS target. The
+   board hung dead on its very first access to a Swift global. Fixed by defining
+   `__STARTUP_CLEAR_BSS`; verify with `arm-none-eabi-objdump -d` that `Reset_Handler` has a second
+   store loop (zeroing `__bss_start__`..`__bss_end__`) after the `.data` copy and before
+   `SystemInit`. **This bug is live for `nrf52840dk` too** — that board has simply never been run
+   on hardware.
+2. **USB power-event init was coupled to MPSL** (`ports/nrf52840/MpslGlue.swift`) — TinyUSB's
+   `dcd_nrf5x.c` sets `NRF_USBD->ENABLE`, starts HFCLK and asserts the D+ pull-up **exclusively**
+   from inside `tusb_hal_nrf_power_event()`; nothing else in TinyUSB ever calls it. That call
+   used to live in `smk_usb_power_init()`, which was reachable only from `mpsl_glue_init()` — and
+   `main()` skips MPSL entirely on this board. So the board could never present a USB device at
+   all, no matter what else was correct. `smk_usb_power_init()` is now `@_cdecl`-exported and
+   called from `main()` on every board, and arms the POWER_CLOCK NVIC line itself (MPSL used to do
+   that as a side effect). Do not re-couple it to the radio stack: having a USB peripheral is not
+   the same fact as running a radio.
+3. **`app_main_swift` returned before `init_wired_link()` on a zero-key board**
+   (`Sources/smk/Main.swift`) — the empty-matrix check used to log `Critical Error` and `return`,
+   on the one board whose entire purpose is USB enumeration. It is now a `hasMatrix` flag: an
+   empty matrix logs, skips the factory-reset key check and leaves the scan a no-op, but
+   transports still initialise and the main loop still turns. That matters beyond this board —
+   `vTaskDelay()` is what pumps TinyUSB on the ARM ports, so a firmware that never reaches its
+   loop can never service USB.
+4. **`vTaskDelay()` and `POWER_CLOCK_IRQHandler` pumped uninitialised subsystems** — both drove
+   MPSL, the SoftDevice Controller and BTstack's run loop unconditionally, on a board where none
+   of the three are ever initialised. This only became reachable once fix #3 let the loop run.
+   Both are now `#if !SMK_BOARD_FEATHER_NRF52840`-gated.
+
+The earlier-found **`SCB->VTOR` relocation** (`smk_relocate_vector_table()`, first thing in
+`main()`) is confirmed working: it is what lets the board reach `main()` at all when linked at
+`0x27000` under the factory bootloader. CLAUDE.md previously attributed this board's silence to
+that fix alone — it was necessary, but on its own it was one of five required conditions.
+
+#### Boot-stage LED probe — the only debug channel this board has
+
+`kb_log` is a no-op here and no RTT or UART is wired, so `smk_boot_stage(n)` in
+`ports/nrf52840/platform/platform_glue.c` displays `n` as a 3-bit binary code across the three
+onboard LEDs (bit 0 red, bit 1 green, bit 2 blue) and is called from Swift via `@_extern(c)`.
+It is compiled in only for this board. Stages currently in place: 1 `main()` entered, 2 entered
+`smk_usb_power_init`, 3 POWER `INTENSET` written, 4 POWER_CLOCK NVIC enabled, 5 `USBREGSTATUS`
+read, 6 USB DETECTED handled, 7 USB READY handled; the scan loop then alternates 7 and 1, so a
+**blinking** board is running and a **steady** code is a board stopped at exactly that line. This
+is what localised bug #1 — "green only" (code 2) said the hang was between two adjacent
+statements, which no amount of reasoning about USB would have found. Keep it, or something like
+it, until this port has a real logging channel.
+
+#### Flashing this board
+
+Both paths work on this board; DFU-over-serial is the one to reach for.
+
+**`adafruit-nrfutil` DFU-over-serial — reliable, used for every flash in the 2026-09-02 session:**
 ```bash
 pip3 install adafruit-nrfutil   # in a venv if your Python is externally-managed (PEP 668)
 adafruit-nrfutil dfu genpkg --dev-type 0x0052 \
@@ -275,10 +352,26 @@ adafruit-nrfutil dfu genpkg --dev-type 0x0052 \
 # Enter the bootloader first — see below — then, while it's still active:
 adafruit-nrfutil dfu serial -pkg smk_nrf52840_dfu.zip -p /dev/cu.usbmodemXXXX -b 115200
 ```
-- **Entering the bootloader**: the documented double-tap-reset trick is unreliable by feel alone — watch specifically for the LED to shift into a **slow, smooth red fade**, distinct from whatever blink pattern the current application firmware shows; a false-positive read of "the LED did something" wastes a flash cycle. If the board is currently enumerating over USB (i.e. some application is running), the **1200-baud serial touch is more reliable than the physical button**: `stty -f /dev/cu.usbmodemXXXX 1200`, then check `ioreg`/`/dev/cu.*` for a new device a couple seconds later — this is the same mechanism Arduino/`bossac` use to trigger bootloader entry programmatically.
-- The app-start flash offset baked into `ports/nrf52840/linker/feather_nrf52840.ld` (`FLASH ORIGIN = 0x27000`) assumes an S140 v7 SoftDevice; a v6 board (app region starting at `0x26000`) is still safe to flash with this build (just wastes 4KB). Real confirmation of the actual SoftDevice version on this specific board is still outstanding (its `INFO_UF2.TXT` was never actually read — the drive that would contain it never mounted).
-- This board has no SWD/J-Link recovery path in this project's tooling — the linker script was deliberately chosen to coexist with the factory bootloader/SoftDevice rather than overwrite them, so DFU-over-serial (or UF2, if it ever mounts) stays the recovery path if something goes wrong, rather than needing external debug hardware.
-- **Known-fixed-but-unconfirmed bug**: `ports/nrf52840/platform/platform_glue.c`'s `smk_relocate_vector_table()` (called first in `main()` for this board) sets `SCB->VTOR` to the app's real vector table address — without it, the flashed firmware enumerated no USB device at all, silently, because interrupts dispatched through the stale table at flash address 0x0 (the SoftDevice's reserved region) instead of the app's own handlers at 0x27000. This was diagnosed by reading the vendored nRF5 SDK's startup code, not by guessing. The fix was rebuilt and reflashed once, but the USB connection went unreliable (stopped enumerating anything at all, even across a port change) before booting could be reconfirmed — pick this back up by re-attempting the flash-and-observe cycle once the physical connection is solid again.
+It prints `Device programmed.` on success — trust that over guessing from LED behaviour.
+
+**Drag-and-drop UF2 — works, but flaky on current macOS.** The `XIAO-SENSE` volume does mount
+(contradicting an earlier session's note, which was written against a different physical board),
+but `cp` onto it failed with `Permission denied` on one attempt and succeeded on another under
+macOS's FSKit `msdos` driver. A *successful* copy always ends with
+`could not copy extended attributes ... Device not configured` — that is not an error: the
+bootloader reboots the instant it receives the last block, so the volume vanishes before `cp` can
+set xattrs.
+
+- **Entering the bootloader**: double-tap RESET (the small button beside the USB-C connector), two
+  quick taps ~0.3–0.5 s apart. The bootloader enumerates as **PID 0x0045** (the application is
+  0x8045), which is the reliable way to confirm entry — `ioreg -p IOUSB -w0 -l | grep idProduct`.
+  If the board is currently enumerating over USB, `stty -f /dev/cu.usbmodemXXXX 1200` (the
+  1200-baud touch Arduino/`bossac` use) triggers it programmatically and is more reliable than the
+  button. It cannot help when the running firmware enumerates nothing — then the button is the
+  only way in, which is exactly the situation during a failed bring-up.
+- This board has no SWD/J-Link recovery path in this project's tooling — the linker script
+  deliberately coexists with the factory bootloader/SoftDevice rather than overwriting them, so
+  DFU-over-serial (or UF2) stays the recovery path rather than needing external debug hardware.
 
 ### STM32WB Platform Sources (`ports/stm32wb/`)
 
