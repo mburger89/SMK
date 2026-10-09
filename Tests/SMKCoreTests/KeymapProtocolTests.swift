@@ -212,7 +212,7 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
 }
 
 // Pins the real values every port's `caps` closure supplies (via
-// `smk_keymap_dispatch_packet`'s `@_cdecl` wrapper, which itself only
+// `smk_keymap_dispatch_packet`, the `@c` entry point, which itself only
 // compiles for embedded targets and so isn't host-testable directly).
 // macroBytes and keymapMaxLen are the same shared payload budget rather than
 // a macro-only allowance -- see smkKeymapRealCaps's doc comment for why

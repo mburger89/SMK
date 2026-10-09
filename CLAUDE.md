@@ -117,7 +117,7 @@ Clean-builds each of the 11 gate targets (`esp32c6, pico, pico_w, pico2, pico2_w
 ### Swift ↔ C Boundary
 
 - `Sources/smk/Bridging.h` — C headers imported into Swift; declares all C functions callable from Swift
-- Swift uses `@_extern(c, "fn_name")` to call C functions (BLE init, GPIO init, FreeRTOS delay, logging)
+- Swift calls C through the target's bridging header (Bridging.h / `ports/*/BridgingHeader.h`) wherever that header already declares the function (e.g. `init_ble_hid`, `vTaskDelay`, `kb_log`, the NVS API); `@_extern(c, "fn_name")` is used only for functions no imported header declares (most port-specific SDK bindings, fixed-argument `printf`)
 - Swift uses `@c` (the stable spelling, SE-0495; formerly `@_cdecl`) to expose functions to C — e.g. `@c func app_main_swift()` is the entry point. Plain `@c` exports the Swift name as-is; `@c(c_name)` is used only where the C name differs from the Swift function name (`@c(init_ble_hid) func initBleHidSdc()`)
 - `Sources/components/kb_main.c` contains `app_main()` which calls `app_main_swift()`
 
@@ -170,7 +170,7 @@ Each target provides its own `GPIORegisters.swift` with the **same** `outSet`/`o
 
 ### ESP32-C6-only Swift Sources (`Sources/smk/`)
 
-Compiled only into the ESP32-C6 build (`main/CMakeLists.txt`'s `swift_srcs`) — RP2040 backs the same function names with its own C, linked in via the `@_extern(c, ...)` declarations these files' `#if !SMK_TARGET_ESP32C6` guards leave in place in `KeyMatrix.swift`/`Main.swift`:
+Compiled only into the ESP32-C6 build (`main/CMakeLists.txt`'s `swift_srcs`) — RP2040 backs the same function names with its own C, reached from `Main.swift` through each port's bridging-header prototypes (and `KeyMatrix.swift`'s guarded `@_extern(c, "init_keyboard_pins")`):
 
 | File | Responsibility |
 |---|---|

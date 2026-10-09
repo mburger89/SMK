@@ -6,8 +6,8 @@
 <h2>The Swift ↔ C Boundary</h2>
 <ul>
   <li><code>Sources/smk/Bridging.h</code> — C headers imported into Swift; declares every C function callable from Swift.</li>
-  <li>Swift calls into C via <code>@_extern(c, "fn_name")</code> (BLE init, GPIO init, FreeRTOS delay, logging).</li>
-  <li>Swift exposes its entry point to C via <code>@_cdecl("app_main_swift")</code>, called from <code>Sources/components/kb_main.c</code>'s <code>app_main()</code>.</li>
+  <li>Swift calls into C through each target's bridging header; <code>@_extern(c, "fn_name")</code> is used only for functions no imported header declares.</li>
+  <li>Swift exposes its entry point to C via <code>@c func app_main_swift()</code>, called from <code>Sources/components/kb_main.c</code>'s <code>app_main()</code>.</li>
 </ul>
 
 <h2>A real bug this project hit: volatile MMIO in Swift</h2>
