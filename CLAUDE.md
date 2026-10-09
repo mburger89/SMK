@@ -24,6 +24,9 @@ SMK (Swift Matrix Keyboard) is keyboard firmware written in **Embedded Swift** t
 
 ## Prerequisites
 
+### All targets
+- **swift-mmio submodule** (pinned at 0.1.1, `third_party/swift-mmio`): `git submodule update --init third_party/swift-mmio`. Its `@Register` macros run from a host plugin (`MMIOMacros-tool`) that `cmake/SwiftMMIO.cmake` builds on the first configure into the gitignored `.build_mmio_plugin/<swift version>/` cache — expect a one-time ~10-13 minute pause (it builds swift-syntax); every build dir after that reuses it.
+
 ### ESP32-C6
 - **ESP-IDF v6.0.1** installed via the standard installer (`~/.espressif/v6.0.1/esp-idf`) and sourced via `. ~/.espressif/v6.0.1/esp-idf/export.sh` — the real export script; a top-level `~/export-esp-idf.sh` (as a personal alias/symlink to the above) also works if you've set one up, but isn't created by ESP-IDF's installer itself
 - **Swift 6.4.0-RELEASE or later** (all targets; RP2350's `armv8m.main` stdlib ships in the release toolchain from 6.4). Toolchain selection is `cmake/FindEmbeddedSwiftc.cmake`: newest release toolchain wins; override with `-DSWIFTC_PATH=`; snapshots need `-DSMK_ALLOW_SNAPSHOT=ON`. **After upgrading, delete your existing `build*/` dirs** — they cache the old `SWIFTC_PATH`.

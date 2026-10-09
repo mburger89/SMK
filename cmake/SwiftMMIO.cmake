@@ -55,7 +55,25 @@ function(_smk_build_mmio_plugin out_plugin)
 
     execute_process(COMMAND git -C "${SMK_MMIO_DIR}" rev-parse HEAD
         OUTPUT_VARIABLE _rev OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-    set(_want_stamp "${_rev}|${SWIFTC_PATH}")
+    if(NOT _rev)
+        message(FATAL_ERROR "SwiftMMIO.cmake: cannot read the swift-mmio submodule commit (git -C ${SMK_MMIO_DIR} rev-parse HEAD failed).")
+    endif()
+    # Local edits inside the submodule don't move HEAD; fold them into the
+    # stamp so an edited macro still forces a plugin rebuild.
+    execute_process(COMMAND git -C "${SMK_MMIO_DIR}" diff HEAD
+        OUTPUT_VARIABLE _dirty ERROR_QUIET)
+    string(SHA1 _dirty_hash "${_dirty}")
+    set(_want_stamp "${_rev}|${_dirty_hash}|${SWIFTC_PATH}")
+
+    # Re-run configure (which re-checks this stamp and re-globs MMIO's
+    # sources) whenever the submodule is checked out at another commit, so a
+    # plain `ninja` after `git submodule update` can't pair new MMIO sources
+    # with a stale plugin.
+    execute_process(COMMAND git -C "${SMK_MMIO_DIR}" rev-parse --absolute-git-dir
+        OUTPUT_VARIABLE _mmio_git_dir OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(_mmio_git_dir AND EXISTS "${_mmio_git_dir}/HEAD")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_mmio_git_dir}/HEAD")
+    endif()
 
     file(MAKE_DIRECTORY "${_cache_root}")
     file(LOCK "${_cache_root}/${SMK_SWIFT_VERSION}.lock" GUARD FUNCTION TIMEOUT 3600
@@ -95,7 +113,7 @@ endfunction()
 # items (no SHELL: prefixes) for add_custom_command swiftc invocations.
 function(smk_add_swift_mmio out_srcs out_flags)
     _smk_build_mmio_plugin(_plugin)
-    file(GLOB _mmio_srcs "${SMK_MMIO_DIR}/Sources/MMIO/*.swift")
+    file(GLOB _mmio_srcs CONFIGURE_DEPENDS "${SMK_MMIO_DIR}/Sources/MMIO/*.swift")
     list(SORT _mmio_srcs)
     set(${out_srcs} ${${out_srcs}} ${_mmio_srcs} PARENT_SCOPE)
     set(${out_flags} ${${out_flags}}
