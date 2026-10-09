@@ -173,6 +173,17 @@ else()
     endif()
 endif()
 
+# swift-mmio: its MMIO sources compile flat into the smk_rp2040 module and
+# its @Register macros run from a shared, cached host plugin — see
+# cmake/SwiftMMIO.cmake. The helper returns plain list items for the
+# add_custom_command ports; here they are joined into the single SHELL:
+# string in target_compile_options below, so CMake can't de-duplicate the
+# repeated -I / -Xcc tokens.
+include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/SwiftMMIO.cmake)
+set(smk_mmio_flags "")
+smk_add_swift_mmio(SHARED_SWIFT_SRCS smk_mmio_flags)
+list(JOIN smk_mmio_flags " " _smk_mmio_flags)
+
 # ---------------------------------------------------------------------------
 # Executable target
 # ---------------------------------------------------------------------------
@@ -441,5 +452,6 @@ target_compile_options(smk_rp2040 PRIVATE
         ${_smk_swift_defs}
         ${_compile_defs}
         ${_implicit_incs}
+        ${_smk_mmio_flags}
     >"
 )

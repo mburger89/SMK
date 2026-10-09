@@ -161,6 +161,13 @@ if(NOT NRF52840_GCC_XCC_INCLUDES)
     message(FATAL_ERROR "Failed to determine arm-none-eabi-gcc's system include search path (needed by swiftc's ClangImporter for BridgingHeader.h). Command output:\n${_nrf52840_gcc_include_dump}")
 endif()
 
+# swift-mmio: its MMIO sources compile flat into this one swiftc invocation
+# and its @Register macros run from a shared, cached host plugin — see
+# cmake/SwiftMMIO.cmake.
+include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/SwiftMMIO.cmake)
+set(smk_mmio_flags "")
+smk_add_swift_mmio(swift_srcs smk_mmio_flags)
+
 set(swift_obj "${CMAKE_CURRENT_BINARY_DIR}/smk_swift.o")
 add_custom_command(
     OUTPUT "${swift_obj}"
@@ -182,6 +189,7 @@ add_custom_command(
             -Xcc -mcpu=cortex-m4
             -Xcc -mthumb
             ${NRF52840_GCC_XCC_INCLUDES}
+            ${smk_mmio_flags}
             -emit-object
             -o "${swift_obj}"
             ${swift_srcs}

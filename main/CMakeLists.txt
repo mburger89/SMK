@@ -146,6 +146,13 @@ if(component_defines)
     endforeach()
 endif()
 
+# swift-mmio: its MMIO sources compile flat into this one swiftc invocation
+# and its @Register macros run from a shared, cached host plugin — see
+# cmake/SwiftMMIO.cmake.
+include(${CMAKE_CURRENT_LIST_DIR}/../cmake/SwiftMMIO.cmake)
+set(smk_mmio_flags "")
+smk_add_swift_mmio(swift_srcs smk_mmio_flags)
+
 set(swift_obj "${CMAKE_CURRENT_BINARY_DIR}/smk_swift.o")
 
 # SMK_RGB_AVAILABLE gates the `#if SMK_RGB_AVAILABLE` block in Main.swift
@@ -205,6 +212,7 @@ add_custom_command(
             # ESP-IDF defines this on every C compile line; NimBLE's
             # syscfg.h keys its ESP-IDF configuration include on it.
             "-Xcc" "-DESP_PLATFORM"
+            ${smk_mmio_flags}
             -emit-object
             -o "${swift_obj}"
             ${swift_srcs}
