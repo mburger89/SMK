@@ -116,12 +116,12 @@ func smk_keymap_usb_service()
 @_extern(c, "tusb_int_handler")
 func tusb_int_handler(_ rhport: UInt8, _ inIsr: Bool)
 
-@_cdecl("USB_HP_IRQHandler")
+@c
 func USB_HP_IRQHandler() {
     tusb_int_handler(0, true)
 }
 
-@_cdecl("USB_LP_IRQHandler")
+@c
 func USB_LP_IRQHandler() {
     tusb_int_handler(0, true)
 }
@@ -133,10 +133,10 @@ func init_wired_link() {
 
 // Pump TinyUSB. Called every scan tick from platform_glue.c's vTaskDelay
 // via its own `extern void kb_usb_task(void);` declaration — a real
-// Swift/C boundary crossing, so @_cdecl (unlike init_wired_link/
+// Swift/C boundary crossing, so @c (unlike init_wired_link/
 // send_wired_report below, called only from Main.swift, plain Swift-to-
 // Swift same-module resolution).
-@_cdecl("kb_usb_task")
+@c
 func kb_usb_task() {
     tud_task_ext(UInt32.max, false) // wait-forever, not-in-ISR
     smk_keymap_usb_service()
@@ -154,7 +154,7 @@ func send_wired_report(_ modifier: UInt8, _ keys: UnsafePointer<UInt8>) {
 // counter, NOT a real millisecond clock — no hardware timer wired up yet.
 private var s_millisCounter: UInt32 = 0
 
-@_cdecl("tusb_time_millis_api")
+@c
 func tusb_time_millis_api() -> UInt32 {
     s_millisCounter &+= 1
     return s_millisCounter

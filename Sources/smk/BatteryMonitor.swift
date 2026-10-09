@@ -14,7 +14,7 @@
 // adc_cali_curve_fitting_config_t) come in through Bridging.h's
 // `esp_adc/*.h` includes, so the ClangImporter provides the real types and
 // their exact layouts — constructing them here is no more fragile than the
-// C designated initializers were. No @_cdecl needed anywhere here: nothing
+// C designated initializers were. No @c needed anywhere here: nothing
 // outside this Swift module calls these functions, matching
 // GPIOInit.swift/SmkConfig.swift's precedent for ESP32-C6-only files.
 //

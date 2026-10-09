@@ -91,7 +91,7 @@ func smkKeymapDispatchPacket(
 }
 
 // The real values every port's `caps` closure supplies. Pulled out as a
-// plain, host-testable function (rather than inlined into the `@_cdecl`
+// plain, host-testable function (rather than inlined into the `@c`
 // wrapper below, which only compiles for embedded targets) so its values
 // are pinned by a test instead of only reviewed by eye.
 //
@@ -128,9 +128,9 @@ func smkKeymapRealCaps() -> (macroBytes: UInt16, macroSlots: UInt8, keymapMaxLen
 // ports/nrf52840/platform/usb_descriptors.c, and
 // ports/stm32f4/platform/usb_descriptors.c all call this directly from C
 // via smk_keymap_usb_service(); ble_helper.c's BLE Report ID 2 path calls
-// it too. The `@_cdecl` boundary is real even though the dispatch logic
+// it too. The `@c` boundary is real even though the dispatch logic
 // above now lives in Swift.
-@_cdecl("smk_keymap_dispatch_packet")
+@c
 func smk_keymap_dispatch_packet(_ packet: UnsafePointer<UInt8>, _ response: UnsafeMutablePointer<UInt8>) {
     smkKeymapDispatchPacket(
         packet, response,

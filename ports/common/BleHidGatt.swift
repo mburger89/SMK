@@ -205,7 +205,7 @@ private func hidsSubeventInputReportEnableGetConHandle(_ event: UnsafePointer<UI
     UInt16(event[3]) | (UInt16(event[4]) << 8) // little_endian_read_16(event, 3)
 }
 
-@_cdecl("smk_ble_hid_packet_handler")
+@c(smk_ble_hid_packet_handler)
 private func packetHandler(_ packetType: UInt8, _ channel: UInt16, _ packet: UnsafeMutablePointer<UInt8>?, _ size: UInt16) {
     guard packetType == 0x04, let packet = packet else { return } // HCI_EVENT_PACKET (bluetooth.h) — verified 0x04
     let eventType = hciEventPacketGetType(packet)
@@ -231,10 +231,10 @@ private func packetHandler(_ packetType: UInt8, _ channel: UInt16, _ packet: Uns
 // advertising, event-handler registration, then HCI power-on. Call exactly
 // once, after the port's HCI transport is fully registered (hci_init() has
 // run) — hci_power_control(HCI_POWER_ON) at the end is what triggers the
-// transport's own init/boot sequence. @_cdecl so the C transport files
+// transport's own init/boot sequence. @c so the C transport files
 // (ble_hid_sdc.c, ble_hid_wb.c) can call it; the RP2040 Swift transports
 // call it same-module.
-@_cdecl("smk_ble_hid_gatt_setup")
+@c
 func smk_ble_hid_gatt_setup() {
     l2cap_init()
     sm_init()

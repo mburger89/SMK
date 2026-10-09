@@ -1,7 +1,7 @@
 // RP2040 keyboard matrix pin setup — Swift port of the former
 // ports/rp2040/platform/gpio_init.c. Only compiled into the RP2040 build
 // (ports/rp2040/CMakeLists.txt), so this is a plain module-internal Swift
-// function, not @_extern/@_cdecl — nothing outside this Swift module calls
+// function, not @_extern/@c — nothing outside this Swift module calls
 // it. Matches Sources/smk/GPIOInit.swift's precedent for ESP32-C6.
 //
 // Two wiring conventions are supported (see the matching comment in

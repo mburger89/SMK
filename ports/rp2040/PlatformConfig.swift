@@ -25,13 +25,13 @@ func smk_has_wired_bridge() -> Int32 { 1 }
 func smk_default_mode_is_wired() -> Int32 { 1 }
 
 // No @_extern for kb_usb_task: Task 2 already ported it to Swift
-// (ports/rp2040/UsbHid.swift, @_cdecl("kb_usb_task") — kept @_cdecl there
+// (ports/rp2040/UsbHid.swift, `@c func kb_usb_task` — kept @c there
 // for a reason specific to when Task 2 landed, but that doesn't stop this
 // same-module call from working). Declaring @_extern(c, "kb_usb_task")
 // here as well would be a same-module redeclaration conflict, not a
 // harmless duplicate — see this project's established SourceKit lesson
 // on exactly this mistake (feedback/CLAUDE.md history: same-module
-// Swift-to-Swift calls need neither @_extern nor @_cdecl).
+// Swift-to-Swift calls need neither @_extern nor @c).
 
 // ble_kbd_uart_poll: Task 13 ported smk_kbd_rp2040's BLE UART transport to
 // Swift (ports/rp2040/BleHidKbdUart.swift, same module as this file) — no
@@ -42,7 +42,7 @@ func smk_default_mode_is_wired() -> Int32 { 1 }
 @_extern(c, "sleep_ms")
 func sleep_ms(_ ms: UInt32)
 
-@_cdecl("vTaskDelay")
+@c
 func vTaskDelay(_ ticks: UInt32) {
     kb_usb_task()
     #if SMK_BOARD_KBD_RP2040

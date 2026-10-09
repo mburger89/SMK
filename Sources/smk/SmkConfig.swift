@@ -2,7 +2,7 @@
 // (main/Kconfig.projbuild) — Swift port of the former
 // Sources/components/smk_config.c. Only compiled into the ESP32-C6 build
 // (main/CMakeLists.txt), so these are plain module-internal Swift
-// functions, not `@_extern`/`@_cdecl` — nothing outside this Swift module
+// functions, not `@_extern`/`@c` — nothing outside this Swift module
 // calls them. RP2040 backs the same `@_extern(c, ...)` declarations in
 // Main.swift (conditional on SMK_TARGET_ESP32C6 being undefined — see
 // main/CMakeLists.txt) with its own hardcoded C definitions

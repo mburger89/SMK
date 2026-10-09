@@ -110,7 +110,7 @@ set(swift_srcs
     # called by anything yet — Task 7 wires up the real CPU2 boot sequence.
     # Swift rather than C (the brief left this open): every HW_IPCC_* entry
     # point is void(void) apart from one function-pointer argument, and the
-    # two IRQ vectors are the same @_cdecl weak-symbol override this port's
+    # two IRQ vectors are the same @c weak-symbol override this port's
     # UsbHid.swift already uses. See that file's header comment.
     "${CMAKE_CURRENT_SOURCE_DIR}/HwIpcc.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Modifier.swift"

@@ -64,7 +64,7 @@ private func waitDfllReady() {
     while (sysctrlPclksr.pointee & pclksrDfllRdy) == 0 { smk_cpu_nop() }
 }
 
-@_cdecl("smk_clock_init")
+@c
 func smk_clock_init() {
     // 0. Park the CPU on OSC8M first. The XIAO M0's UF2 bootloader hands
     //    over with GCLK0 (the CPU clock) already sourced from the DFLL —

@@ -165,7 +165,7 @@ else()
     # stubs (see SMK_ENABLE_BLE swiftc -D below).
     list(APPEND SHARED_SWIFT_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/BleHidPicoW.swift")
     # The shared HID-over-GATT logic references BTstack symbols
-    # unconditionally (its @_cdecl entry points are link roots), so it is
+    # unconditionally (its @c entry points are link roots), so it is
     # only in the source list for the boards that actually link BTstack —
     # BleHidPicoW.swift's #else branch supplies the plain-Pico stubs.
     if(PICO_BOARD STREQUAL "pico_w" OR PICO_BOARD STREQUAL "pico2_w")

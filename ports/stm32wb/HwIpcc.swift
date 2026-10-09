@@ -18,7 +18,7 @@
 // signatures were known): every function ST's hw.h declares in this family
 // is `void f(void)` except `HW_IPCC_MM_SendFreeBuf(void (*cb)(void))`, and
 // the two IRQ entry points are plain weak-symbol vector-table overrides.
-// All of that crosses the C ABI trivially — `@_cdecl` for the eleven
+// All of that crosses the C ABI trivially — `@c` for the eleven
 // exports plus the two vectors, `@_extern(c, ...)` for the five `*_Not`
 // callbacks tl_mbox.c defines — so Swift it is, per this project's
 // Swift-first preference. The one thing Swift genuinely cannot express is
@@ -243,24 +243,24 @@ private func nvicEnableIrq(_ irqn: UInt32) {
 // Weak-symbol overrides of cmsis-device-wb's startup_stm32wb55xx_cm4.s
 // vector-table entries `IPCC_C1_RX_IRQHandler` / `IPCC_C1_TX_IRQHandler`
 // (both weak-aliased to Default_Handler by default) — the same
-// `@_cdecl`-named-weak-symbol-override pattern ports/stm32wb/UsbHid.swift
+// `@c`-named-weak-symbol-override pattern ports/stm32wb/UsbHid.swift
 // already uses for USB_HP_IRQHandler / USB_LP_IRQHandler. In ST's own
 // projects these two vectors live in stm32wbxx_it.c and do nothing but call
 // HW_IPCC_Rx_Handler()/HW_IPCC_Tx_Handler().
 
-@_cdecl("IPCC_C1_RX_IRQHandler")
+@c
 func IPCC_C1_RX_IRQHandler() {
     HW_IPCC_Rx_Handler()
 }
 
-@_cdecl("IPCC_C1_TX_IRQHandler")
+@c
 func IPCC_C1_TX_IRQHandler() {
     HW_IPCC_Tx_Handler()
 }
 
 // MARK: - Dispatch
 
-@_cdecl("HW_IPCC_Rx_Handler")
+@c
 func HW_IPCC_Rx_Handler() {
     if rxPending(chSystemEvent) {
         // System (SHCI) asynchronous event from CPU2.
@@ -276,7 +276,7 @@ func HW_IPCC_Rx_Handler() {
     }
 }
 
-@_cdecl("HW_IPCC_Tx_Handler")
+@c
 func HW_IPCC_Tx_Handler() {
     if txPending(chSystemCmdRsp) {
         // CPU2 consumed our system command; its response is ready.
@@ -295,7 +295,7 @@ func HW_IPCC_Tx_Handler() {
 
 // MARK: - General
 
-@_cdecl("HW_IPCC_Enable")
+@c
 func HW_IPCC_Enable() {
     // Keep IPCC clocked from CPU2's side too, so the IP stays available to
     // CPU2 while CPU1 is in deep sleep (ST's own comment; matters once FUS
@@ -337,7 +337,7 @@ func HW_IPCC_Enable() {
 // before TL_Init().
 private let ipccAllChannels: UInt32 = 0x3F // LL_IPCC_CHANNEL_1..6 == (1<<0)..(1<<5)
 
-@_cdecl("smk_ipcc_reset")
+@c
 func smk_ipcc_reset() {
     // The C original followed the |= with `(void)RCC->AHB3ENR;` so the
     // clock-enable takes effect before the IPCC register writes below. A
@@ -353,7 +353,7 @@ func smk_ipcc_reset() {
     ipccC2mr.pointee = (ipccAllChannels << 16) | ipccAllChannels
 }
 
-@_cdecl("HW_IPCC_Init")
+@c
 func HW_IPCC_Init() {
     rccAhb3Enr.pointee |= rccAhb3EnrIpccEn
 
@@ -366,17 +366,17 @@ func HW_IPCC_Init() {
 
 // MARK: - BLE
 
-@_cdecl("HW_IPCC_BLE_Init")
+@c
 func HW_IPCC_BLE_Init() {
     criticalSection { enableReceiveChannel(chBleEvent) }
 }
 
-@_cdecl("HW_IPCC_BLE_SendCmd")
+@c
 func HW_IPCC_BLE_SendCmd() {
     setFlag(chBleCmd)
 }
 
-@_cdecl("HW_IPCC_BLE_SendAclData")
+@c
 func HW_IPCC_BLE_SendAclData() {
     setFlag(chHciAclData)
     criticalSection { enableTransmitChannel(chHciAclData) }
@@ -384,12 +384,12 @@ func HW_IPCC_BLE_SendAclData() {
 
 // MARK: - System (SHCI)
 
-@_cdecl("HW_IPCC_SYS_Init")
+@c
 func HW_IPCC_SYS_Init() {
     criticalSection { enableReceiveChannel(chSystemEvent) }
 }
 
-@_cdecl("HW_IPCC_SYS_SendCmd")
+@c
 func HW_IPCC_SYS_SendCmd() {
     setFlag(chSystemCmdRsp)
     criticalSection { enableTransmitChannel(chSystemCmdRsp) }
@@ -403,7 +403,7 @@ func HW_IPCC_SYS_SendCmd() {
 // allocated, so this stays valid Embedded Swift.
 private var freeBufCb: (@convention(c) () -> Void)?
 
-@_cdecl("HW_IPCC_MM_SendFreeBuf")
+@c
 func HW_IPCC_MM_SendFreeBuf(_ cb: @convention(c) () -> Void) {
     if isActiveFlagC1(chMmReleaseBuffer) {
         // Previous post not yet consumed by CPU2 — defer to the TX handler.
@@ -417,7 +417,7 @@ func HW_IPCC_MM_SendFreeBuf(_ cb: @convention(c) () -> Void) {
 
 // MARK: - Traces
 
-@_cdecl("HW_IPCC_TRACES_Init")
+@c
 func HW_IPCC_TRACES_Init() {
     criticalSection { enableReceiveChannel(chTraces) }
 }

@@ -54,7 +54,7 @@ void vTaskDelay(uint32_t ticks); // shim: pumps USB then delays ~ticks ms
 // (Sources/SMKCore/KeymapProtocol.swift) are implemented directly in Swift
 // for this target. No C prototypes here for smk_keymap_load/erase/
 // begin_write/write_chunk/commit/dispatch_packet: these are Swift-owned
-// (dispatch_packet via `@_cdecl`), called from C
+// (dispatch_packet via `@c`), called from C
 // (usb_descriptors.c's smk_keymap_usb_service), not the other way around —
 // a stale C prototype here would be redundant with, and could shadow, the
 // real Swift definitions, same reasoning as init_keyboard_pins/

@@ -63,7 +63,7 @@ private let rccCfgrPpre1Div2: UInt32 = 0b100 << 10 // APB1 max 50MHz: 96/2 = 48M
 @_extern(c, "smk_cpu_nop")
 func smk_cpu_nop()
 
-@_cdecl("smk_clock_init")
+@c
 func smk_clock_init() {
     // 1. Start HSE and wait for it to stabilize.
     rccCr.pointee |= rccCrHseOn

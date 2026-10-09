@@ -171,7 +171,7 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
 }
 
 // Services a keymap-upload packet received by tud_hid_set_report_cb, called
-// from the main loop (kb_usb_task, @_cdecl'd Swift in each port's
+// from the main loop (kb_usb_task, an @c Swift function in each port's
 // UsbHid.swift) rather than from inside the USB callback itself --
 // smk_keymap_dispatch_packet can trigger a multi-ms flash erase+program
 // (e.g. smk_keymap_commit in the RP2040 KeymapStoreFlash.swift), which must

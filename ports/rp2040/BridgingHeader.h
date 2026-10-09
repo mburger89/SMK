@@ -43,7 +43,7 @@
 // and its BLE/USB dispatch (Sources/SMKCore/KeymapProtocol.swift) are
 // implemented directly in Swift for this target. No C prototypes here for
 // smk_keymap_load/erase/begin_write/write_chunk/commit/dispatch_packet:
-// these are Swift-owned (dispatch_packet via `@_cdecl`), called from C
+// these are Swift-owned (dispatch_packet via `@c`), called from C
 // (usb_descriptors.c's smk_keymap_usb_service), not the other way around.
 // usb_descriptors.c declares its own local prototype for the one it calls.
 // See docs/superpowers/specs/2026-07-31-runtime-keymap-updates-design.md

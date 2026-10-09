@@ -1,7 +1,7 @@
 // ESP32-C6 matrix pin configuration — Swift port of the former
 // Sources/components/gpio_init.c. Only compiled into the ESP32-C6 build
 // (main/CMakeLists.txt), so this is a plain module-internal Swift
-// function, not `@_extern`/`@_cdecl` — nothing outside this Swift module
+// function, not `@_extern`/`@c` — nothing outside this Swift module
 // calls it. RP2040 and nRF52840 each have their own same-module Swift
 // definition too now (ports/rp2040/GPIOInit.swift,
 // ports/nrf52840/GPIOInit.swift). KeyMatrix.swift's `@_extern(c,

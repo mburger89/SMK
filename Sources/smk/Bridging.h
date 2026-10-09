@@ -70,7 +70,7 @@
 // its BLE/USB dispatch (Sources/SMKCore/KeymapProtocol.swift) are
 // implemented directly in Swift for this target. No C prototypes here for
 // smk_keymap_load/erase/begin_write/write_chunk/commit/dispatch_packet:
-// these are Swift-owned (dispatch_packet via `@_cdecl`), and the trimmed
+// these are Swift-owned (dispatch_packet via `@c`), and the trimmed
 // ble_helper.c no longer references any of them at all — the BLE Report
 // ID 2 vendor channel that used to call dispatch_packet from C is now
 // handled directly in BleHelper.swift (same-module Swift-to-Swift call,

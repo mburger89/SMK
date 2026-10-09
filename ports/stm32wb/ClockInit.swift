@@ -223,7 +223,7 @@ func smk_cpu_nop()
 @_extern(c, "smk_mmio_read32")
 func smk_mmio_read32(_ addr: UInt32) -> UInt32
 
-@_cdecl("smk_clock_init")
+@c
 func smk_clock_init() {
     // 1. Start HSE and wait for it to stabilize.
     rccCr.pointee |= rccCrHseOn
@@ -283,7 +283,7 @@ func smk_clock_init() {
 // NUCLEO-WB55RG (MB1355) is fitted with a 32.768kHz LSE crystal (X3), so
 // this is expected to succeed on real hardware; like smk_clock_init() above
 // this is a fail-stop busy-wait with no timeout.
-@_cdecl("smk_enable_lse_and_rf_wakeup_clock")
+@c
 func smk_enable_lse_and_rf_wakeup_clock() {
     // RTCAPB clock gates access to the backup-domain registers (BDCR). The
     // C original followed the |= with `(void)RCC->APB1ENR1;` — a volatile

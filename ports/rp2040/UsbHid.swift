@@ -39,15 +39,15 @@ func init_wired_link() {
     _ = tusb_rhport_init(0, nil)
 }
 
-// @_cdecl, not a plain function: at the point this task lands,
+// @c, not a plain function: at the point this task lands,
 // ports/rp2040/platform/platform_glue.c is still C and calls this directly
 // via its own `extern void kb_usb_task(void);` — a real Swift/C boundary
 // crossing. Once Task 3 ports platform_glue.c's vTaskDelay to Swift, this
-// becomes reachable as a same-module call too, but the @_cdecl attribute is
+// becomes reachable as a same-module call too, but the @c attribute is
 // harmless to leave in place (it just also exposes the C-linkage symbol,
 // unused from C at that point) — Task 3 does not need to (and should not)
 // remove it here.
-@_cdecl("kb_usb_task")
+@c
 func kb_usb_task() {
     tud_task_ext(UInt32.max, false) // wait-forever, not-in-ISR: same as tud_task()
     smk_keymap_usb_service()

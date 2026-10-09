@@ -98,7 +98,7 @@ private func nvicSetPriority(_ irqn: Int32, _ priority: UInt32) {
     nvicIPBase.advanced(by: Int(irqn)).pointee = UInt8(truncatingIfNeeded: priority << (8 - 3))
 }
 
-@_cdecl("smk_mpsl_assert_handler")
+@c
 func smk_mpsl_assert_handler(_ file: UnsafePointer<CChar>?, _ line: UInt32) {
     while true {}
 }
@@ -182,7 +182,7 @@ private func smkUsbPowerInit() {
     }
 }
 
-@_cdecl("mpsl_glue_init")
+@c
 func mpsl_glue_init() {
     // nil clock config = default RC low-frequency clock source (per
     // mpsl_init's doc comment). A real crystal LFCLK config improves BLE
@@ -216,20 +216,20 @@ func mpsl_glue_init() {
 // application-provided forwarding handler, these vector-table slots (in
 // gcc_startup_nrf52840.S) fall through to the weak Default_Handler
 // (infinite loop) and hang the firmware the moment MPSL's internal
-// scheduler first fires RTC0 — same @_cdecl mechanism app_main_swift uses
+// scheduler first fires RTC0 — same @c mechanism app_main_swift uses
 // to be found by name, here found by the vector table in
 // gcc_startup_nrf52840.S instead of C's main().
-@_cdecl("RADIO_IRQHandler")
+@c
 func RADIO_IRQHandler() {
     MPSL_IRQ_RADIO_Handler()
 }
 
-@_cdecl("RTC0_IRQHandler")
+@c
 func RTC0_IRQHandler() {
     MPSL_IRQ_RTC0_Handler()
 }
 
-@_cdecl("TIMER0_IRQHandler")
+@c
 func TIMER0_IRQHandler() {
     MPSL_IRQ_TIMER0_Handler()
 }
@@ -252,7 +252,7 @@ func TIMER0_IRQHandler() {
 // Order doesn't matter: MPSL's handler only touches CLOCK-side event
 // registers, this only touches POWER-side ones (EVENTS_USBDETECTED/
 // _USBREMOVED/_USBPWRRDY), so the two forwards are independent.
-@_cdecl("POWER_CLOCK_IRQHandler")
+@c
 func POWER_CLOCK_IRQHandler() {
     MPSL_IRQ_CLOCK_Handler()
 
@@ -277,12 +277,12 @@ func POWER_CLOCK_IRQHandler() {
 // poll-from-the-cooperative-loop style (see ble_kbd_uart_poll() in
 // ports/rp2040/platform/ble_hid_kbd_uart.c for the RP2040 equivalent
 // pattern).
-@_cdecl("mpsl_glue_poll")
+@c
 func mpsl_glue_poll() {
     mpsl_low_priority_process()
 }
 
-@_cdecl("SWI0_EGU0_IRQHandler")
+@c
 func SWI0_EGU0_IRQHandler() {
     // Intentionally empty — mpsl_glue_poll() is called unconditionally
     // from the main loop every tick rather than gated on this ISR firing,

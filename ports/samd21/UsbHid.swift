@@ -93,7 +93,7 @@ private let usbIntFlag = UnsafeMutablePointer<UInt8>(bitPattern: UInt(0x4100_501
 private let usbEp0IntFlag = UnsafeMutablePointer<UInt8>(bitPattern: UInt(0x4100_5107))!
 private var usbIsrHitCount: UInt32 = 0
 
-@_cdecl("USB_Handler")
+@c
 func USB_Handler() {
     usbIsrHitCount &+= 1
     let intFlags = usbIntFlag.pointee
@@ -125,8 +125,8 @@ func init_wired_link() {
 }
 
 // Pump TinyUSB. Called every scan tick from platform_glue.c's vTaskDelay —
-// a real Swift/C boundary crossing, hence @_cdecl.
-@_cdecl("kb_usb_task")
+// a real Swift/C boundary crossing, hence @c.
+@c
 func kb_usb_task() {
     tud_task_ext(UInt32.max, false)
     smk_keymap_usb_service()
@@ -142,7 +142,7 @@ func send_wired_report(_ modifier: UInt8, _ keys: UnsafePointer<UInt8>) {
 // and String→C-string conversion — the exact machinery the first kb_log()
 // call in app_main_swift needs — in isolation, between LED markers in
 // platform_glue.c's main(). Remove once USB enumeration works.
-@_cdecl("smk_debug_probe")
+@c
 func smk_debug_probe() -> Int32 {
     var arr = [UInt8](repeating: 0, count: 64)
     arr[1] = 42
@@ -156,7 +156,7 @@ func smk_debug_probe() -> Int32 {
 // stm32f4/nrf52840 ports; a real SysTick-based clock is future work).
 private var s_millisCounter: UInt32 = 0
 
-@_cdecl("tusb_time_millis_api")
+@c
 func tusb_time_millis_api() -> UInt32 {
     s_millisCounter &+= 1
     return s_millisCounter

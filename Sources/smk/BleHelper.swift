@@ -137,7 +137,7 @@ let espHiddDisconnectEvent = ESP_HIDD_DISCONNECT_EVENT.rawValue
 // Registered as esp_hidd_dev_init's `esp_event_handler_t callback` param —
 // a plain Swift function passed as a @convention(c) value now that the
 // registration call itself is Swift (no C forward declaration left, so no
-// @_cdecl needed). The `base` param is esp_event_base_t (a const char *).
+// @c needed). The `base` param is esp_event_base_t (a const char *).
 func bleHiddEventCallback(_ handlerArgs: UnsafeMutableRawPointer?, _ base: UnsafePointer<CChar>?, _ id: Int32, _ eventData: UnsafeMutableRawPointer?) {
     switch id {
     case espHiddStartEvent:

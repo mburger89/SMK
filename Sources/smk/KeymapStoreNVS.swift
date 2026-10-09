@@ -9,7 +9,7 @@
 // ble_helper.c) before Main.swift reaches the keymap-load call site, so no
 // separate init is needed here.
 //
-// These are plain module-internal Swift functions, not `@_cdecl` — nothing
+// These are plain module-internal Swift functions, not `@c` — nothing
 // outside the Swift module calls smk_keymap_load/erase/begin_write/
 // write_chunk/commit directly. Sources/smk/Main.swift and
 // Sources/SMKCore/KeymapProtocol.swift (both flat-compiled into this same

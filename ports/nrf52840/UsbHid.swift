@@ -61,7 +61,7 @@ func smk_keymap_usb_service()
 @_extern(c, "tusb_int_handler")
 func tusb_int_handler(_ rhport: UInt8, _ inIsr: Bool)
 
-@_cdecl("USBD_IRQHandler")
+@c
 func USBD_IRQHandler() {
     tusb_int_handler(0, true)
 }
@@ -78,8 +78,8 @@ func init_wired_link() {
 // tick via its own `extern void kb_usb_task(void);` declaration — that
 // crosses the Swift/C boundary for real (unlike init_wired_link/
 // send_wired_report below, called only from Main.swift, plain Swift-to-
-// Swift same-module resolution), so this one needs @_cdecl.
-@_cdecl("kb_usb_task")
+// Swift same-module resolution), so this one needs @c.
+@c
 func kb_usb_task() {
     tud_task_ext(UInt32.max, false) // wait-forever, not-in-ISR: same as tud_task()
     smk_keymap_usb_service()
@@ -98,7 +98,7 @@ func send_wired_report(_ modifier: UInt8, _ keys: UnsafePointer<UInt8>) {
 // link fails outright with an undefined reference (discovered empirically:
 // tusb_time_delay_ms_api's OPT_OS_NONE fallback body, compiled unconditionally
 // into tusb.c, references it). Crosses the Swift/C boundary for real (called
-// from TinyUSB's C sources), hence @_cdecl.
+// from TinyUSB's C sources), hence @c.
 //
 // Like vTaskDelay's busy-loop in platform_glue.c, this is an UNCALIBRATED
 // per-call counter, NOT a real millisecond clock — no hardware timer is
@@ -108,7 +108,7 @@ func send_wired_report(_ modifier: UInt8, _ keys: UnsafePointer<UInt8>) {
 // amount of real time; needs a real tick source before hardware bring-up.
 private var s_millisCounter: UInt32 = 0
 
-@_cdecl("tusb_time_millis_api")
+@c
 func tusb_time_millis_api() -> UInt32 {
     s_millisCounter &+= 1
     return s_millisCounter

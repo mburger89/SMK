@@ -96,12 +96,12 @@ func uartDebugWrite(_ s: String) {
     }
 }
 
-@_cdecl("uart_debug_init")
+@c
 func uart_debug_init() {
     uartDebugInit()
 }
 
-@_cdecl("uart_debug_write_cstr")
+@c
 func uart_debug_write_cstr(_ cstr: UnsafePointer<Int8>?) {
     guard let cstr = cstr else { return }
     uartDebugWrite(String(cString: cstr))

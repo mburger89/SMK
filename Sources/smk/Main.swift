@@ -8,7 +8,7 @@
 // funcs named `init_ble_hid` in the same module as this file, so no
 // @_extern permitted for them — that would be a same-module redeclaration
 // conflict. The targets that still need this extern: nRF52840 (Swift too,
-// but as @_cdecl("init_ble_hid") with a different Swift name —
+// but as @c(init_ble_hid) with a different Swift name —
 // ports/nrf52840/BleHidSdc.swift — so the C symbol must be bound here),
 // STM32WB (C transport bring-up, ble_hid_wb.c), and STM32F4 (C no-op stub
 // in its platform_glue.c).
@@ -41,7 +41,7 @@ func send_keyboard_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
 // vTaskDelay — ESP32-C6 backs this with C (real FreeRTOS, unchanged);
 // nRF52840 backs it with a C placeholder
 // (ports/nrf52840/platform/platform_glue.c). RP2040 provides it as plain
-// Swift (ports/rp2040/PlatformConfig.swift, @_cdecl since the shared scan
+// Swift (ports/rp2040/PlatformConfig.swift, @c since the shared scan
 // loop calls it), same-module with this file — so RP2040 must NOT also
 // declare this as @_extern, or it's a same-module redeclaration conflict.
 #if !SMK_TARGET_RP2040
@@ -143,7 +143,7 @@ func applyMacroLayerEffects(_ effects: [LayerEffect], to engine: inout LayerEngi
     }
 }
 
-@_cdecl("app_main_swift")
+@c
 func app_main_swift() {
     kb_log("Initialising SMK Keyboard...")
 

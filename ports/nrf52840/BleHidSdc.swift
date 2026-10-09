@@ -161,7 +161,7 @@ private var sdcMsgBuf = [UInt8](repeating: 0, count: 258)
 
 // Drains any pending event/data from SDC and forwards it to BTstack — the
 // "read" half of this transport (send_packet above is the "write" half).
-// Called every scan tick from platform_glue.c's vTaskDelay (hence @_cdecl),
+// Called every scan tick from platform_glue.c's vTaskDelay (hence @c),
 // same cooperative-polling style as mpsl_glue_poll()/kb_usb_task().
 //
 // hci_internal_msg_get (NOT bare sdc_hci_get) is load-bearing — Critical #1:
@@ -170,7 +170,7 @@ private var sdcMsgBuf = [UInt8](repeating: 0, count: 258)
 // through to sdc_hci_get; bare sdc_hci_get would stall BTstack's init state
 // machine forever and wedge hci_internal_cmd_put with -NRF_EPERM. See the C
 // original's git history for the full analysis.
-@_cdecl("sdc_transport_poll")
+@c
 func sdc_transport_poll() {
     sdcMsgBuf.withUnsafeMutableBufferPointer { buf in
         let base = buf.baseAddress!
@@ -198,7 +198,7 @@ func sdc_transport_poll() {
 private let sdcMemBufferSize = 3600
 private var sdcMemBuffer: UnsafeMutableRawPointer? = nil
 
-@_cdecl("init_ble_hid")
+@c(init_ble_hid)
 func initBleHidSdc() {
     // Critical #3: BTstack's memory pools stay NULL forever unless this is
     // called — first, before anything else touches BTstack.
