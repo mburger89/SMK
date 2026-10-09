@@ -48,71 +48,9 @@ message(STATUS "Targeting triple: ${TARGET_TRIPLE}")
 # Absolute path for bridging header
 get_filename_component(bridging_header "${CMAKE_CURRENT_SOURCE_DIR}/../Sources/smk/Bridging.h" ABSOLUTE)
 
-# Locate Swift Compiler
-if(SWIFTC_PATH AND EXISTS "${SWIFTC_PATH}")
-    message(STATUS "Swift compiler already set to: ${SWIFTC_PATH}")
-else()
-    # 1. Check if SWIFTC_PATH is in the environment
-    if(DEFINED ENV{SWIFTC_PATH} AND EXISTS "$ENV{SWIFTC_PATH}")
-        set(SWIFTC_PATH "$ENV{SWIFTC_PATH}" CACHE PATH "Path to swiftc")
-        message(STATUS "Swift compiler found in environment: ${SWIFTC_PATH}")
-    endif()
-endif()
-
-if(NOT SWIFTC_PATH OR NOT EXISTS "${SWIFTC_PATH}")
-    # 2. Prioritize custom toolchains over system ones
-    set(TOOLCHAIN_SEARCH_PATHS
-        "$ENV{HOME}/Library/Developer/Toolchains"
-        "/Library/Developer/Toolchains"
-    )
-    foreach(search_path ${TOOLCHAIN_SEARCH_PATHS})
-        if(NOT EXISTS "${search_path}")
-            continue()
-        endif()
-        file(GLOB custom_toolchains "${search_path}/*.xctoolchain")
-        foreach(toolchain ${custom_toolchains})
-            if(EXISTS "${toolchain}/usr/bin/swiftc")
-                set(TRY_SWIFTC "${toolchain}/usr/bin/swiftc")
-                # Test if this compiler supports our target
-                execute_process(COMMAND ${TRY_SWIFTC} -target ${TARGET_TRIPLE} -print-target-info
-                                RESULT_VARIABLE target_ok
-                                OUTPUT_QUIET ERROR_QUIET)
-                if(target_ok EQUAL 0)
-                    set(SWIFTC_PATH "${TRY_SWIFTC}" CACHE PATH "Path to swiftc")
-                    message(STATUS "Compatible Swift compiler found in toolchains: ${SWIFTC_PATH}")
-                    break()
-                endif()
-            endif()
-        endforeach()
-        if(SWIFTC_PATH)
-            break()
-        endif()
-    endforeach()
-endif()
-
-if(NOT SWIFTC_PATH OR NOT EXISTS "${SWIFTC_PATH}")
-    # 3. Fallback to system swiftc
-    find_program(SWIFTC_PATH_PROG swiftc)
-    if(SWIFTC_PATH_PROG)
-        set(SWIFTC_PATH "${SWIFTC_PATH_PROG}" CACHE PATH "Path to swiftc")
-        message(STATUS "Swift compiler found via find_program: ${SWIFTC_PATH}")
-    endif()
-endif()
-
-if(NOT SWIFTC_PATH OR NOT EXISTS "${SWIFTC_PATH}")
-    message(FATAL_ERROR "Swift compiler (swiftc) not found!
-    Checked:
-    - SWIFTC_PATH CMake variable
-    - SWIFTC_PATH environment variable
-    - ~/Library/Developer/Toolchains/
-    - system PATH
-    Please set SWIFTC_PATH manually.")
-endif()
-
-if(NOT SWIFTC_PATH)
-    message(FATAL_ERROR "Swift compiler (swiftc) not found! Please set SWIFTC_PATH.")
-endif()
-message(STATUS "Using Swift compiler: ${SWIFTC_PATH}")
+# Locate Swift Compiler (shared finder — see cmake/FindEmbeddedSwiftc.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/../cmake/FindEmbeddedSwiftc.cmake)
+smk_find_embedded_swiftc(${TARGET_TRIPLE})
 
 
 set(idf_p "${IDF_PATH}")

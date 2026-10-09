@@ -49,57 +49,12 @@ add_compile_options(${C_ASM_FLAGS} -ffunction-sections -fdata-sections)
 add_link_options(${C_ASM_FLAGS} --specs=nosys.specs -nostartfiles -Wl,--gc-sections)
 
 # ---------------------------------------------------------------------------
-# Swift toolchain discovery — same real-stdlib-typecheck probe as the other
-# ports. armv6m (Cortex-M0+) is the same triple the RP2040 build uses, with
-# a real stdlib on every released swift-6.3.x toolchain.
+# Swift toolchain discovery — shared finder, see cmake/FindEmbeddedSwiftc.cmake
+# (requires Swift >= 6.4 with a real Embedded stdlib for the target triple).
 # ---------------------------------------------------------------------------
 set(SMK_SWIFT_TARGET "armv6m-none-none-eabi")
-
-if(NOT SWIFTC_PATH OR NOT EXISTS "${SWIFTC_PATH}")
-    if(DEFINED ENV{SWIFTC_PATH} AND EXISTS "$ENV{SWIFTC_PATH}")
-        set(SWIFTC_PATH "$ENV{SWIFTC_PATH}" CACHE PATH "Path to swiftc")
-    endif()
-endif()
-
-if(NOT SWIFTC_PATH OR NOT EXISTS "${SWIFTC_PATH}")
-    set(_tc_dirs
-        "$ENV{HOME}/Library/Developer/Toolchains"
-        "/Library/Developer/Toolchains"
-    )
-    set(_smk_probe_src "${CMAKE_BINARY_DIR}/_smk_toolchain_probe.swift")
-    file(WRITE "${_smk_probe_src}" "public func _smkToolchainProbe() {}\n")
-    foreach(_dir ${_tc_dirs})
-        file(GLOB _tcs "${_dir}/*.xctoolchain")
-        foreach(_tc ${_tcs})
-            set(_sc "${_tc}/usr/bin/swiftc")
-            if(EXISTS "${_sc}")
-                execute_process(
-                    COMMAND "${_sc}" -target ${SMK_SWIFT_TARGET}
-                            -enable-experimental-feature Embedded
-                            -parse-as-library
-                            -typecheck
-                            "${_smk_probe_src}"
-                    RESULT_VARIABLE _stdlib_ok OUTPUT_QUIET ERROR_QUIET
-                )
-                if(_stdlib_ok EQUAL 0)
-                    set(SWIFTC_PATH "${_sc}" CACHE PATH "Path to swiftc")
-                    break()
-                endif()
-            endif()
-        endforeach()
-        if(SWIFTC_PATH)
-            break()
-        endif()
-    endforeach()
-endif()
-
-if(NOT SWIFTC_PATH OR NOT EXISTS "${SWIFTC_PATH}")
-    message(FATAL_ERROR
-        "Swift compiler (swiftc) supporting ${SMK_SWIFT_TARGET} Embedded (with a "
-        "real stdlib for it) not found.\n"
-        "Set SWIFTC_PATH to the path of a compatible swiftc.")
-endif()
-message(STATUS "Using Swift compiler: ${SWIFTC_PATH}")
+include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/FindEmbeddedSwiftc.cmake)
+smk_find_embedded_swiftc(${SMK_SWIFT_TARGET})
 
 # swiftc's ClangImporter needs arm-none-eabi-gcc's own newlib header paths —
 # same probe as the other hand-rolled ports.

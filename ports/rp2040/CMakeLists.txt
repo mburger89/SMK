@@ -29,81 +29,16 @@ endif()
 include(${CMAKE_CURRENT_LIST_DIR}/pico_sdk_import.cmake)
 
 # ---------------------------------------------------------------------------
-# Swift toolchain discovery
-# Prefer SWIFTC env/CMake var, then scan ~/Library/Developer/Toolchains for a
-# toolchain that both recognizes this board's Embedded target triple
-# (armv6m-none-none-eabi for pico/pico_w, armv8m.main-none-none-eabi for
-# pico2/pico2_w) AND actually ships a usable stdlib for it — verified by
-# typechecking a trivial probe source, not just by -print-target-info (which
-# can return success even when the stdlib itself is missing).
+# Swift toolchain discovery — shared finder, see cmake/FindEmbeddedSwiftc.cmake
+# (requires Swift >= 6.4 with a real Embedded stdlib for the target triple).
 # ---------------------------------------------------------------------------
-if(NOT SWIFTC_PATH OR NOT EXISTS "${SWIFTC_PATH}")
-    if(DEFINED ENV{SWIFTC_PATH} AND EXISTS "$ENV{SWIFTC_PATH}")
-        set(SWIFTC_PATH "$ENV{SWIFTC_PATH}" CACHE PATH "Path to swiftc")
-    endif()
+if(SMK_TARGET_BOARD STREQUAL "pico2" OR SMK_TARGET_BOARD STREQUAL "pico2_w")
+    set(_probe_target "armv8m.main-none-none-eabi")
+else()
+    set(_probe_target "armv6m-none-none-eabi")
 endif()
-
-if(NOT SWIFTC_PATH OR NOT EXISTS "${SWIFTC_PATH}")
-    set(_tc_dirs
-        "$ENV{HOME}/Library/Developer/Toolchains"
-        "/Library/Developer/Toolchains"
-    )
-    if(SMK_TARGET_BOARD STREQUAL "pico2" OR SMK_TARGET_BOARD STREQUAL "pico2_w")
-        set(_probe_target "armv8m.main-none-none-eabi")
-    else()
-        set(_probe_target "armv6m-none-none-eabi")
-    endif()
-    # -print-target-info below only confirms LLVM recognizes the target
-    # triple, not that this toolchain ships a prebuilt Embedded Swift
-    # stdlib for it (confirmed: swift-6.3.2-RELEASE returns 0 for
-    # -target armv8m.main-none-none-eabi -print-target-info yet has no
-    # such stdlib, failing later at the real build with "could not find
-    # module 'Swift'"). Typecheck a trivial probe source against the
-    # target as a second, stronger gate before accepting a toolchain.
-    set(_smk_probe_src "${CMAKE_BINARY_DIR}/_smk_toolchain_probe.swift")
-    file(WRITE "${_smk_probe_src}" "public func _smkToolchainProbe() {}\n")
-    foreach(_dir ${_tc_dirs})
-        file(GLOB _tcs "${_dir}/*.xctoolchain")
-        foreach(_tc ${_tcs})
-            set(_sc "${_tc}/usr/bin/swiftc")
-            if(EXISTS "${_sc}")
-                execute_process(
-                    COMMAND "${_sc}" -target ${_probe_target}
-                            -enable-experimental-feature Embedded
-                            -print-target-info
-                    RESULT_VARIABLE _ok OUTPUT_QUIET ERROR_QUIET
-                )
-                if(_ok EQUAL 0)
-                    execute_process(
-                        COMMAND "${_sc}" -target ${_probe_target}
-                                -enable-experimental-feature Embedded
-                                -parse-as-library
-                                -typecheck
-                                "${_smk_probe_src}"
-                        RESULT_VARIABLE _stdlib_ok OUTPUT_QUIET ERROR_QUIET
-                    )
-                    if(_stdlib_ok EQUAL 0)
-                        set(SWIFTC_PATH "${_sc}" CACHE PATH "Path to swiftc")
-                        break()
-                    endif()
-                endif()
-            endif()
-        endforeach()
-        if(SWIFTC_PATH)
-            break()
-        endif()
-    endforeach()
-endif()
-
-if(NOT SWIFTC_PATH OR NOT EXISTS "${SWIFTC_PATH}")
-    message(FATAL_ERROR
-        "Swift compiler (swiftc) supporting ${_probe_target} Embedded (with a "
-        "real stdlib for it) not found.\n"
-        "Set SWIFTC_PATH to the path of a compatible swiftc, e.g.:\n"
-        "  cmake -DSWIFTC_PATH=~/Library/Developer/Toolchains/"
-        "<toolchain>.xctoolchain/usr/bin/swiftc ...")
-endif()
-message(STATUS "Using Swift compiler: ${SWIFTC_PATH}")
+include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/FindEmbeddedSwiftc.cmake)
+smk_find_embedded_swiftc(${_probe_target})
 
 # Tell CMake where the Swift compiler is before project() / enable_language().
 set(CMAKE_Swift_COMPILER "${SWIFTC_PATH}")
