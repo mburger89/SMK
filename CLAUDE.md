@@ -26,14 +26,13 @@ SMK (Swift Matrix Keyboard) is keyboard firmware written in **Embedded Swift** t
 
 ### ESP32-C6
 - **ESP-IDF v6.0.1** installed via the standard installer (`~/.espressif/v6.0.1/esp-idf`) and sourced via `. ~/.espressif/v6.0.1/esp-idf/export.sh` — the real export script; a top-level `~/export-esp-idf.sh` (as a personal alias/symlink to the above) also works if you've set one up, but isn't created by ESP-IDF's installer itself
-- **Swift 6.3.1 Embedded RISC-V toolchain** installed in `~/Library/Developer/Toolchains/`
+- **Swift 6.4.0-RELEASE or later** (all targets; RP2350's `armv8m.main` stdlib ships in the release toolchain from 6.4). Toolchain selection is `cmake/FindEmbeddedSwiftc.cmake`: newest release toolchain wins; override with `-DSWIFTC_PATH=`; snapshots need `-DSMK_ALLOW_SNAPSHOT=ON`. **After upgrading, delete your existing `build*/` dirs** — they cache the old `SWIFTC_PATH`.
 
 ### RP2040 / Pico
 - **pico-sdk** at `~/pico-sdk` with submodules initialized (`git -C ~/pico-sdk submodule update --init`)
 - **ARM toolchain with newlib**: `brew tap osx-cross/arm && brew install osx-cross/arm/arm-gcc-bin@14`
 - **cmake ≥ 3.29, ninja, picotool**: `brew install cmake ninja picotool`
-- **Swift ≥ 6.3 Embedded ARM toolchain** installed in `~/Library/Developer/Toolchains/`
-- **RP2350 (`pico2`/`pico2_w`) additionally requires a Swift development-snapshot toolchain** (confirmed: `swift-DEVELOPMENT-SNAPSHOT-2026-05-27-a` or later) that ships a real Embedded-Swift stdlib for `armv8m.main-none-none-eabi` (RP2350's Cortex-M33 target). Released `swift-6.3.x` toolchains report support for that triple via `-print-target-info` but fail an actual compile — they don't ship the stdlib.
+- **Swift 6.4.0-RELEASE or later** (all targets; RP2350's `armv8m.main` stdlib ships in the release toolchain from 6.4). Toolchain selection is `cmake/FindEmbeddedSwiftc.cmake`: newest release toolchain wins; override with `-DSWIFTC_PATH=`; snapshots need `-DSMK_ALLOW_SNAPSHOT=ON`. **After upgrading, delete your existing `build*/` dirs** — they cache the old `SWIFTC_PATH`.
 
 ### nRF52840
 - **nRF5 SDK** (CMSIS device header + Cortex-M4 startup/linker script — modern `nrfx` no longer bundles these) at `~/nRF5_SDK` — download from Nordic's nRF5 SDK page (v17.1.0 or later) and unzip. Only `modules/nrfx/mdk/` is used.
@@ -101,6 +100,17 @@ export CMSIS_CORE_PATH=~/CMSIS_6
 ```
 
 Produces `build_samd21/smk_samd21.uf2`. Flash by double-tapping the XIAO M0's reset pads (mounts an `Arduino` UF2-bootloader volume) and copying the `.uf2` onto it. USB enumeration does not yet work on this target — see Supported Targets above.
+
+### Gate (all targets) — `tools/build_all.sh`
+```bash
+tools/build_all.sh --label <name>            # all 11 targets + host tests + size check
+tools/build_all.sh --only pico,stm32f4       # subset (comma-separated target names)
+tools/build_all.sh --check-polls             # also disassembly-check tools/poll_functions.txt
+tools/build_all.sh --baseline 6.4-baseline   # record a baseline row (no size check)
+tools/build_all.sh --symbols-baseline        # also copy exported symbols to docs/superpowers/notes/symbols-<t>.txt
+```
+
+Clean-builds each of the 11 gate targets (`esp32c6, pico, pico_w, pico2, pico2_w, smk_kbd_rp2040, nrf52840dk, feather_nrf52840, samd21, stm32f4, stm32wb`) into `build_gate/<target>` (gitignored; never touches your own `build*/` dirs), runs `SMK_HOST_TESTS_ONLY=1 swift test`, records each target's exported symbols to `build_gate/<target>/symbols.txt`, and appends a `flash/ram` row (flash = text+data, ram = data+bss) to `docs/superpowers/notes/swift64-sizes.md`. Without `--baseline` it fails any target more than **+2 %** over the `6.4-baseline` row. Exits non-zero on any build, test, size or poll failure; per-target logs are `build_gate/<target>.log`. A full run takes a long time — run it in the background and read its output.
 
 ## Architecture
 

@@ -20,15 +20,14 @@ The shared Swift sources (`Sources/smk/`) are reused unchanged. This port provid
 |---|---|
 | pico-sdk ≥ 2.x | `git clone https://github.com/raspberrypi/pico-sdk ~/pico-sdk && git -C ~/pico-sdk submodule update --init` |
 | arm-none-eabi-gcc | `brew install arm-none-eabi-gcc` |
-| Swift ≥ 6.3 (Embedded) | Download from swift.org |
+| Swift ≥ 6.4.0-RELEASE (Embedded) | Download from swift.org |
 | cmake ≥ 3.29, ninja | `brew install cmake ninja` |
 | picotool (optional) | `brew install picotool` |
 
-RP2350 (`pico2`/`pico2_w`) additionally requires a Swift development-snapshot toolchain (confirmed:
-`swift-DEVELOPMENT-SNAPSHOT-2026-05-27-a` or later) that ships a real Embedded-Swift stdlib for
-`armv8m.main-none-none-eabi` (RP2350's Cortex-M33 target). Released `swift-6.3.x` toolchains report
-support for that triple via `-print-target-info` but fail an actual compile — they don't ship the
-stdlib.
+Swift 6.4.0-RELEASE or later covers every target, RP2350 (`pico2`/`pico2_w`, `armv8m.main-none-none-eabi`)
+included. Toolchain selection is the shared `cmake/FindEmbeddedSwiftc.cmake` (newest release toolchain
+wins; override with `-DSWIFTC_PATH=`; snapshots need `-DSMK_ALLOW_SNAPSHOT=ON`). After upgrading, delete
+existing `build*/` dirs — they cache the old `SWIFTC_PATH`.
 
 ## Build
 
