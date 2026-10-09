@@ -1,79 +1,24 @@
 // The Swift Programming Language
 // https://docs.swift.org/swift-book
 
-// init_ble_hid — ESP32-C6 now backs this natively in Swift too
-// (BleHelper.swift, full port — NimBLE's bitfield-heavy structs come in
-// through Bridging.h's imported types), joining every RP2040 board
-// (BleHidPicoW.swift / BleHidKbdUart.swift). All of those are plain Swift
-// funcs named `init_ble_hid` in the same module as this file, so no
-// @_extern permitted for them — that would be a same-module redeclaration
-// conflict. The targets that still need this extern: nRF52840 (Swift too,
-// but as @c(init_ble_hid) with a different Swift name —
-// ports/nrf52840/BleHidSdc.swift — so the C symbol must be bound here),
-// STM32WB (C transport bring-up, ble_hid_wb.c), and STM32F4 (C no-op stub
-// in its platform_glue.c).
-#if !SMK_TARGET_RP2040 && !SMK_TARGET_ESP32C6
-@_extern(c, "init_ble_hid")
-func init_ble_hid()
-#endif
-
-// send_keyboard_report — every BLE-capable target now backs this natively
-// in Swift, same module as this file, so no @_extern is permitted for them
-// (that would be a same-module redeclaration conflict): ESP32-C6 via
-// BleHelper.swift, every RP2040 board via BleHidPicoW.swift's stub branch
-// or the shared ports/common/BleHidGatt.swift, and nRF52840/STM32WB via
-// that same shared file. Only STM32F4 (no BLE hardware; C no-op stub in
-// ports/stm32f4/platform/platform_glue.c) still needs this declared as an
-// extern symbol — as does SAMD21 (same no-radio C stub arrangement in its
-// platform_glue.c).
-#if SMK_TARGET_STM32F4 || SMK_TARGET_SAMD21
-@_extern(c, "send_keyboard_report")
-func send_keyboard_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>)
-#endif
-
-// init_wired_link/send_wired_report: every board now backs these natively
-// in Swift, same-module resolution, no @_extern needed — ESP32-C6 via
-// WiredHidUart.swift, RP2040 via ports/rp2040/UsbHid.swift, and
-// nRF52840 via ports/nrf52840/UsbHid.swift. So unlike init_keyboard_pins
-// (Sources/smk/KeyMatrix.swift), which still needs a guarded @_extern for
-// one remaining board, this pair needs no declaration at all anymore.
-
-// vTaskDelay — ESP32-C6 backs this with C (real FreeRTOS, unchanged);
-// nRF52840 backs it with a C placeholder
-// (ports/nrf52840/platform/platform_glue.c). RP2040 provides it as plain
-// Swift (ports/rp2040/PlatformConfig.swift, @c since the shared scan
-// loop calls it), same-module with this file — so RP2040 must NOT also
-// declare this as @_extern, or it's a same-module redeclaration conflict.
-#if !SMK_TARGET_RP2040
-@_extern(c, "vTaskDelay")
-func vTaskDelay(_ xTicksToDelay: UInt32)
-#endif
-
-// kb_log — ESP32-C6 now provides this as a plain Swift function
-// (BleHelper.swift, this task, same module as this file — no @_extern
-// permitted here anymore, that would be a same-module redeclaration
-// conflict). nRF52840 still backs it with a C placeholder
-// (ports/nrf52840/platform/platform_glue.c). RP2040 already provided it
-// as plain Swift (ports/rp2040/PlatformConfig.swift) before this task.
-#if !SMK_TARGET_RP2040 && !SMK_TARGET_ESP32C6
-@_extern(c, "kb_log")
-func kb_log(_ msg: UnsafePointer<Int8>)
-#endif
-
-// Board/connection-mode config — ESP32-C6 provides these as plain Swift
-// functions (SmkConfig.swift, part of this same module, backed by
-// Kconfig); RP2040 now also provides these as plain Swift functions
-// (ports/rp2040/PlatformConfig.swift, since that build always has real
-// native-USB wired HID); nRF52840 still backs them with hardcoded C
-// (ports/nrf52840/platform/platform_glue.c), so only that build declares
-// them here as extern symbols to link against.
-#if !SMK_TARGET_ESP32C6 && !SMK_TARGET_RP2040
-@_extern(c, "smk_has_wired_bridge")
-func smk_has_wired_bridge() -> Int32
-
-@_extern(c, "smk_default_mode_is_wired")
-func smk_default_mode_is_wired() -> Int32
-#endif
+// Platform functions the shared scan loop calls — init_ble_hid,
+// send_keyboard_report, vTaskDelay, kb_log, smk_has_wired_bridge,
+// smk_default_mode_is_wired — need no declaration in this file. On each
+// target they are either a same-module Swift definition (ESP32-C6:
+// BleHelper.swift/SmkConfig.swift; RP2040:
+// BleHidPicoW.swift/BleHidKbdUart.swift/PlatformConfig.swift; nRF52840 and
+// STM32WB: ports/common/BleHidGatt.swift for send_keyboard_report), or a C
+// function whose prototype the target's bridging header already imports:
+// vTaskDelay via FreeRTOS on ESP32-C6 (Sources/smk/Bridging.h), and the
+// platform_glue.c / ble_hid_wb.c / BleHidSdc.swift-backed ones via
+// ports/{nrf52840,samd21,stm32f4,stm32wb}/BridgingHeader.h. A redundant
+// @_extern(c, ...) here would only shadow the imported prototype, and a
+// same-module Swift definition can't coexist with one at all ("invalid
+// redeclaration").
+//
+// init_wired_link/send_wired_report: every board backs these natively in
+// Swift, same-module resolution — ESP32-C6 via WiredHidUart.swift, each
+// ARM port via its own UsbHid.swift.
 
 // RGB backlight config (smk_has_rgb_backlight/smk_rgb_gpio) — both boards
 // that compile RGBLighting.swift in (ESP32-C6 via -DSMK_RGB_AVAILABLE in

@@ -57,7 +57,7 @@ void init_ble_hid(void) {
     // Stub — BLE is a future STM32WB cycle, not this one.
 }
 
-void send_keyboard_report(uint8_t modifier, uint8_t *keycodes) {
+void send_keyboard_report(uint8_t modifier, const uint8_t *keycodes) {
     (void)modifier;
     (void)keycodes;
 }

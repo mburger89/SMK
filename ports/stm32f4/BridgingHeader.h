@@ -36,7 +36,7 @@ void vTaskDelay(uint32_t ticks); // shim: pumps USB then delays ~ticks ms
 // unconditionally regardless of board, so platform_glue.c provides no-op
 // stubs for both (see that file).
 void init_ble_hid(void);
-void send_keyboard_report(uint8_t modifier, uint8_t *keycodes);
+void send_keyboard_report(uint8_t modifier, const uint8_t *keycodes);
 
 // Runtime keymap store (ports/stm32f4/KeymapStoreStub.swift, build-only
 // no-op stub — no flash layout designed yet, same status as

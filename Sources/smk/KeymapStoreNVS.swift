@@ -17,30 +17,10 @@
 // Sources/smk/Bridging.h either, for the same reason (see the comment
 // there).
 
-@_extern(c, "nvs_open")
-func nvs_open(_ namespace: UnsafePointer<CChar>, _ openMode: Int32, _ outHandle: UnsafeMutablePointer<UInt32>) -> Int32
-
-@_extern(c, "nvs_get_blob")
-func nvs_get_blob(_ handle: UInt32, _ key: UnsafePointer<CChar>, _ outValue: UnsafeMutableRawPointer?, _ length: UnsafeMutablePointer<Int>) -> Int32
-
-@_extern(c, "nvs_set_blob")
-func nvs_set_blob(_ handle: UInt32, _ key: UnsafePointer<CChar>, _ value: UnsafeRawPointer, _ length: Int) -> Int32
-
-@_extern(c, "nvs_erase_key")
-func nvs_erase_key(_ handle: UInt32, _ key: UnsafePointer<CChar>) -> Int32
-
-@_extern(c, "nvs_commit")
-func nvs_commit(_ handle: UInt32) -> Int32
-
-@_extern(c, "nvs_close")
-func nvs_close(_ handle: UInt32)
-
-// NVS_READONLY / NVS_READWRITE — verified against
-// ~/.espressif/v6.0.1/esp-idf/components/nvs_flash/include/nvs.h's
-// nvs_open_mode_t enum: { NVS_READONLY, NVS_READWRITE, NVS_READWRITE_PURGE },
-// i.e. 0 / 1 / 2 — a plain C enum (int-sized), passed here as Int32.
-private let nvsReadonly: Int32 = 0 // NVS_READONLY
-private let nvsReadwrite: Int32 = 1 // NVS_READWRITE
+// nvs_open/nvs_get_blob/nvs_set_blob/nvs_erase_key/nvs_commit/nvs_close
+// and the nvs_open_mode_t constants NVS_READONLY/NVS_READWRITE come straight
+// from nvs.h, which Sources/smk/Bridging.h imports via nvs_flash.h — no
+// hand-written @_extern(c, ...) declarations or mirrored enum values needed.
 private let espOk: Int32 = 0 // ESP_OK
 
 private var stage = [UInt8](repeating: 0, count: smkKeymapFrameLen)
@@ -48,7 +28,7 @@ private var stageTotalLen: UInt16 = 0
 
 func smk_keymap_load(_ buf: UnsafeMutablePointer<CChar>, _ bufSize: UInt32) -> Int32 {
     var handle: UInt32 = 0
-    guard nvs_open("smk_kmap", nvsReadonly, &handle) == espOk else { return -1 }
+    guard nvs_open("smk_kmap", NVS_READONLY, &handle) == espOk else { return -1 }
     defer { nvs_close(handle) }
 
     var frame = [UInt8](repeating: 0, count: smkKeymapFrameLen)
@@ -70,7 +50,7 @@ func smk_keymap_load(_ buf: UnsafeMutablePointer<CChar>, _ bufSize: UInt32) -> I
 
 func smk_keymap_erase() {
     var handle: UInt32 = 0
-    guard nvs_open("smk_kmap", nvsReadwrite, &handle) == espOk else { return }
+    guard nvs_open("smk_kmap", NVS_READWRITE, &handle) == espOk else { return }
     _ = nvs_erase_key(handle, "frame")
     _ = nvs_commit(handle)
     nvs_close(handle)
@@ -96,7 +76,7 @@ func smk_keymap_commit(_ crc32: UInt32) -> Int32 {
     stage.withUnsafeMutableBufferPointer { smkKeymapFrameWriteHeader($0.baseAddress!, jsonLen: Int(stageTotalLen), crc32: crc32) }
 
     var handle: UInt32 = 0
-    guard nvs_open("smk_kmap", nvsReadwrite, &handle) == espOk else { return -1 }
+    guard nvs_open("smk_kmap", NVS_READWRITE, &handle) == espOk else { return -1 }
     defer { nvs_close(handle) }
     let writeLen = 11 + Int(stageTotalLen)
     guard stage.withUnsafeBufferPointer({ nvs_set_blob(handle, "frame", $0.baseAddress!, writeLen) }) == espOk else { return -1 }

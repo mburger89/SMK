@@ -153,7 +153,7 @@ void init_ble_hid(void) {
     // Stub — this chip has no radio.
 }
 
-void send_keyboard_report(uint8_t modifier, uint8_t *keycodes) {
+void send_keyboard_report(uint8_t modifier, const uint8_t *keycodes) {
     (void)modifier;
     (void)keycodes;
 }

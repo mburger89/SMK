@@ -33,7 +33,7 @@ void vTaskDelay(uint32_t ticks); // shim: pumps USB then delays ~ticks ms
 // unconditionally regardless of board, so platform_glue.c provides no-op
 // stubs for both.
 void init_ble_hid(void);
-void send_keyboard_report(uint8_t modifier, uint8_t *keycodes);
+void send_keyboard_report(uint8_t modifier, const uint8_t *keycodes);
 
 // Runtime keymap store (ports/samd21/KeymapStoreStub.swift, build-only
 // no-op stub) is implemented directly in Swift — no C prototypes here.
