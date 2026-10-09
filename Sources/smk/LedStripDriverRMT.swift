@@ -94,8 +94,8 @@ struct RmtTransmitConfig {
 //
 // ISR/IRAM note: encode/reset are called from the RMT ISR. This project's
 // sdkconfig has CONFIG_RMT_ENCODER_FUNC_IN_IRAM=y, so the C versions were
-// IRAM-placed; the Swift versions reproduce that with @_section(".iram1.*")
-// (SymbolLinkageMarkers, enabled in main/CMakeLists.txt), which the ESP-IDF
+// IRAM-placed; the Swift versions reproduce that with @section(".iram1.*")
+// (stable since Swift 6.3, no feature flag needed), which the ESP-IDF
 // linker fragment collects into IRAM like any IRAM_ATTR function.
 // CONFIG_RMT_ISR_IRAM_SAFE is NOT set, so this is the same
 // performance-placement (not flash-cache-off correctness) the C had.
@@ -151,7 +151,7 @@ private func subEncode(_ enc: UnsafeMutableRawPointer, _ channel: UnsafeMutableR
 // two-phase fall-through state machine: phase 0 streams the GRB payload
 // through the bytes encoder, phase 1 appends the SK6812 reset pulse via
 // the copy encoder, yielding whenever the RMT symbol memory fills.
-@_section(".iram1.smk_led_enc")
+@section(".iram1.smk_led_enc")
 private func ledStripEncodeCallback(_ encoder: UnsafeMutableRawPointer?, _ channel: UnsafeMutableRawPointer?, _ primaryData: UnsafeRawPointer?, _ dataSize: Int, _ retState: UnsafeMutablePointer<UInt32>?) -> Int {
     guard let retState else { return 0 }
     guard let bytesEnc = stripBytesEncoder, let copyEnc = stripCopyEncoder else {
@@ -190,7 +190,7 @@ private func ledStripEncodeCallback(_ encoder: UnsafeMutableRawPointer?, _ chann
     return encodedSymbols
 }
 
-@_section(".iram1.smk_led_enc_rst")
+@section(".iram1.smk_led_enc_rst")
 private func ledStripEncoderResetCallback(_ encoder: UnsafeMutableRawPointer?) -> Int32 {
     if let bytesEnc = stripBytesEncoder {
         _ = bytesEnc.assumingMemoryBound(to: RmtEncoderVtable.self).pointee.reset?(bytesEnc)

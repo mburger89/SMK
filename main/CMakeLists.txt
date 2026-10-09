@@ -192,10 +192,6 @@ add_custom_command(
             -static
             -enable-experimental-feature Embedded
             -enable-experimental-feature Extern
-            # @_section(".iram1.*") on LedStripDriverRMT.swift's RMT encoder
-            # callbacks — reproduces the C IRAM_ATTR placement
-            # CONFIG_RMT_ENCODER_FUNC_IN_IRAM expects.
-            -enable-experimental-feature SymbolLinkageMarkers
             -wmo
             # One section per function, so ESP-IDF's --gc-sections link can
             # strip unused Swift (SMKCore compiles in whole, flat).
