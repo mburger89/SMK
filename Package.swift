@@ -33,7 +33,7 @@ let hostTestsOnly = ProcessInfo.processInfo.environment["SMK_HOST_TESTS_ONLY"] !
 
 var packageDependencies: [Package.Dependency] = []
 if !hostTestsOnly {
-    packageDependencies.append(.package(url: "https://github.com/apple/swift-mmio", branch: "main"))
+    packageDependencies.append(.package(path: "third_party/swift-mmio"))
 }
 
 var packageTargets: [Target] = [

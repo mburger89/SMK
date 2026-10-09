@@ -65,3 +65,6 @@ site/**/__pycache__/
 # symlink to ../smk_shared (shared datasheets + KiCad library)
 /shared
 build_gate/
+
+# swift-mmio macro plugin, built once per toolchain (cmake/SwiftMMIO.cmake)
+/.build_mmio_plugin/
