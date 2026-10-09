@@ -64,3 +64,4 @@ site/**/__pycache__/
 
 # symlink to ../smk_shared (shared datasheets + KiCad library)
 /shared
+build_gate/

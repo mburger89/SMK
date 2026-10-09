@@ -1,0 +1,1 @@
+# target:mangled_function — functions whose register poll loops must survive (see --check-polls)
