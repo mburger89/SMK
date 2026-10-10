@@ -87,3 +87,29 @@ struct MMIOHalf {
 
 // Instantiate the bank at PORT group A's base address.
 let gpio = GPIORegisters(address: GPIORegisters.base)
+
+// Matrix settle delay (see smkMatrixSettleMicros in KeyMatrix.swift). This
+// port has no calibrated microsecond delay to call, so it spins on volatile
+// reads of the GPIO input register (swift-mmio: each one is a real bus
+// access LLVM cannot delete, unlike the empty loop this replaced).
+//
+// SAMD21: 48 MHz CPU clock (GCLK generator 0 fed by DFLL48M, divide-by-1),
+// set by smk_clock_init() in ports/samd21/ClockInit.swift.
+private let smkSettleCpuMHz: UInt32 = 48
+
+// Each iteration is a volatile load plus a decrement and a taken backward
+// branch, so it takes at least 2 cycles (in practice more: the bus access
+// alone is >= 2). Sizing the count for 2 cycles per iteration means the
+// real delay is at least smkMatrixSettleMicros; overshooting is harmless,
+// undershooting is the bug this exists to fix.
+//
+// @inline(never) keeps this a distinct symbol that tools/build_all.sh
+// --check-polls can find (scan() must call it; its loop must survive).
+@inline(never)
+func smkSettleDelay() {
+    var remaining = smkMatrixSettleMicros * smkSettleCpuMHz / 2
+    while remaining != 0 {
+        _ = gpio.input
+        remaining &-= 1
+    }
+}

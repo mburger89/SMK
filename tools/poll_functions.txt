@@ -1,18 +1,44 @@
-# target:mangled_function — functions whose register poll loops must survive (see --check-polls)
-esp32c6:$e9smk_swift9KeyMatrixV4scanSaySbGyF
-feather_nrf52840:$e9smk_swift9KeyMatrixV4scanSaySbGyF
-nrf52840dk:$e9smk_swift9KeyMatrixV4scanSaySbGyF
-pico2:$e10smk_rp20409KeyMatrixV4scanSaySbGyF
-pico2_w:$e10smk_rp20409KeyMatrixV4scanSaySbGyF
-pico:$e10smk_rp20409KeyMatrixV4scanSaySbGyF
-pico_w:$e10smk_rp20409KeyMatrixV4scanSaySbGyF
+# Disassembly checks run by tools/build_all.sh --check-polls. One entry per line:
+#
+#   target:function          `function` must contain a BACKWARD conditional
+#                            branch (branch target < branch address, inside the
+#                            function): a register poll / delay loop survived.
+#                            Use for every swift-mmio poll loop.
+#   target:function>callee   `function` must contain a call or tail call to
+#                            `callee` (matched by address, so mangled `$e...`
+#                            names work on ARM too). Use where the thing that
+#                            must survive is a call, e.g. the matrix settle
+#                            delay in KeyMatrix.scan.
+#
+# Names are the ELF symbol names exactly as `nm` prints them.
+# KeyMatrix.scan must call smkSettleDelay (all 11 targets):
+esp32c6:$e9smk_swift9KeyMatrixV4scanSaySbGyF>$e9smk_swift0A11SettleDelayyyF
+feather_nrf52840:$e9smk_swift9KeyMatrixV4scanSaySbGyF>$e9smk_swift0A11SettleDelayyyF
+nrf52840dk:$e9smk_swift9KeyMatrixV4scanSaySbGyF>$e9smk_swift0A11SettleDelayyyF
+pico2:$e10smk_rp20409KeyMatrixV4scanSaySbGyF>$e10smk_rp20400A11SettleDelayyyF
+pico2_w:$e10smk_rp20409KeyMatrixV4scanSaySbGyF>$e10smk_rp20400A11SettleDelayyyF
+pico:$e10smk_rp20409KeyMatrixV4scanSaySbGyF>$e10smk_rp20400A11SettleDelayyyF
+pico_w:$e10smk_rp20409KeyMatrixV4scanSaySbGyF>$e10smk_rp20400A11SettleDelayyyF
+samd21:$e9smk_swift9KeyMatrixV4scanSaySbGyF>$e9smk_swift0A11SettleDelayyyF
+smk_kbd_rp2040:$e10smk_rp20409KeyMatrixV4scanSaySbGyF>$e10smk_rp20400A11SettleDelayyyF
+stm32f4:$e9smk_swift9KeyMatrixV4scanSaySbGyF>$e9smk_swift0A11SettleDelayyyF
+stm32wb:$e9smk_swift9KeyMatrixV4scanSaySbGyF>$e9smk_swift0A11SettleDelayyyF
+# smkSettleDelay itself: an SDK microsecond delay call, or a surviving loop.
+esp32c6:$e9smk_swift0A11SettleDelayyyF>esp_rom_delay_us
+pico2:$e10smk_rp20400A11SettleDelayyyF>busy_wait_us_32
+pico2_w:$e10smk_rp20400A11SettleDelayyyF>busy_wait_us_32
+pico:$e10smk_rp20400A11SettleDelayyyF>busy_wait_us_32
+pico_w:$e10smk_rp20400A11SettleDelayyyF>busy_wait_us_32
+smk_kbd_rp2040:$e10smk_rp20400A11SettleDelayyyF>busy_wait_us_32
+feather_nrf52840:$e9smk_swift0A11SettleDelayyyF
+nrf52840dk:$e9smk_swift0A11SettleDelayyyF
+samd21:$e9smk_swift0A11SettleDelayyyF
+stm32f4:$e9smk_swift0A11SettleDelayyyF
+stm32wb:$e9smk_swift0A11SettleDelayyyF
+# Register poll loops:
 samd21:$e9smk_swift11uartPutChar33_C0237CF54CB90E34A3F222823F4AC252LLyys5UInt8VF
 samd21:$e9smk_swift13uartDebugInityyF
-samd21:$e9smk_swift9KeyMatrixV4scanSaySbGyF
 samd21:smk_clock_init
-smk_kbd_rp2040:$e10smk_rp20409KeyMatrixV4scanSaySbGyF
-stm32f4:$e9smk_swift9KeyMatrixV4scanSaySbGyF
 stm32f4:smk_clock_init
-stm32wb:$e9smk_swift9KeyMatrixV4scanSaySbGyF
 stm32wb:smk_clock_init
 stm32wb:smk_enable_lse_and_rf_wakeup_clock

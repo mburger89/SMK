@@ -74,26 +74,76 @@ done
 if SMK_HOST_TESTS_ONLY=1 swift test >build_gate/swift-test.log 2>&1; then echo "PASS swift test"; else echo "FAIL swift test (build_gate/swift-test.log)"; fail=1; fi
 
 if [ $CHECK_POLLS = 1 ]; then
-  while IFS=: read -r t fn; do
+  # Entry forms (see tools/poll_functions.txt):
+  #   target:function          function must contain a BACKWARD conditional
+  #                            branch (target address < branch address, still
+  #                            inside the function) — i.e. a loop survived.
+  #   target:function>callee   function must contain a call or tail call
+  #                            (bl/blx/b/jal/j/jalr/jr/call/tail) whose target
+  #                            address is callee's address.
+  # Both match by ADDRESS, not by objdump's "<name>" labels: ARM objdump treats
+  # `$`-prefixed names as mapping symbols and never labels them, which hides
+  # every Embedded-Swift mangled name ($e...). RISC-V far calls are an
+  # auipc+jalr pair; objdump annotates the jalr with "# <target address>",
+  # which is what gets matched there.
+  # No early-exit awk in these pipelines: it SIGPIPEs the producer, which
+  # pipefail + errexit turn into a silent abort (exit 141).
+  # Prints "start stop" (decimal, Thumb bit cleared) for a symbol, or nothing.
+  sym_range() {
+    "$(tool_of "$1" nm)" -S --defined-only "$(elf_of "$1")" |
+      awk -v f="$2" '$NF==f && !s {print $1, (NF==4 ? $2 : "0"); s=1}' |
+      while read -r a sz; do echo "$(( 0x$a & ~1 )) $(( (0x$a & ~1) + 0x$sz ))"; done
+  }
+  while IFS=: read -r t entry; do
     case "$t" in ''|\#*) continue ;; esac
-    # Locate the function by address range from nm, not by objdump's "<name>:"
-    # label: ARM objdump treats `$`-prefixed names as mapping symbols and never
-    # labels them, which hides every Embedded-Swift mangled name ($e...).
-    # No early-exit awk in these pipelines: it SIGPIPEs the producer, which
-    # pipefail + errexit turn into a silent abort (exit 141).
-    body=""
-    sym=$("$(tool_of "$t" nm)" -S --defined-only "$(elf_of "$t")" | awk -v f="$fn" '$4==f && !s {print $1, $2; s=1}')
-    if [ -n "$sym" ]; then
-      read -r addr size <<<"$sym"
-      start=$(( 0x$addr & ~1 ))   # clear the Thumb bit
-      stop=$(( start + 0x$size ))
+    fn=${entry%%>*}; callee=""
+    case "$entry" in *'>'*) callee=${entry#*>} ;; esac
+    body=""; range=$(sym_range "$t" "$fn")
+    if [ -n "$range" ]; then
+      read -r start stop <<<"$range"
       body=$("$(tool_of "$t" objdump)" -d --no-show-raw-insn --start-address=$start --stop-address=$stop "$(elf_of "$t")")
     fi
-    if [ -n "$body" ] && grep -qE '[[:space:]]c?b(ne|eq|cc|cs|mi|pl|hi|ls|ge|lt|gt|le|nz|z)(z|u|zu)?(\.n|\.w)?[[:space:]]' <<<"$body"; then
-      echo "PASS poll $t:$fn"
+    ok=0
+    if [ -z "$body" ]; then
+      why="function not found"
+    elif [ -n "$callee" ]; then
+      why="no call to $callee (settle/delay call removed or inlined?)"
+      crange=$(sym_range "$t" "$callee")
+      if [ -n "$crange" ]; then
+        read -r cstart _ <<<"$crange"
+        hits=$(awk -v want="$(printf '%x' "$cstart")" '
+          /^ *[0-9a-f]+:/ {
+            m = $2
+            if (m !~ /^(bl|blx|b|b\.n|b\.w|jal|j|jalr|jr|call|tail|c\.jal|c\.j)$/) next
+            line = $0; sub(/<.*/, "", line)         # drop "<label>" text
+            n = split(line, tok, /[ \t,#]+/)
+            for (i = 3; i <= n; i++) { x = tok[i]; sub(/^0x/, "", x); sub(/^0+/, "", x)
+              if (x == want) { c++; break } }
+          }
+          END { print c + 0 }' <<<"$body")
+        [ "$hits" -gt 0 ] && ok=1
+      else
+        why="callee $callee not found"
+      fi
     else
-      echo "FAIL poll $t:$fn (missing, or no conditional branch: loop deleted?)"; fail=1
+      why="no backward conditional branch: loop deleted?"
+      hits=$(awk -v lo="$start" -v hi="$stop" '
+        function hex(s,   i, c, v) { v = 0; s = tolower(s); sub(/^0x/, "", s)
+          for (i = 1; i <= length(s); i++) { c = index("0123456789abcdef", substr(s, i, 1))
+            if (c == 0) return -1; v = v * 16 + c - 1 }
+          return v }
+        /^ *[0-9a-f]+:/ {
+          if ($2 !~ /^c?b(ne|eq|cc|cs|hs|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|nz|z)(z|u|zu)?(\.n|\.w)?$/) next
+          a = $1; sub(/:$/, "", a); a = hex(a)
+          line = $0; sub(/<.*/, "", line); sub(/[ \t]+$/, "", line)
+          n = split(line, tok, /[ \t,]+/); tg = hex(tok[n])
+          if (tg >= lo && tg < a) c++
+        }
+        END { print c + 0 }' <<<"$body")
+      [ "$hits" -gt 0 ] && ok=1
     fi
+    if [ $ok = 1 ]; then echo "PASS poll $t:$entry"
+    else echo "FAIL poll $t:$entry ($why)"; fail=1; fi
   done < tools/poll_functions.txt
 fi
 

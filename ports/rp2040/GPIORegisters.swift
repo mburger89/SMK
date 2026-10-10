@@ -71,3 +71,21 @@ struct GPIORegisters {
 
 // Instantiate the bank at the RP2040 SIO base address.
 let gpio = GPIORegisters(address: GPIORegisters.base)
+
+// Matrix settle delay (see smkMatrixSettleMicros in KeyMatrix.swift).
+// busy_wait_us_32 is pico-sdk's out-of-line busy-wait on the 1 MHz system
+// timer (hardware_timer, linked via pico_stdlib; same on RP2040 and RP2350),
+// so it is independent of the CPU clock. It waits until the timer has
+// advanced by the requested count, so the real delay is between
+// (smkMatrixSettleMicros - 1) and smkMatrixSettleMicros µs, i.e. 4-5 µs —
+// still well over the ~1.6 µs worst-case pull-up recovery. The bridging header
+// imports no pico-sdk header, hence the @_extern binding.
+@_extern(c, "busy_wait_us_32")
+func busy_wait_us_32(_ delayUs: UInt32)
+
+// @inline(never) keeps this a distinct symbol that tools/build_all.sh
+// --check-polls can find (scan() must call it; it must call busy_wait_us_32).
+@inline(never)
+func smkSettleDelay() {
+    busy_wait_us_32(smkMatrixSettleMicros)
+}

@@ -22,6 +22,31 @@ func init_keyboard_pins(_ rows: UnsafePointer<Int32>, _ rowCount: Int32, _ cols:
 // Which convention applies is set per-board in the JSON config
 // (matrix.colsAreDriven) and passed straight through to init_keyboard_pins
 // so the C-side pin configuration matches what scan() assumes.
+// Matrix settle time, in microseconds, waited after each strobe before the
+// sensed lines are sampled (KeyMatrix.scan calls smkSettleDelay(), which each
+// target implements in its own GPIORegisters.swift).
+//
+// Why time-based: when a strobe line is released, a sensed line that was
+// held by a pressed key on the previous strobe is pulled back to idle only
+// by the MCU's internal pull resistor (roughly 30-80 kOhm) charging the
+// line, switch and diode capacitance (tens of pF). That RC recovery is about
+// 0.5-1.6 µs, independent of CPU speed, so a delay counted in loop
+// iterations is the wrong unit: the previous `for _ in 0..<50 { _ = gpio.input }`
+// took anywhere from ~0.33 µs (RP2350, unrolled single-cycle SIO loads at
+// 150 MHz) to ~8 µs (STM32WB at 32 MHz). On the RP2040 family it finished
+// before the line recovered, so a key on the previous strobe could read as a
+// ghost press on the current one. Before that, the loop was an empty
+// `for _ in 0...50 {}`, which LLVM deleted outright — no settle time at all.
+//
+// 5 µs is ~3x the slowest RC estimate and still costs only
+// 5 µs x (strobes per scan, 12 on smk_kbd) = 60 µs of a 10 ms scan tick.
+// Ports with a calibrated microsecond delay in their SDK use it (ESP32-C6
+// ROM esp_rom_delay_us, pico-sdk busy_wait_us_32); the rest spin a counted
+// loop of volatile GPIO reads sized from their CPU clock so the real delay
+// is at least this long. tools/build_all.sh --check-polls pins both the call
+// from scan() and each delay loop by disassembly.
+let smkMatrixSettleMicros: UInt32 = 5
+
 struct KeyMatrix {
     let rowPins: [Int32]
     let colPins: [Int32]
@@ -52,16 +77,9 @@ struct KeyMatrix {
                 // Drive the column HIGH to activate it
                 gpio.outSet = UInt32(1 << cPin)
 
-                // Settle time after strobing: re-read the input register.
-                // Each read is a real bus access (swift-mmio volatile), so
-                // unlike the empty `for _ in 0...50 {}` this replaced, which
-                // LLVM deleted outright, it cannot be optimised away.
-                // How long 50 reads take varies ~25x across targets. The
-                // shortest is ~0.4 µs on RP2040 (single-cycle SIO loads,
-                // unrolled, 125 MHz) and ~0.33 µs on RP2350 (150 MHz). The
-                // longest is ~8 µs on STM32WB (32 MHz SYSCLK, ~5 cycles per
-                // ldr/subs/bne iteration).
-                for _ in 0..<50 { _ = gpio.input }
+                // Let the sensed lines settle before sampling them. See
+                // smkMatrixSettleMicros for why this is a time-based delay.
+                smkSettleDelay()
 
                 let inputState = gpio.input
 
@@ -81,7 +99,7 @@ struct KeyMatrix {
                 gpio.outClear = UInt32(1 << rPin)
 
                 // Settle time: see the colsAreDriven branch above.
-                for _ in 0..<50 { _ = gpio.input }
+                smkSettleDelay()
 
                 let inputState = gpio.input
 

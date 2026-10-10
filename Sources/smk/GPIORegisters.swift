@@ -56,3 +56,18 @@ struct GPIORegisters {
 
 // Instantiate the bank at the correct memory address for ESP32-C6 GPIO
 let gpio = GPIORegisters(address: GPIORegisters.base)
+
+// Matrix settle delay (see smkMatrixSettleMicros in KeyMatrix.swift).
+// esp_rom_delay_us is the ROM's calibrated busy-wait (an alias of
+// ets_delay_us via esp32c6.rom.api.ld), counted off the CPU cycle counter, so
+// it is accurate at whatever CPU frequency is configured. Bridging.h imports
+// no header that declares it, hence the @_extern binding.
+@_extern(c, "esp_rom_delay_us")
+func esp_rom_delay_us(_ us: UInt32)
+
+// @inline(never) keeps this a distinct symbol that tools/build_all.sh
+// --check-polls can find (scan() must call it; it must call the ROM delay).
+@inline(never)
+func smkSettleDelay() {
+    esp_rom_delay_us(smkMatrixSettleMicros)
+}
