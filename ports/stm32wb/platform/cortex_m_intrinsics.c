@@ -1,6 +1,7 @@
 // Non-inline wrappers for the Cortex-M core intrinsics
-// ports/stm32wb/HwIpcc.swift and ports/stm32wb/ClockInit.swift need but
-// Embedded Swift cannot express.
+// ports/stm32wb/HwIpcc.swift needs but Embedded Swift cannot express.
+// (MMIO itself is not here: register access goes through swift-mmio, whose
+// read()/write/modify are volatile — see CLAUDE.md.)
 //
 // Why this file exists: Swift has no inline assembly and no equivalent of
 // CMSIS's `__disable_irq()` / `__get_PRIMASK()` / `__set_PRIMASK()` /
@@ -45,40 +46,4 @@ void smk_cpu_sev(void) {
 
 void smk_cpu_wfe(void) {
     __WFE();
-}
-
-// Opaque no-op called from inside every hardware-polling busy-wait loop in
-// ports/stm32wb/ClockInit.swift.
-//
-// Why it exists (a real bug this fixed, found by disassembling the built
-// binary — not a theoretical concern): Swift's
-// `UnsafeMutablePointer<UInt32>.pointee` is NOT a volatile access. A loop
-// like `while (reg.pointee & bit) == 0 {}` therefore looks loop-invariant to
-// LLVM, which deletes it outright under the forward-progress rule — leaving
-// smk_clock_init() as straight-line register writes with zero actual
-// waiting (SYSCLK switched before HSE is ready, flash latency applied before
-// the regulator has reached the target voltage scale, ...).
-//
-// A call to an external C function the optimizer cannot see through defeats
-// that: it may clobber arbitrary memory, so the register load must be
-// re-issued on every iteration and the loop must be kept. Deliberately
-// declared in the Swift side via @_extern(c, "smk_cpu_nop") — the whole
-// point is that swiftc only sees the declaration, never the body.
-void smk_cpu_nop(void) {
-    __NOP();
-}
-
-// Guaranteed-issued, guaranteed-ordered 32-bit MMIO read for Swift callers.
-//
-// smk_cpu_nop() keeps a *loop* alive, but it can't force an individual read
-// to happen (or happen in order): Swift's `.pointee` loads are ordinary
-// non-volatile loads, so LLVM freely forwards a just-stored value into them
-// (deleting a read-back entirely) or hoists them above unrelated MMIO
-// writes. Found by disassembling smk_enable_lse_and_rf_wakeup_clock()'s
-// first Swift build: both "read back the enable bit" polls were folded away
-// and the BDCR read was hoisted above the DBP write. Routing the read
-// through an opaque C call with a volatile access makes it a real, ordered
-// bus read the optimizer must leave where it is.
-uint32_t smk_mmio_read32(uint32_t addr) {
-    return *(volatile const uint32_t *)addr;
 }

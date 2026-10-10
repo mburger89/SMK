@@ -76,8 +76,20 @@ if SMK_HOST_TESTS_ONLY=1 swift test >build_gate/swift-test.log 2>&1; then echo "
 if [ $CHECK_POLLS = 1 ]; then
   while IFS=: read -r t fn; do
     case "$t" in ''|\#*) continue ;; esac
-    body=$("$(tool_of "$t" objdump)" -d --no-show-raw-insn "$(elf_of "$t")" | awk -v f="<$fn>:" '$2==f{p=1;next} p&&/^$/{exit} p')
-    if [ -n "$body" ] && echo "$body" | grep -qE '[[:space:]]b(ne|eq|cc|cs|mi|pl|hi|ls|ge|lt|gt|le)(\.n|\.w)?[[:space:]]'; then
+    # Locate the function by address range from nm, not by objdump's "<name>:"
+    # label: ARM objdump treats `$`-prefixed names as mapping symbols and never
+    # labels them, which hides every Embedded-Swift mangled name ($e...).
+    # No early-exit awk in these pipelines: it SIGPIPEs the producer, which
+    # pipefail + errexit turn into a silent abort (exit 141).
+    body=""
+    sym=$("$(tool_of "$t" nm)" -S --defined-only "$(elf_of "$t")" | awk -v f="$fn" '$4==f && !s {print $1, $2; s=1}')
+    if [ -n "$sym" ]; then
+      read -r addr size <<<"$sym"
+      start=$(( 0x$addr & ~1 ))   # clear the Thumb bit
+      stop=$(( start + 0x$size ))
+      body=$("$(tool_of "$t" objdump)" -d --no-show-raw-insn --start-address=$start --stop-address=$stop "$(elf_of "$t")")
+    fi
+    if [ -n "$body" ] && grep -qE '[[:space:]]c?b(ne|eq|cc|cs|mi|pl|hi|ls|ge|lt|gt|le|nz|z)(z|u|zu)?(\.n|\.w)?[[:space:]]' <<<"$body"; then
       echo "PASS poll $t:$fn"
     else
       echo "FAIL poll $t:$fn (missing, or no conditional branch: loop deleted?)"; fail=1

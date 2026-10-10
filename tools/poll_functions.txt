@@ -1,1 +1,18 @@
 # target:mangled_function — functions whose register poll loops must survive (see --check-polls)
+esp32c6:$e9smk_swift9KeyMatrixV4scanSaySbGyF
+feather_nrf52840:$e9smk_swift9KeyMatrixV4scanSaySbGyF
+nrf52840dk:$e9smk_swift9KeyMatrixV4scanSaySbGyF
+pico2:$e10smk_rp20409KeyMatrixV4scanSaySbGyF
+pico2_w:$e10smk_rp20409KeyMatrixV4scanSaySbGyF
+pico:$e10smk_rp20409KeyMatrixV4scanSaySbGyF
+pico_w:$e10smk_rp20409KeyMatrixV4scanSaySbGyF
+samd21:$e9smk_swift11uartPutChar33_C0237CF54CB90E34A3F222823F4AC252LLyys5UInt8VF
+samd21:$e9smk_swift13uartDebugInityyF
+samd21:$e9smk_swift9KeyMatrixV4scanSaySbGyF
+samd21:smk_clock_init
+smk_kbd_rp2040:$e10smk_rp20409KeyMatrixV4scanSaySbGyF
+stm32f4:$e9smk_swift9KeyMatrixV4scanSaySbGyF
+stm32f4:smk_clock_init
+stm32wb:$e9smk_swift9KeyMatrixV4scanSaySbGyF
+stm32wb:smk_clock_init
+stm32wb:smk_enable_lse_and_rf_wakeup_clock

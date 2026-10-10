@@ -158,9 +158,6 @@ set(c_srcs
     # Shared across all TinyUSB/Embedded-Swift ports — see ports/common/
     ../common/usb_descriptors.c
     ../common/embedded_swift_glue.c
-    # smk_cpu_nop() — the opaque call ClockInit.swift's register-poll loops
-    # need so LLVM can't delete them. See that file's header comment.
-    platform/cortex_m_intrinsics.c
 )
 
 add_executable(smk_stm32f4

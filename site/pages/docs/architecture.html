@@ -11,7 +11,7 @@
 </ul>
 
 <h2>A real bug this project hit: volatile MMIO in Swift</h2>
-<p>Register-polling loops written in Swift <strong>must</strong> call an opaque C function inside the loop body (e.g. <code>smk_cpu_nop()</code>), because <code>UnsafeMutablePointer.pointee</code> is <em>not</em> a volatile access in Swift — LLVM treats an empty-bodied <code>while (reg.pointee &amp; bit) == 0 {}</code> as loop-invariant and deletes it outright under the forward-progress rule, silently turning a hardware wait into no wait at all. This was found by disassembling the STM32 ports' clock-init code; any future port doing direct MMIO polling from Swift will hit it again.</p>
+<p>Memory-mapped registers are accessed through <a href="https://github.com/apple/swift-mmio">swift-mmio</a> register blocks, never <code>UnsafeMutablePointer.pointee</code>. <code>.pointee</code> is <em>not</em> a volatile access in Swift: LLVM deleted empty-bodied register polls and the matrix settle loop, and folded away read-backs, on real builds (found by disassembly). swift-mmio's <code>read()</code>/<code>write</code>/<code>modify</code> are volatile, so an empty poll body is correct. <code>tools/build_all.sh --check-polls</code> disassembles every function listed in <code>tools/poll_functions.txt</code> and fails if a poll loop has vanished.</p>
 
 <h2>Shared Swift Sources</h2>
 <p><code>Sources/smk/</code> and <code>Sources/SMKCore/</code> compile into every target. <code>Sources/SMKCore/</code> in particular has zero hardware/<code>@_extern</code> calls, so it's also exposed as a real, host-testable Swift Package library (<code>SMK_HOST_TESTS_ONLY=1 swift test</code> — no embedded toolchain required):</p>
