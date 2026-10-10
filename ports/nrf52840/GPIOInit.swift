@@ -9,7 +9,7 @@
 // Register offsets verified against Nordic's nRF52840 Product
 // Specification during this port's feasibility spike:
 // docs/superpowers/specs/2026-08-09-nrf52840-support-design.md.
-private let pinCnfBase: UInt32 = GPIORegisters.base + 0x700
+private let pinCnfBase: UInt32 = UInt32(GPIORegisters.base) + 0x700
 
 private func pinCnfAddress(_ pin: Int32) -> UnsafeMutablePointer<UInt32> {
     UnsafeMutablePointer<UInt32>(bitPattern: UInt(pinCnfBase + UInt32(pin) * 4))!
