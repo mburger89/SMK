@@ -9,11 +9,16 @@
 // (hw/mcu/microchip/samd21/include/component/port.h, fetched via TinyUSB's
 // tools/get_deps.py):
 //   PORT group A base: 0x4100_4400
+//     0x04  DIRCLR  (write-only: set direction to input)
 //     0x08  DIRSET  (write-only: set direction to output)
 //     0x10  OUT     (read: current output state)
 //     0x14  OUTCLR  (write-only: drive low)
 //     0x18  OUTSET  (write-only: drive high)
 //     0x20  IN      (read: current input level, bit == pin number)
+//     0x30  PMUXn   (8-bit, one per pin pair, n = pin / 2)
+//     0x40  PINCFGn (8-bit, one per pin)
+// DIRCLR/DIRSET/PMUX/PINCFG are used only by this port's pin setup code
+// (GPIOInit.swift, UsbHid.swift, UartDebug.swift), not by the matrix scan.
 //
 // Accesses go through swift-mmio (third_party/swift-mmio, compiled flat
 // into this target — see cmake/SwiftMMIO.cmake), so every read/write is a
@@ -22,10 +27,14 @@
 
 @RegisterBlock
 struct GPIOPort {
+    @RegisterBlock(offset: 0x04) var dirclr: Register<GPIOWord>
+    @RegisterBlock(offset: 0x08) var dirset: Register<GPIOWord>
     @RegisterBlock(offset: 0x10) var out: Register<GPIOWord>
     @RegisterBlock(offset: 0x14) var outclr: Register<GPIOWord>
     @RegisterBlock(offset: 0x18) var outset: Register<GPIOWord>
     @RegisterBlock(offset: 0x20) var `in`: Register<GPIOWord>
+    @RegisterBlock(offset: 0x30, stride: 1, count: 16) var pmux: RegisterArray<MMIOByte>
+    @RegisterBlock(offset: 0x40, stride: 1, count: 32) var pincfg: RegisterArray<MMIOByte>
 }
 
 // One whole 32-bit word: the matrix code works in raw pin bitmasks, so no
@@ -60,6 +69,20 @@ struct GPIORegisters {
     var input: UInt32 {
         get { port.in.read().value }
     }
+}
+
+// Whole 8- and 16-bit registers, for this port's byte/halfword-wide
+// peripheral registers (PORT PMUX/PINCFG, GCLK, SYSCTRL, SERCOM, USB).
+// Accesses keep the old code's exact width: a 32-bit access to one of these
+// is a different bus transaction.
+@Register(bitWidth: 8)
+struct MMIOByte {
+    @ReadWrite(bits: 0..<8, as: UInt8.self) var value: VALUE
+}
+
+@Register(bitWidth: 16)
+struct MMIOHalf {
+    @ReadWrite(bits: 0..<16, as: UInt16.self) var value: VALUE
 }
 
 // Instantiate the bank at PORT group A's base address.

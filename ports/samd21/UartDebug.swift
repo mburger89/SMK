@@ -26,27 +26,45 @@
 //     48MHz GCLK0 this port already runs SERCOM cores from, same constant
 //     TinyUSB's family.c uses), SYNCBUSY +0x1C (SWRST bit0, ENABLE bit1),
 //     INTFLAG +0x18 (8-bit, TXC bit1), DATA +0x28 (16-bit, low byte used)
+//
+// Polls read swift-mmio registers (volatile), so empty loop bodies are
+// correct here. Access widths match the old pointer-based code: PMUX/PINCFG
+// and INTFLAG 8-bit, CLKCTRL/BAUD/DATA 16-bit, the rest 32-bit. PM and GCLK
+// blocks are ClockInit.swift's; PORT is GPIORegisters.swift's `gpio.port`.
 
-private let pmApbcMask = UnsafeMutablePointer<UInt32>(bitPattern: UInt(0x4000_0400 + 0x20))!
+@RegisterBlock
+struct SAMD21SERCOMUSART {
+    @RegisterBlock(offset: 0x00) var ctrla: Register<GPIOWord>
+    @RegisterBlock(offset: 0x04) var ctrlb: Register<GPIOWord>
+    @RegisterBlock(offset: 0x0C) var baud: Register<MMIOHalf>
+    @RegisterBlock(offset: 0x18) var intflag: Register<SERCOM_INTFLAG>
+    @RegisterBlock(offset: 0x1C) var syncbusy: Register<SERCOM_SYNCBUSY>
+    @RegisterBlock(offset: 0x28) var data: Register<MMIOHalf>
+}
+
+@Register(bitWidth: 8)
+struct SERCOM_INTFLAG {
+    @ReadOnly(bits: 1..<2, as: Bool.self) var txc: TXC
+}
+
+@Register(bitWidth: 32)
+struct SERCOM_SYNCBUSY {
+    @ReadOnly(bits: 0..<1, as: Bool.self) var swrst: SWRST
+    @ReadOnly(bits: 1..<2, as: Bool.self) var enable: ENABLE
+}
+
+private let sercom0 = SAMD21SERCOMUSART(unsafeAddress: 0x4200_0800)
+
 private let pmApbcMaskSercom0: UInt32 = 1 << 2
 
-private let gclkClkCtrl16b = UnsafeMutablePointer<UInt16>(bitPattern: UInt(0x4000_0C02))!
 private let clkCtrlIdSercom0Core: UInt16 = 20
 private let clkCtrlGen0b: UInt16 = 0 << 8
 private let clkCtrlClkEnB: UInt16 = 1 << 14
 
-private let portAPmux3 = UnsafeMutablePointer<UInt8>(bitPattern: UInt(0x4100_4400 + 0x30 + 3))! // pins 6/7
-private let portAPinCfg6 = UnsafeMutablePointer<UInt8>(bitPattern: UInt(0x4100_4400 + 0x40 + 6))!
+private let pmuxPair67 = 3 // PMUX register for pins 6/7
+private let pinTx = 6
 private let pinCfgPmuxEnB: UInt8 = 1 << 0
 private let pmuxFunctionD: UInt8 = 3
-
-private let sercom0Base: UInt32 = 0x4200_0800
-private let sercom0CtrlA = UnsafeMutablePointer<UInt32>(bitPattern: UInt(sercom0Base + 0x00))!
-private let sercom0CtrlB = UnsafeMutablePointer<UInt32>(bitPattern: UInt(sercom0Base + 0x04))!
-private let sercom0Baud = UnsafeMutablePointer<UInt16>(bitPattern: UInt(sercom0Base + 0x0C))!
-private let sercom0IntFlag = UnsafeMutablePointer<UInt8>(bitPattern: UInt(sercom0Base + 0x18))!
-private let sercom0SyncBusy = UnsafeMutablePointer<UInt32>(bitPattern: UInt(sercom0Base + 0x1C))!
-private let sercom0Data = UnsafeMutablePointer<UInt16>(bitPattern: UInt(sercom0Base + 0x28))!
 
 private let ctrlaSwrst: UInt32 = 1 << 0
 private let ctrlaEnable: UInt32 = 1 << 1
@@ -58,35 +76,27 @@ private let ctrlaDord: UInt32 = 1 << 30 // LSB first
 
 private let ctrlbTxen: UInt32 = 1 << 16
 
-private let syncBusySwrst: UInt32 = 1 << 0
-private let syncBusyEnable: UInt32 = 1 << 1
-
-private let intFlagTxc: UInt8 = 1 << 1
-
-@_extern(c, "smk_cpu_nop")
-func smk_cpu_nop_uart()
-
 func uartDebugInit() {
-    pmApbcMask.pointee |= pmApbcMaskSercom0
-    gclkClkCtrl16b.pointee = clkCtrlIdSercom0Core | clkCtrlGen0b | clkCtrlClkEnB
+    pm.apbcmask.modify { $0.value |= pmApbcMaskSercom0 }
+    gclk.clkctrl.write { $0.value = clkCtrlIdSercom0Core | clkCtrlGen0b | clkCtrlClkEnB }
 
-    portAPmux3.pointee = pmuxFunctionD // pin 6 (even, low nibble); pin 7 left as GPIO
-    portAPinCfg6.pointee = pinCfgPmuxEnB
+    gpio.port.pmux[pmuxPair67].write { $0.value = pmuxFunctionD } // pin 6 (even, low nibble); pin 7 left as GPIO
+    gpio.port.pincfg[pinTx].write { $0.value = pinCfgPmuxEnB }
 
-    sercom0CtrlA.pointee = ctrlaSwrst
-    while (sercom0SyncBusy.pointee & syncBusySwrst) != 0 { smk_cpu_nop_uart() }
+    sercom0.ctrla.write { $0.value = ctrlaSwrst }
+    while sercom0.syncbusy.read().swrst {}
 
-    sercom0CtrlA.pointee = ctrlaSampr1 | ctrlaDord | ctrlaModeUsartIntClk | ctrlaRxpoPad3 | ctrlaTxpoPad2
-    sercom0CtrlB.pointee = ctrlbTxen
-    sercom0Baud.pointee = 26 // FP=0, BAUD=26 -> 115200 @ 48MHz, SAMPR=1
+    sercom0.ctrla.write { $0.value = ctrlaSampr1 | ctrlaDord | ctrlaModeUsartIntClk | ctrlaRxpoPad3 | ctrlaTxpoPad2 }
+    sercom0.ctrlb.write { $0.value = ctrlbTxen }
+    sercom0.baud.write { $0.value = 26 } // FP=0, BAUD=26 -> 115200 @ 48MHz, SAMPR=1
 
-    sercom0CtrlA.pointee |= ctrlaEnable
-    while (sercom0SyncBusy.pointee & syncBusyEnable) != 0 { smk_cpu_nop_uart() }
+    sercom0.ctrla.modify { $0.value |= ctrlaEnable }
+    while sercom0.syncbusy.read().enable {}
 }
 
 private func uartPutChar(_ c: UInt8) {
-    sercom0Data.pointee = UInt16(c)
-    while (sercom0IntFlag.pointee & intFlagTxc) == 0 { smk_cpu_nop_uart() }
+    sercom0.data.write { $0.value = UInt16(c) }
+    while !sercom0.intflag.read().txc {}
 }
 
 func uartDebugWrite(_ s: String) {

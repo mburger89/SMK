@@ -12,33 +12,29 @@
 // Pull direction is selected by the OUT bit while PULLEN is set:
 // OUT=0 -> pull-down, OUT=1 -> pull-up (SAMD21 datasheet, PORT chapter).
 
-private let portABase: UInt32 = 0x4100_4400
-private let portADirClr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(portABase + 0x04))!
-private let portADirSet = UnsafeMutablePointer<UInt32>(bitPattern: UInt(portABase + 0x08))!
-private let portAOutClr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(portABase + 0x14))!
-private let portAOutSet = UnsafeMutablePointer<UInt32>(bitPattern: UInt(portABase + 0x18))!
-private let portAPinCfg = UnsafeMutablePointer<UInt8>(bitPattern: UInt(portABase + 0x40))!
+// Registers are GPIORegisters.swift's `gpio.port` (swift-mmio, volatile),
+// same widths as before: DIR*/OUT* 32-bit, PINCFGn 8-bit.
 
 private let pinCfgInputEnable: UInt8 = 1 << 1 // INEN
 private let pinCfgPullEnable: UInt8 = 1 << 2  // PULLEN
 
 private func configureOutput(_ pin: Int32, level: UInt32) {
-    portAPinCfg.advanced(by: Int(pin)).pointee = 0 // plain GPIO, no mux/input/pull
+    gpio.port.pincfg[pin].write { $0.value = 0 } // plain GPIO, no mux/input/pull
     if level != 0 {
-        portAOutSet.pointee = 1 << UInt32(pin)
+        gpio.port.outset.write { $0.value = 1 << UInt32(pin) }
     } else {
-        portAOutClr.pointee = 1 << UInt32(pin)
+        gpio.port.outclr.write { $0.value = 1 << UInt32(pin) }
     }
-    portADirSet.pointee = 1 << UInt32(pin)
+    gpio.port.dirset.write { $0.value = 1 << UInt32(pin) }
 }
 
 private func configureInput(_ pin: Int32, pullUp: Bool) {
-    portADirClr.pointee = 1 << UInt32(pin)
-    portAPinCfg.advanced(by: Int(pin)).pointee = pinCfgInputEnable | pinCfgPullEnable
+    gpio.port.dirclr.write { $0.value = 1 << UInt32(pin) }
+    gpio.port.pincfg[pin].write { $0.value = pinCfgInputEnable | pinCfgPullEnable }
     if pullUp {
-        portAOutSet.pointee = 1 << UInt32(pin) // OUT=1 + PULLEN -> pull-up
+        gpio.port.outset.write { $0.value = 1 << UInt32(pin) } // OUT=1 + PULLEN -> pull-up
     } else {
-        portAOutClr.pointee = 1 << UInt32(pin) // OUT=0 + PULLEN -> pull-down
+        gpio.port.outclr.write { $0.value = 1 << UInt32(pin) } // OUT=0 + PULLEN -> pull-down
     }
 }
 

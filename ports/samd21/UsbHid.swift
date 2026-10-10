@@ -13,20 +13,20 @@
 // USB pad calibration (PADCAL from the factory fuses) is done by TinyUSB's
 // dcd_samd.c itself — verified against the vendored source, no glue needed.
 
-private let pmAhbMask = UnsafeMutablePointer<UInt32>(bitPattern: UInt(0x4000_0400 + 0x14))!
-private let pmApbBMask = UnsafeMutablePointer<UInt32>(bitPattern: UInt(0x4000_0400 + 0x1C))!
+// Registers are swift-mmio (volatile): PM/GCLK blocks from ClockInit.swift,
+// PORT from GPIORegisters.swift's `gpio.port`. Widths as before: PM 32-bit,
+// CLKCTRL 16-bit (8-bit for the ID-select write), PMUX/PINCFG and the USB
+// INTFLAG bytes 8-bit.
 private let pmAhbMaskUsb: UInt32 = 1 << 6
 private let pmApbBMaskUsb: UInt32 = 1 << 5
 
-private let gclkClkCtrl16 = UnsafeMutablePointer<UInt16>(bitPattern: UInt(0x4000_0C02))!
 private let clkCtrlIdUsb: UInt16 = 0x6
 private let clkCtrlGen0: UInt16 = 0 << 8
 private let clkCtrlClkEn: UInt16 = 1 << 14
 
-private let portABase2: UInt32 = 0x4100_4400
-private let portAPmux12 = UnsafeMutablePointer<UInt8>(bitPattern: UInt(portABase2 + 0x30 + 12))! // pins 24/25
-private let portAPinCfg24 = UnsafeMutablePointer<UInt8>(bitPattern: UInt(portABase2 + 0x40 + 24))!
-private let portAPinCfg25 = UnsafeMutablePointer<UInt8>(bitPattern: UInt(portABase2 + 0x40 + 25))!
+private let pmuxPair2425 = 12 // PMUX register for pins 24/25
+private let pinUsbDm = 24
+private let pinUsbDp = 25
 private let pinCfgPmuxEn: UInt8 = 1 << 0
 private let pmuxFunctionG: UInt8 = 6
 
@@ -36,23 +36,22 @@ private let pmuxFunctionG: UInt8 = 6
 func dbg_trap(_ code: Int32)
 
 private func enableUsbClockAndPins() {
-    pmAhbMask.pointee |= pmAhbMaskUsb
-    pmApbBMask.pointee |= pmApbBMaskUsb
-    gclkClkCtrl16.pointee = clkCtrlIdUsb | clkCtrlGen0 | clkCtrlClkEn
+    pm.ahbmask.modify { $0.value |= pmAhbMaskUsb }
+    pm.apbbmask.modify { $0.value |= pmApbBMaskUsb }
+    gclk.clkctrl.write { $0.value = clkCtrlIdUsb | clkCtrlGen0 | clkCtrlClkEn }
 
     // TEMPORARY: read back the USB GCLK channel (select the channel by
     // writing its ID to CLKCTRL's low byte, then read the 16-bit register)
     // and trap with repeating 4-blink groups if CLKEN didn't stick.
-    let clkCtrl8 = UnsafeMutablePointer<UInt8>(bitPattern: UInt(0x4000_0C02))!
-    clkCtrl8.pointee = UInt8(clkCtrlIdUsb)
-    if (gclkClkCtrl16.pointee & clkCtrlClkEn) == 0 {
+    gclk.clkctrlId.write { $0.value = UInt8(clkCtrlIdUsb) }
+    if (gclk.clkctrl.read().value & clkCtrlClkEn) == 0 {
         dbg_trap(4)
     }
 
     // PA24 = DM, PA25 = DP, both muxed to function G (USB).
-    portAPmux12.pointee = pmuxFunctionG | (pmuxFunctionG << 4)
-    portAPinCfg24.pointee = pinCfgPmuxEn
-    portAPinCfg25.pointee = pinCfgPmuxEn
+    gpio.port.pmux[pmuxPair2425].write { $0.value = pmuxFunctionG | (pmuxFunctionG << 4) }
+    gpio.port.pincfg[pinUsbDm].write { $0.value = pinCfgPmuxEn }
+    gpio.port.pincfg[pinUsbDp].write { $0.value = pinCfgPmuxEn }
 }
 
 @_extern(c, "tusb_rhport_init")
@@ -89,15 +88,20 @@ func tusb_int_handler(_ rhport: UInt8, _ inIsr: Bool)
 // at +0x107: bit0=TRCPT0, bit1=TRCPT1, bit4=RXSTP (a SETUP packet actually
 // reached EP0 — the key signal for "did enumeration even start"). Capped
 // at 20 logged entries so a genuine storm doesn't flood the UART forever.
-private let usbIntFlag = UnsafeMutablePointer<UInt8>(bitPattern: UInt(0x4100_501C))!
-private let usbEp0IntFlag = UnsafeMutablePointer<UInt8>(bitPattern: UInt(0x4100_5107))!
+@RegisterBlock
+struct SAMD21USBDevice {
+    @RegisterBlock(offset: 0x01C) var intflag: Register<MMIOByte>
+    @RegisterBlock(offset: 0x107) var ep0Intflag: Register<MMIOByte>
+}
+
+private let usbDevice = SAMD21USBDevice(unsafeAddress: 0x4100_5000)
 private var usbIsrHitCount: UInt32 = 0
 
 @c
 func USB_Handler() {
     usbIsrHitCount &+= 1
-    let intFlags = usbIntFlag.pointee
-    let ep0Flags = usbEp0IntFlag.pointee
+    let intFlags = usbDevice.intflag.read().value
+    let ep0Flags = usbDevice.ep0Intflag.read().value
     if usbIsrHitCount <= 20 {
         uartDebugWriteHex("USB IRQ #\(usbIsrHitCount) INTFLAG", UInt32(intFlags))
         uartDebugWriteHex("         EP0 INTFLAG", UInt32(ep0Flags))
