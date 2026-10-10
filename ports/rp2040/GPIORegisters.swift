@@ -9,39 +9,65 @@
 // between RP2040 and RP2350, so this one file covers both chips unchanged.
 //
 // SIO base address: 0xD000_0000
-//   0x004  GPIO_IN       (read)              -> word index 1
-//   0x010  GPIO_OUT      (read/write)        -> word index 4
-//   0x014  GPIO_OUT_SET  (atomic set bits)   -> word index 5
-//   0x018  GPIO_OUT_CLR  (atomic clear bits) -> word index 6
+//   0x004  GPIO_IN       (read)
+//   0x010  GPIO_OUT      (read/write)        -- not touched here
+//   0x014  GPIO_OUT_SET  (atomic set bits)
+//   0x018  GPIO_OUT_CLR  (atomic clear bits)
 //
 // NOTE: The SIO only drives/reads the pin *level*. Each pad must first be
 // muxed to the SIO function and have its direction / pull-ups configured.
 // That one-time setup is done in `GPIOInit.swift` via the pico-sdk.
+//
+// Accesses go through swift-mmio (third_party/swift-mmio, compiled flat
+// into this target — see cmake/SwiftMMIO.cmake), so every read/write is a
+// real 32-bit volatile load/store. The previous `.pointee` version was not:
+// LLVM was free to hoist, merge or delete those accesses (see CLAUDE.md's
+// register-polling note).
+
+@RegisterBlock
+struct SIOGPIO {
+    @RegisterBlock(offset: 0x004) var gpioIn: Register<GPIOWord>
+    @RegisterBlock(offset: 0x014) var gpioOutSet: Register<GPIOWord>
+    @RegisterBlock(offset: 0x018) var gpioOutClr: Register<GPIOWord>
+}
+
+// One whole 32-bit word: the matrix code works in raw pin bitmasks, so no
+// per-pin bit fields are modelled.
+@Register(bitWidth: 32)
+struct GPIOWord {
+    @ReadWrite(bits: 0..<32, as: UInt32.self) var value: VALUE
+}
 
 struct GPIORegisters {
-    let baseAddress: UnsafeMutablePointer<UInt32>
+    static let base: UInt = 0xD0000000 // SIO
 
-    init(address: UInt32) {
-        self.baseAddress = UnsafeMutablePointer<UInt32>(bitPattern: UInt(address))!
+    let sio: SIOGPIO
+
+    init(address: UInt) {
+        self.sio = SIOGPIO(unsafeAddress: address)
     }
 
     // 0x014: GPIO_OUT_SET — writing a 1 sets the corresponding output high.
+    // The getter reads GPIO_OUT_SET itself, exactly as the pre-swift-mmio
+    // code did.
     var outSet: UInt32 {
-        get { baseAddress.advanced(by: 5).pointee }
-        nonmutating set { baseAddress.advanced(by: 5).pointee = newValue }
+        get { sio.gpioOutSet.read().value }
+        nonmutating set { sio.gpioOutSet.write { $0.value = newValue } }
     }
 
     // 0x018: GPIO_OUT_CLR — writing a 1 drives the corresponding output low.
+    // The getter reads GPIO_OUT_CLR itself, exactly as the pre-swift-mmio
+    // code did.
     var outClear: UInt32 {
-        get { baseAddress.advanced(by: 6).pointee }
-        nonmutating set { baseAddress.advanced(by: 6).pointee = newValue }
+        get { sio.gpioOutClr.read().value }
+        nonmutating set { sio.gpioOutClr.write { $0.value = newValue } }
     }
 
     // 0x004: GPIO_IN — current input level of every GPIO (bit == GPIO number).
     var input: UInt32 {
-        get { baseAddress.advanced(by: 1).pointee }
+        get { sio.gpioIn.read().value }
     }
 }
 
 // Instantiate the bank at the RP2040 SIO base address.
-let gpio = GPIORegisters(address: 0xD0000000)
+let gpio = GPIORegisters(address: GPIORegisters.base)
