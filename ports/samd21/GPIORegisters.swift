@@ -14,30 +14,51 @@
 //     0x14  OUTCLR  (write-only: drive low)
 //     0x18  OUTSET  (write-only: drive high)
 //     0x20  IN      (read: current input level, bit == pin number)
+//
+// Accesses go through swift-mmio (third_party/swift-mmio, compiled flat
+// into this target — see cmake/SwiftMMIO.cmake), so every read/write is a
+// real volatile load/store. The previous `.pointee` version was not: LLVM
+// was free to hoist, merge or delete those accesses.
+
+@RegisterBlock
+struct GPIOPort {
+    @RegisterBlock(offset: 0x10) var out: Register<GPIOWord>
+    @RegisterBlock(offset: 0x14) var outclr: Register<GPIOWord>
+    @RegisterBlock(offset: 0x18) var outset: Register<GPIOWord>
+    @RegisterBlock(offset: 0x20) var `in`: Register<GPIOWord>
+}
+
+// One whole 32-bit word: the matrix code works in raw pin bitmasks, so no
+// per-pin bit fields are modelled.
+@Register(bitWidth: 32)
+struct GPIOWord {
+    @ReadWrite(bits: 0..<32, as: UInt32.self) var value: VALUE
+}
+
 struct GPIORegisters {
-    static let base: UInt32 = 0x4100_4400 // PORT group A
+    static let base: UInt = 0x4100_4400 // PORT group A
 
-    let baseAddress: UnsafeMutablePointer<UInt32>
+    let port: GPIOPort
 
-    init(address: UInt32) {
-        self.baseAddress = UnsafeMutablePointer<UInt32>(bitPattern: UInt(address))!
+    init(address: UInt) {
+        self.port = GPIOPort(unsafeAddress: address)
     }
 
     // 0x18: OUTSET — writing a 1 drives the corresponding output high.
     var outSet: UInt32 {
-        get { baseAddress.advanced(by: 4).pointee } // 0x10: OUT, current state
-        nonmutating set { baseAddress.advanced(by: 6).pointee = newValue }
+        get { port.out.read().value } // 0x10: OUT, current state
+        nonmutating set { port.outset.write { $0.value = newValue } }
     }
 
     // 0x14: OUTCLR — writing a 1 drives the corresponding output low.
     var outClear: UInt32 {
-        get { baseAddress.advanced(by: 4).pointee } // 0x10: OUT, current state
-        nonmutating set { baseAddress.advanced(by: 5).pointee = newValue }
+        get { port.out.read().value } // 0x10: OUT, current state
+        nonmutating set { port.outclr.write { $0.value = newValue } }
     }
 
     // 0x20: IN — current input level of every group-A pin (bit == pin number).
     var input: UInt32 {
-        get { baseAddress.advanced(by: 8).pointee }
+        get { port.in.read().value }
     }
 }
 
