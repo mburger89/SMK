@@ -25,11 +25,18 @@
 // was free to hoist, merge or delete those accesses (see CLAUDE.md's
 // register-polling note).
 
+//
+// GPIOInit.swift (GPIOB) and UsbHid.swift (GPIOA) also use this block for
+// pin configuration: 0x00 MODER, 0x0C PUPDR, 0x24 AFRH (same
+// cmsis-device-wb GPIO_TypeDef).
 @RegisterBlock
 struct GPIOPort {
+    @RegisterBlock(offset: 0x00) var moder: Register<GPIOWord>
+    @RegisterBlock(offset: 0x0C) var pupdr: Register<GPIOWord>
     @RegisterBlock(offset: 0x10) var idr: Register<GPIOWord>
     @RegisterBlock(offset: 0x14) var odr: Register<GPIOWord>
     @RegisterBlock(offset: 0x18) var bsrr: Register<GPIOWord>
+    @RegisterBlock(offset: 0x24) var afrh: Register<GPIOWord>
 }
 
 // One whole 32-bit word: the matrix code works in raw pin bitmasks, so no

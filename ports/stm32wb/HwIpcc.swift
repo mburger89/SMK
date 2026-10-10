@@ -51,59 +51,74 @@
 
 // MARK: - Register addresses
 
+// All registers below are swift-mmio registers (volatile accesses). Those
+// whose bits are computed from a channel mask at run time are whole-word
+// `GPIOWord` registers (GPIORegisters.swift's raw 32-bit value type); RCC
+// and PWR are the shared blocks declared in ClockInit.swift.
+//
 // IPCC: AHB4PERIPH_BASE (0x5800_0000) + 0xC00. Register offsets from
 // IPCC_TypeDef: C1CR 0x00, C1MR 0x04, C1SCR 0x08, C1TOC2SR 0x0C,
 // C2TOC1SR 0x1C. (The C2* control/mask/status-set registers at 0x10-0x18
-// are CPU2's side and are never touched from here.)
-private let ipccBase: UInt32 = 0x5800_0C00
-private let ipccC1cr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(ipccBase + 0x00))!
-private let ipccC1mr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(ipccBase + 0x04))!
-private let ipccC1scr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(ipccBase + 0x08))!
-private let ipccC1toc2sr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(ipccBase + 0x0C))!
-private let ipccC2toc1sr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(ipccBase + 0x1C))!
-// CPU2's mask/status-set-clear registers — normally CPU2's side and left
-// alone; touched only by smk_ipcc_reset() below, which runs while CPU2 is
-// still held in reset. Offsets confirmed via IPCC_TypeDef: C2MR 0x14,
-// C2SCR 0x18.
-private let ipccC2mr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(ipccBase + 0x14))!
-private let ipccC2scr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(ipccBase + 0x18))!
+// are CPU2's side and are never touched from here — except C2MR 0x14 and
+// C2SCR 0x18, touched only by smk_ipcc_reset() below, which runs while
+// CPU2 is still held in reset.)
+@RegisterBlock
+struct WBIPCC {
+    @RegisterBlock(offset: 0x00) var c1cr: Register<IPCC_C1CR>
+    @RegisterBlock(offset: 0x04) var c1mr: Register<GPIOWord>
+    @RegisterBlock(offset: 0x08) var c1scr: Register<GPIOWord>
+    @RegisterBlock(offset: 0x0C) var c1toc2sr: Register<GPIOWord>
+    @RegisterBlock(offset: 0x14) var c2mr: Register<GPIOWord>
+    @RegisterBlock(offset: 0x18) var c2scr: Register<GPIOWord>
+    @RegisterBlock(offset: 0x1C) var c2toc1sr: Register<GPIOWord>
+}
+private let ipcc = WBIPCC(unsafeAddress: 0x5800_0C00)
 
-// RCC: same 0x5800_0000 base ports/stm32wb/ClockInit.swift and
-// ports/stm32wb/UsbHid.swift already use (their copies are file-private).
-// AHB3ENR at 0x50 gates IPCC's clock for CPU1; C2AHB3ENR at 0x150 does the
-// same for CPU2. Both bits are IPCCEN, bit 20.
-private let rccBase: UInt32 = 0x5800_0000
-private let rccAhb3Enr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(rccBase + 0x050))!
-private let rccC2Ahb3Enr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(rccBase + 0x150))!
-private let rccAhb3EnrIpccEn: UInt32 = 1 << 20 // RCC_AHB3ENR_IPCCEN_Pos / RCC_C2AHB3ENR_IPCCEN_Pos
-
-// PWR: AHB4PERIPH_BASE + 0x400 (same base ClockInit.swift uses). CR4 at
-// offset 0x0C; C2BOOT is bit 15 — setting it releases CPU2 from reset so it
-// starts running the wireless-coprocessor firmware.
-private let pwrCr4 = UnsafeMutablePointer<UInt32>(bitPattern: UInt(0x5800_0400 + 0x0C))!
-private let pwrCr4C2Boot: UInt32 = 1 << 15 // PWR_CR4_C2BOOT_Pos
+// RCC: the shared `rcc` block (ClockInit.swift). AHB3ENR at 0x50 gates
+// IPCC's clock for CPU1; C2AHB3ENR at 0x150 does the same for CPU2. Both
+// bits are IPCCEN, bit 20.
+//
+// PWR: the shared `pwr` block (ClockInit.swift). CR4 at offset 0x0C;
+// C2BOOT is bit 15 — setting it releases CPU2 from reset so it starts
+// running the wireless-coprocessor firmware.
 
 // EXTI: AHB4PERIPH_BASE + 0x800. RTSR2 (rising-trigger select, lines 32-63)
 // at 0x20; C2EMR2 (CPU2 event mask, lines 32-63) at 0xD4. EXTI line 41 is
 // the IPCC CPU2 wakeup line, so its bit within the "2" (lines 32-63)
 // registers is 41 - 32 = 9 — confirmed by stm32wb55xx.h's own
 // EXTI_RTSR2_RT41_Pos (9) and EXTI_C2EMR2_EM41_Pos (9).
-private let extiBase: UInt32 = 0x5800_0800
-private let extiRtsr2 = UnsafeMutablePointer<UInt32>(bitPattern: UInt(extiBase + 0x20))!
-private let extiC2emr2 = UnsafeMutablePointer<UInt32>(bitPattern: UInt(extiBase + 0xD4))!
-private let extiLine41Bit: UInt32 = 1 << 9
+@RegisterBlock
+struct WBEXTI {
+    @RegisterBlock(offset: 0x20) var rtsr2: Register<EXTI_Line41>
+    @RegisterBlock(offset: 0xD4) var c2emr2: Register<EXTI_Line41>
+}
+private let exti = WBEXTI(unsafeAddress: 0x5800_0800)
+
+@Register(bitWidth: 32)
+struct EXTI_Line41 {
+    @ReadWrite(bits: 9..<10, as: Bool.self) var line41: LINE41
+}
 
 // NVIC ISER: standard Cortex-M SCS address, 0xE000_E100, an array of 32-bit
-// set-enable registers. IPCC_C1_RX_IRQn = 44 and IPCC_C1_TX_IRQn = 45
-// (stm32wb55xx.h's IRQn_Type), so both live in ISER[1] at bits 12 and 13.
-private let nvicIser = UnsafeMutablePointer<UInt32>(bitPattern: UInt(0xE000_E100))!
+// set-enable registers (ISER0..ISER7). IPCC_C1_RX_IRQn = 44 and
+// IPCC_C1_TX_IRQn = 45 (stm32wb55xx.h's IRQn_Type), so both live in ISER[1]
+// at bits 12 and 13.
+@RegisterBlock
+struct CortexMNVIC {
+    @RegisterBlock(offset: 0x00, stride: 4, count: 8) var iser: RegisterArray<GPIOWord>
+}
+private let nvic = CortexMNVIC(unsafeAddress: 0xE000_E100)
 private let ipccC1RxIrqn: UInt32 = 44
 private let ipccC1TxIrqn: UInt32 = 45
 
 // MARK: - IPCC control-register bits
 
-private let ipccC1crRxoie: UInt32 = 1 << 0  // IPCC_C1CR_RXOIE_Pos
-private let ipccC1crTxfie: UInt32 = 1 << 16 // IPCC_C1CR_TXFIE_Pos
+// IPCC_C1CR_RXOIE_Pos (0) / IPCC_C1CR_TXFIE_Pos (16).
+@Register(bitWidth: 32)
+struct IPCC_C1CR {
+    @ReadWrite(bits: 0..<1, as: Bool.self) var rxoie: RXOIE
+    @ReadWrite(bits: 16..<17, as: Bool.self) var txfie: TXFIE
+}
 
 // Within C1MR: bits 0-5 are the receive-channel ("channel occupied")
 // interrupt masks, bits 16-21 the transmit-channel ("channel free") masks.
@@ -174,42 +189,42 @@ func HW_IPCC_TRACES_EvtNot()
 
 @inline(__always)
 private func enableReceiveChannel(_ channel: UInt32) {
-    ipccC1mr.pointee &= ~channel
+    ipcc.c1mr.modify { $0.value &= ~channel }
 }
 
 @inline(__always)
 private func enableTransmitChannel(_ channel: UInt32) {
-    ipccC1mr.pointee &= ~(channel << c1mrTxShift)
+    ipcc.c1mr.modify { $0.value &= ~(channel << c1mrTxShift) }
 }
 
 @inline(__always)
 private func disableTransmitChannel(_ channel: UInt32) {
-    ipccC1mr.pointee |= (channel << c1mrTxShift)
+    ipcc.c1mr.modify { $0.value |= (channel << c1mrTxShift) }
 }
 
 /// Raise this CPU's flag on a CPU1->CPU2 channel (C1SCR CHxS, write-only).
 @inline(__always)
 private func setFlag(_ channel: UInt32) {
-    ipccC1scr.pointee = channel << c1scrTxShift
+    ipcc.c1scr.write { $0.value = channel << c1scrTxShift }
 }
 
 /// Acknowledge a CPU2->CPU1 channel (C1SCR CHxC, write-only).
 @inline(__always)
 private func clearFlag(_ channel: UInt32) {
-    ipccC1scr.pointee = channel
+    ipcc.c1scr.write { $0.value = channel }
 }
 
 /// Is CPU1's own flag still raised on this channel? (i.e. CPU2 has not yet
 /// consumed what we posted.)
 @inline(__always)
 private func isActiveFlagC1(_ channel: UInt32) -> Bool {
-    (ipccC1toc2sr.pointee & channel) == channel
+    (ipcc.c1toc2sr.read().value & channel) == channel
 }
 
 /// Has CPU2 raised its flag on this channel? (i.e. something is waiting for us.)
 @inline(__always)
 private func isActiveFlagC2(_ channel: UInt32) -> Bool {
-    (ipccC2toc1sr.pointee & channel) == channel
+    (ipcc.c2toc1sr.read().value & channel) == channel
 }
 
 // ST's HW_IPCC_RX_PENDING / HW_IPCC_TX_PENDING macros, verbatim in intent:
@@ -218,12 +233,12 @@ private func isActiveFlagC2(_ channel: UInt32) -> Bool {
 
 @inline(__always)
 private func rxPending(_ channel: UInt32) -> Bool {
-    isActiveFlagC2(channel) && ((~ipccC1mr.pointee) & channel) != 0
+    isActiveFlagC2(channel) && ((~ipcc.c1mr.read().value) & channel) != 0
 }
 
 @inline(__always)
 private func txPending(_ channel: UInt32) -> Bool {
-    !isActiveFlagC1(channel) && ((~ipccC1mr.pointee) & (channel << c1mrTxShift)) != 0
+    !isActiveFlagC1(channel) && ((~ipcc.c1mr.read().value) & (channel << c1mrTxShift)) != 0
 }
 
 @inline(__always)
@@ -235,7 +250,7 @@ private func criticalSection(_ body: () -> Void) {
 
 @inline(__always)
 private func nvicEnableIrq(_ irqn: UInt32) {
-    nvicIser.advanced(by: Int(irqn >> 5)).pointee = 1 << (irqn & 0x1F)
+    nvic.iser[irqn >> 5].write { $0.value = 1 << (irqn & 0x1F) }
 }
 
 // MARK: - Interrupt vectors
@@ -300,13 +315,13 @@ func HW_IPCC_Enable() {
     // Keep IPCC clocked from CPU2's side too, so the IP stays available to
     // CPU2 while CPU1 is in deep sleep (ST's own comment; matters once FUS
     // is running on CPU2).
-    rccC2Ahb3Enr.pointee |= rccAhb3EnrIpccEn
+    rcc.c2ahb3enr.modify { $0.ipccen = true }
 
     // Coming out of standby, CPU2 is woken through EXTI line 41 rather than
     // by the IPCC flag directly, so arm the rising-edge trigger and unmask
     // the line as a CPU2 *event*.
-    extiRtsr2.pointee |= extiLine41Bit
-    extiC2emr2.pointee |= extiLine41Bit
+    exti.rtsr2.modify { $0.line41 = true }
+    exti.c2emr2.modify { $0.line41 = true }
 
     // ST requires at least one system clock cycle between arming the rising
     // trigger (the RTSR2 write) and the SEV below. Nothing extra is needed
@@ -322,7 +337,7 @@ func HW_IPCC_Enable() {
     // set, clearing and re-setting it has no effect — a warm restart of CPU2
     // needs SHCI_C2_Reinit() plus the event above instead. Setting both (as
     // here, and as ST does) is the configuration-independent default.
-    pwrCr4.pointee |= pwrCr4C2Boot
+    pwr.cr4.modify { $0.c2boot = true }
 }
 
 // BTstack's WB55 port calls this "ipcc_reset" (btstack_port.c:260-294) and
@@ -341,24 +356,24 @@ private let ipccAllChannels: UInt32 = 0x3F // LL_IPCC_CHANNEL_1..6 == (1<<0)..(1
 func smk_ipcc_reset() {
     // The C original followed the |= with `(void)RCC->AHB3ENR;` so the
     // clock-enable takes effect before the IPCC register writes below. A
-    // `.pointee` read-back gets folded away by the optimizer (see
-    // ClockInit.swift's smk_mmio_read32 comment), so the read goes through
-    // that opaque C helper instead.
-    rccAhb3Enr.pointee |= rccAhb3EnrIpccEn
-    _ = smk_mmio_read32(rccBase + 0x050)
+    // swift-mmio read is volatile, so this read-back is really issued and
+    // stays ordered before those writes (a plain `.pointee` read-back got
+    // folded away by the optimizer).
+    rcc.ahb3enr.modify { $0.ipccen = true }
+    _ = rcc.ahb3enr.read()
 
-    ipccC1scr.pointee = ipccAllChannels                             // clear CPU1's receive flags
-    ipccC2scr.pointee = ipccAllChannels                             // clear CPU2's receive flags
-    ipccC1mr.pointee = (ipccAllChannels << 16) | ipccAllChannels    // mask everything off
-    ipccC2mr.pointee = (ipccAllChannels << 16) | ipccAllChannels
+    ipcc.c1scr.write { $0.value = ipccAllChannels }                          // clear CPU1's receive flags
+    ipcc.c2scr.write { $0.value = ipccAllChannels }                          // clear CPU2's receive flags
+    ipcc.c1mr.write { $0.value = (ipccAllChannels << 16) | ipccAllChannels } // mask everything off
+    ipcc.c2mr.write { $0.value = (ipccAllChannels << 16) | ipccAllChannels }
 }
 
 @c
 func HW_IPCC_Init() {
-    rccAhb3Enr.pointee |= rccAhb3EnrIpccEn
+    rcc.ahb3enr.modify { $0.ipccen = true }
 
-    ipccC1cr.pointee |= ipccC1crRxoie // RX "channel occupied" interrupt
-    ipccC1cr.pointee |= ipccC1crTxfie // TX "channel free" interrupt
+    ipcc.c1cr.modify { $0.rxoie = true } // RX "channel occupied" interrupt
+    ipcc.c1cr.modify { $0.txfie = true } // TX "channel free" interrupt
 
     nvicEnableIrq(ipccC1RxIrqn)
     nvicEnableIrq(ipccC1TxIrqn)

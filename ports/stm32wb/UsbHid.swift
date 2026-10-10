@@ -14,25 +14,19 @@
 // stm32wb55xx.h (`GPIOA_BASE == IOPORT_BASE == AHB2PERIBH_BASE + 0`,
 // `AHB2PERIPH_BASE == PERIPH_BASE + 0x08000000UL`). Register layout
 // (MODER at 0x00, AFRH at 0x24) is identical to F4's GPIO_TypeDef.
-private let gpioaBase: UInt32 = 0x4800_0000
-private let gpioaModer = UnsafeMutablePointer<UInt32>(bitPattern: UInt(gpioaBase + 0x00))!
-private let gpioaAfrh = UnsafeMutablePointer<UInt32>(bitPattern: UInt(gpioaBase + 0x24))!
+// Accessed through GPIORegisters.swift's swift-mmio GPIOPort block.
+private let gpioa = GPIOPort(unsafeAddress: 0x4800_0000)
 
-// RCC: base AHB4PERIPH_BASE (0x5800_0000) — same base ports/stm32wb/ClockInit.swift
-// already uses (that file's own `rccBase`/`rccApb1Enr1` are file-private,
-// so redeclared here). AHB2ENR (GPIOA clock gate) lives at offset 0x4C,
-// confirmed via stm32wb55xx.h's RCC_TypeDef (`AHB2ENR`, "Address offset:
-// 0x4C"); APB1ENR1 (USB peripheral clock gate) at offset 0x58, matching
-// ClockInit.swift's own CRSEN use of the same register.
-private let rccBase: UInt32 = 0x5800_0000
-private let rccAhb2Enr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(rccBase + 0x4C))!
-private let rccApb1Enr1 = UnsafeMutablePointer<UInt32>(bitPattern: UInt(rccBase + 0x58))!
-private let rccAhb2EnrGpioaEn: UInt32 = 1 << 0 // RCC_AHB2ENR_GPIOAEN_Pos, confirmed in stm32wb55xx.h
-private let rccApb1Enr1UsbEn: UInt32 = 1 << 26 // RCC_APB1ENR1_USBEN_Pos, confirmed in stm32wb55xx.h
+// RCC: the shared swift-mmio `rcc` block declared in ClockInit.swift (base
+// AHB4PERIPH_BASE, 0x5800_0000). AHB2ENR (GPIOA clock gate) lives at offset
+// 0x4C, confirmed via stm32wb55xx.h's RCC_TypeDef (`AHB2ENR`, "Address
+// offset: 0x4C"), GPIOAEN bit 0 (RCC_AHB2ENR_GPIOAEN_Pos); APB1ENR1 (USB
+// peripheral clock gate) at offset 0x58, USBEN bit 26
+// (RCC_APB1ENR1_USBEN_Pos), matching ClockInit.swift's own CRSEN use of the
+// same register.
 
-// PWR: base AHB4PERIPH_BASE + 0x400 (same base ports/stm32wb/ClockInit.swift
-// uses; its own pwrBase is file-private, so redeclared here). CR2 is at
-// offset 0x04 — confirmed by reading cmsis-device-wb's stm32wb55xx.h
+// PWR: the shared swift-mmio `pwr` block declared in ClockInit.swift (base
+// AHB4PERIPH_BASE + 0x400). CR2 is at offset 0x04 — confirmed by reading cmsis-device-wb's stm32wb55xx.h
 // PWR_TypeDef directly (`CR1` 0x00, `CR2` 0x04, `CR3` 0x08, `CR4` 0x0C,
 // `SR1` 0x10, `SR2` 0x14), NOT assumed.
 //
@@ -43,9 +37,6 @@ private let rccApb1Enr1UsbEn: UInt32 = 1 << 26 // RCC_APB1ENR1_USBEN_Pos, confir
 // P-NUCLEO-WB55.Nucleo USB_Device examples set it (HAL_PWREx_EnableVddUSB())
 // before starting the device stack. A build-only pass cannot catch this;
 // it shows up only as "nothing appears on the host" on real hardware.
-private let pwrBase: UInt32 = 0x5800_0400
-private let pwrCr2 = UnsafeMutablePointer<UInt32>(bitPattern: UInt(pwrBase + 0x04))!
-private let pwrCr2Usv: UInt32 = 1 << 10
 
 private let afAlternateFunctionMode: UInt32 = 0b10
 private let af10: UInt32 = 0b1010 // GPIO_AF10_USB, confirmed against ST's own P-NUCLEO-WB55.Nucleo HID_Standalone example (usbd_conf.c's HAL_PCD_MspInit)
@@ -66,20 +57,20 @@ private let af10: UInt32 = 0b1010 // GPIO_AF10_USB, confirmed against ST's own P
 // ports/stm32wb/ClockInit.swift's smk_clock_init(), called before
 // app_main_swift() — not redone here.
 private func enableUsbClockAndPins() {
-    rccAhb2Enr.pointee |= rccAhb2EnrGpioaEn
-    rccApb1Enr1.pointee |= rccApb1Enr1UsbEn
+    rcc.ahb2enr.modify { $0.gpioaen = true }
+    rcc.apb1enr1.modify { $0.usben = true }
 
     // Validate the USB supply (VDDUSB) — resets to isolated, see above.
-    pwrCr2.pointee |= pwrCr2Usv
+    pwr.cr2.modify { $0.usv = true }
 
     // PA11 = USB_DM, PA12 = USB_DP, both alternate-function mode, AF10.
     let moderMask: UInt32 = (0b11 << 22) | (0b11 << 24)
     let moderValue: UInt32 = (afAlternateFunctionMode << 22) | (afAlternateFunctionMode << 24)
-    gpioaModer.pointee = (gpioaModer.pointee & ~moderMask) | moderValue
+    gpioa.moder.modify { $0.value = ($0.value & ~moderMask) | moderValue }
 
     let afrhMask: UInt32 = (0b1111 << 12) | (0b1111 << 16)
     let afrhValue: UInt32 = (af10 << 12) | (af10 << 16)
-    gpioaAfrh.pointee = (gpioaAfrh.pointee & ~afrhMask) | afrhValue
+    gpioa.afrh.modify { $0.value = ($0.value & ~afrhMask) | afrhValue }
 }
 
 @_extern(c, "tusb_rhport_init")
