@@ -52,8 +52,16 @@ struct KeyMatrix {
                 // Drive the column HIGH to activate it
                 gpio.outSet = UInt32(1 << cPin)
 
-                // Brief pause for electrical stabilization
-                for _ in 0...50 { }
+                // Settle time after strobing: re-read the input register.
+                // Each read is a real bus access (swift-mmio volatile), so
+                // unlike the empty `for _ in 0...50 {}` this replaced, which
+                // LLVM deleted outright, it cannot be optimised away.
+                // How long 50 reads take varies ~25x across targets. The
+                // shortest is ~0.4 µs on RP2040 (single-cycle SIO loads,
+                // unrolled, 125 MHz) and ~0.33 µs on RP2350 (150 MHz). The
+                // longest is ~8 µs on STM32WB (32 MHz SYSCLK, ~5 cycles per
+                // ldr/subs/bne iteration).
+                for _ in 0..<50 { _ = gpio.input }
 
                 let inputState = gpio.input
 
@@ -72,8 +80,8 @@ struct KeyMatrix {
                 // Pull row LOW to activate it
                 gpio.outClear = UInt32(1 << rPin)
 
-                // Brief pause for electrical stabilization
-                for _ in 0...50 { }
+                // Settle time: see the colsAreDriven branch above.
+                for _ in 0..<50 { _ = gpio.input }
 
                 let inputState = gpio.input
 
