@@ -84,18 +84,32 @@ func MPSL_IRQ_TIMER0_Handler()
 // the only case this glue ever calls (radioIRQn=1, mpslLowPrioIRQn=20);
 // __NVIC_SetPriority's negative-IRQn (system exception, via SCB->SHP)
 // branch is intentionally not ported since nothing here needs it.
-private let nvicISER0 = UnsafeMutablePointer<UInt32>(bitPattern: UInt(0xE000_E100 as UInt32))!
-private let nvicIPBase = UnsafeMutablePointer<UInt8>(bitPattern: UInt(0xE000_E400 as UInt32))!
+//
+// Registers are swift-mmio (volatile) accesses at the same widths the
+// old `.pointee` code used: ISER is a 32-bit word store, IP a single byte
+// store (a wider store would also overwrite neighbouring IRQs' priorities).
+@Register(bitWidth: 8)
+struct NVICPriorityByte {
+    @ReadWrite(bits: 0..<8, as: UInt8.self) var value: VALUE
+}
+
+@RegisterBlock
+struct NVICBlock {
+    @RegisterBlock(offset: 0x000, stride: 4, count: 8) var iser: RegisterArray<GPIOWord>
+    @RegisterBlock(offset: 0x300, stride: 1, count: 240) var ip: RegisterArray<NVICPriorityByte>
+}
+
+private let nvic = NVICBlock(unsafeAddress: 0xE000_E100)
 
 private func nvicEnableIRQ(_ irqn: Int32) {
     guard irqn >= 0 else { return }
     let n = UInt32(irqn)
-    nvicISER0.advanced(by: Int(n >> 5)).pointee = UInt32(1) << (n & 0x1F)
+    nvic.iser[n >> 5].write { $0.value = UInt32(1) << (n & 0x1F) }
 }
 
 private func nvicSetPriority(_ irqn: Int32, _ priority: UInt32) {
     guard irqn >= 0 else { return }
-    nvicIPBase.advanced(by: Int(irqn)).pointee = UInt8(truncatingIfNeeded: priority << (8 - 3))
+    nvic.ip[irqn].write { $0.value = UInt8(truncatingIfNeeded: priority << (8 - 3)) }
 }
 
 @c
@@ -141,18 +155,34 @@ func smk_mpsl_assert_handler(_ file: UnsafePointer<CChar>?, _ line: UInt32) {
 // etc.) on this same register. INTENSET on nRF52 is write-1-to-set /
 // write-0-is-no-op (never a plain read-modify-write), so ORing in just
 // the USB bits below cannot clobber MPSL's bits regardless of init order.
-private let powerBase = UnsafeMutablePointer<UInt32>(bitPattern: UInt(0x4000_0000 as UInt32))!
-private let powerEventsUSBDetected = powerBase.advanced(by: 0x11C / 4)
-private let powerEventsUSBRemoved = powerBase.advanced(by: 0x120 / 4)
-private let powerEventsUSBPwrRdy = powerBase.advanced(by: 0x124 / 4)
-private let powerIntenSet = powerBase.advanced(by: 0x304 / 4)
-private let powerUSBRegStatus = powerBase.advanced(by: 0x438 / 4)
+// (swift-mmio's `write { }` starts from an all-zero word, so setting the
+// three fields below stores exactly bits 7|8|9, as the old code did.)
 
-private let powerIntenUSBDetectedMsk: UInt32 = 1 << 7
-private let powerIntenUSBRemovedMsk: UInt32 = 1 << 8
-private let powerIntenUSBPwrRdyMsk: UInt32 = 1 << 9
-private let powerUSBRegVbusDetectMsk: UInt32 = 1 << 0
-private let powerUSBRegOutputRdyMsk: UInt32 = 1 << 1
+// INTENSET: only the three USB event bits this file touches are modelled.
+@Register(bitWidth: 32)
+struct PowerIntenSet {
+    @ReadWrite(bits: 7..<8, as: Bool.self) var usbdetected: USBDETECTED
+    @ReadWrite(bits: 8..<9, as: Bool.self) var usbremoved: USBREMOVED
+    @ReadWrite(bits: 9..<10, as: Bool.self) var usbpwrrdy: USBPWRRDY
+}
+
+// USBREGSTATUS: VBUSDETECT = bit 0, OUTPUTRDY = bit 1.
+@Register(bitWidth: 32)
+struct PowerUSBRegStatus {
+    @ReadOnly(bits: 0..<1, as: Bool.self) var vbusdetect: VBUSDETECT
+    @ReadOnly(bits: 1..<2, as: Bool.self) var outputrdy: OUTPUTRDY
+}
+
+@RegisterBlock
+struct PowerBlock {
+    @RegisterBlock(offset: 0x11C) var eventsUSBDetected: Register<GPIOWord>
+    @RegisterBlock(offset: 0x120) var eventsUSBRemoved: Register<GPIOWord>
+    @RegisterBlock(offset: 0x124) var eventsUSBPwrRdy: Register<GPIOWord>
+    @RegisterBlock(offset: 0x304) var intenset: Register<PowerIntenSet>
+    @RegisterBlock(offset: 0x438) var usbregstatus: Register<PowerUSBRegStatus>
+}
+
+private let power = PowerBlock(unsafeAddress: 0x4000_0000)
 
 // dcd_nrf5x.c's tusb_hal_nrf_power_event event codes (see comment above).
 private let usbEvtDetected: UInt32 = 0
@@ -171,13 +201,17 @@ func tusb_hal_nrf_power_event(_ event: UInt32)
 // before UsbHid.swift's init_wired_link() / tusb_rhport_init()) — same
 // ordering as family.c's board_init() running before tusb_init().
 private func smkUsbPowerInit() {
-    powerIntenSet.pointee = powerIntenUSBDetectedMsk | powerIntenUSBRemovedMsk | powerIntenUSBPwrRdyMsk
+    power.intenset.write {
+        $0.usbdetected = true
+        $0.usbremoved = true
+        $0.usbpwrrdy = true
+    }
 
-    let status = powerUSBRegStatus.pointee
-    if status & powerUSBRegVbusDetectMsk != 0 {
+    let status = power.usbregstatus.read()
+    if status.vbusdetect {
         tusb_hal_nrf_power_event(usbEvtDetected)
     }
-    if status & powerUSBRegOutputRdyMsk != 0 {
+    if status.outputrdy {
         tusb_hal_nrf_power_event(usbEvtReady)
     }
 }
@@ -256,16 +290,16 @@ func TIMER0_IRQHandler() {
 func POWER_CLOCK_IRQHandler() {
     MPSL_IRQ_CLOCK_Handler()
 
-    if powerEventsUSBDetected.pointee != 0 {
-        powerEventsUSBDetected.pointee = 0 // write 0 clears an EVENTS_ register on nRF52
+    if power.eventsUSBDetected.read().value != 0 {
+        power.eventsUSBDetected.write { $0.value = 0 } // write 0 clears an EVENTS_ register on nRF52
         tusb_hal_nrf_power_event(usbEvtDetected)
     }
-    if powerEventsUSBRemoved.pointee != 0 {
-        powerEventsUSBRemoved.pointee = 0
+    if power.eventsUSBRemoved.read().value != 0 {
+        power.eventsUSBRemoved.write { $0.value = 0 }
         tusb_hal_nrf_power_event(usbEvtRemoved)
     }
-    if powerEventsUSBPwrRdy.pointee != 0 {
-        powerEventsUSBPwrRdy.pointee = 0
+    if power.eventsUSBPwrRdy.read().value != 0 {
+        power.eventsUSBPwrRdy.write { $0.value = 0 }
         tusb_hal_nrf_power_event(usbEvtReady)
     }
 }

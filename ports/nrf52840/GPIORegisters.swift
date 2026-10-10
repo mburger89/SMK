@@ -13,6 +13,8 @@
 //   0x508  OUTSET   (atomic set bits)   -> word index 322
 //   0x50C  OUTCLR   (atomic clear bits) -> word index 323
 //   0x510  IN       (read)              -> word index 324
+//   0x700  PIN_CNF[0..31] (one 32-bit word per pin, stride 4) — written
+//          by GPIOInit.swift
 //
 // Accesses go through swift-mmio (third_party/swift-mmio, compiled flat
 // into this target — see cmake/SwiftMMIO.cmake), so every read/write is a
@@ -25,6 +27,7 @@ struct GPIOPort {
     @RegisterBlock(offset: 0x508) var outset: Register<GPIOWord>
     @RegisterBlock(offset: 0x50C) var outclr: Register<GPIOWord>
     @RegisterBlock(offset: 0x510) var input: Register<GPIOWord>
+    @RegisterBlock(offset: 0x700, stride: 4, count: 32) var pinCnf: RegisterArray<GPIOWord>
 }
 
 // One whole 32-bit word: the matrix code works in raw pin bitmasks, so no

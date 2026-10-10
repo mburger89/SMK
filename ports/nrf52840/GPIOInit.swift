@@ -2,17 +2,17 @@
 // Sources/smk/GPIOInit.swift (ESP32-C6) and
 // ports/rp2040/GPIOInit.swift (RP2040, also plain Swift now). Plain Swift
 // here: PIN_CNF is a raw register, so there's no vendor driver call to
-// wrap via @_extern(c) the way ESP32-C6's version needs — just direct
-// UnsafeMutablePointer writes, same style GPIORegisters.swift already
-// uses for the scan loop itself.
+// wrap via @_extern(c) the way ESP32-C6's version needs — just swift-mmio
+// writes to GPIORegisters.swift's `pinCnf` RegisterArray (P0 + 0x700, one
+// 32-bit word per pin, stride 4), the same register block the scan loop
+// uses. The array subscript traps on a pin outside 0-31 instead of writing
+// past PIN_CNF[31] the way the old pointer arithmetic would have.
 //
 // Register offsets verified against Nordic's nRF52840 Product
 // Specification during this port's feasibility spike:
 // docs/superpowers/specs/2026-08-09-nrf52840-support-design.md.
-private let pinCnfBase: UInt32 = UInt32(GPIORegisters.base) + 0x700
-
-private func pinCnfAddress(_ pin: Int32) -> UnsafeMutablePointer<UInt32> {
-    UnsafeMutablePointer<UInt32>(bitPattern: UInt(pinCnfBase + UInt32(pin) * 4))!
+private func writePinCnf(_ pin: Int32, _ value: UInt32) {
+    gpio.port.pinCnf[pin].write { $0.value = value }
 }
 
 private let pinCnfDirInput: UInt32 = 0 << 0
@@ -31,24 +31,24 @@ func init_keyboard_pins(_ rows: UnsafePointer<Int32>, _ rowCount: Int32, _ cols:
     if colsAreDriven != 0 {
         // Rows: inputs with pull-downs (sense lines)
         for i in 0..<Int(rowCount) {
-            pinCnfAddress(rows[i]).pointee = pinCnfDirInput | pinCnfInputConnect | pinCnfPullDown | pinCnfDriveS0S1
+            writePinCnf(rows[i], pinCnfDirInput | pinCnfInputConnect | pinCnfPullDown | pinCnfDriveS0S1)
         }
         // Columns: push-pull outputs, idle LOW (strobe lines)
         for i in 0..<Int(colCount) {
             let pin = cols[i]
-            pinCnfAddress(pin).pointee = pinCnfDirOutput | pinCnfInputDisconnect | pinCnfPullDisabled | pinCnfDriveS0S1
+            writePinCnf(pin, pinCnfDirOutput | pinCnfInputDisconnect | pinCnfPullDisabled | pinCnfDriveS0S1)
             gpio.outClear = UInt32(1 << pin)
         }
     } else {
         // Rows: push-pull outputs, idle HIGH (strobe lines)
         for i in 0..<Int(rowCount) {
             let pin = rows[i]
-            pinCnfAddress(pin).pointee = pinCnfDirOutput | pinCnfInputDisconnect | pinCnfPullDisabled | pinCnfDriveS0S1
+            writePinCnf(pin, pinCnfDirOutput | pinCnfInputDisconnect | pinCnfPullDisabled | pinCnfDriveS0S1)
             gpio.outSet = UInt32(1 << pin)
         }
         // Columns: inputs with pull-ups (sense lines) — key press pulls to GND
         for i in 0..<Int(colCount) {
-            pinCnfAddress(cols[i]).pointee = pinCnfDirInput | pinCnfInputConnect | pinCnfPullUp | pinCnfDriveS0S1
+            writePinCnf(cols[i], pinCnfDirInput | pinCnfInputConnect | pinCnfPullUp | pinCnfDriveS0S1)
         }
     }
 }
