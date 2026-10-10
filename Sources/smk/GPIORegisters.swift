@@ -1,27 +1,58 @@
+// ESP32-C6 GPIO register access.
+//
+// GPIO base address: 0x6009_1000
+//   0x04  GPIO_OUT_W1TS_REG (write 1 = set that output bit)
+//   0x08  GPIO_OUT_W1TC_REG (write 1 = clear that output bit)
+//   0x3C  GPIO_IN_REG       (read: current input level, bit == GPIO number)
+//
+// Accesses go through swift-mmio (third_party/swift-mmio, compiled flat
+// into this target — see cmake/SwiftMMIO.cmake), so every read/write is a
+// real volatile load/store. The previous `.pointee` version was not: LLVM
+// was free to hoist, merge or delete those accesses (see CLAUDE.md's
+// register-polling note).
+
+@RegisterBlock
+struct ESPGPIO {
+    @RegisterBlock(offset: 0x04) var outW1TS: Register<GPIOWord>
+    @RegisterBlock(offset: 0x08) var outW1TC: Register<GPIOWord>
+    @RegisterBlock(offset: 0x3C) var input: Register<GPIOWord>
+}
+
+// One whole 32-bit word: the matrix code works in raw pin bitmasks, so no
+// per-pin bit fields are modelled.
+@Register(bitWidth: 32)
+struct GPIOWord {
+    @ReadWrite(bits: 0..<32, as: UInt32.self) var value: VALUE
+}
+
 struct GPIORegisters {
-    let baseAddress: UnsafeMutablePointer<UInt32>
+    static let base: UInt = 0x60091000
 
-    init(address: UInt32) {
-        self.baseAddress = UnsafeMutablePointer<UInt32>(bitPattern: UInt(address))!
+    let regs: ESPGPIO
+
+    init(address: UInt) {
+        self.regs = ESPGPIO(unsafeAddress: address)
     }
 
-    // Offset 0x0004: GPIO_OUT_W1TS_REG (Set bits)
+    // Offset 0x0004: GPIO_OUT_W1TS_REG (Set bits). The getter reads the same
+    // register, exactly as the previous `.pointee` version did.
     var outSet: UInt32 {
-        get { baseAddress.advanced(by: 1).pointee }
-        nonmutating set { baseAddress.advanced(by: 1).pointee = newValue }
+        get { regs.outW1TS.read().value }
+        nonmutating set { regs.outW1TS.write { $0.value = newValue } }
     }
-    
-    // Offset 0x0008: GPIO_OUT_W1TC_REG (Clear bits)
+
+    // Offset 0x0008: GPIO_OUT_W1TC_REG (Clear bits). Getter reads the same
+    // register, as before.
     var outClear: UInt32 {
-        get { baseAddress.advanced(by: 2).pointee }
-        nonmutating set { baseAddress.advanced(by: 2).pointee = newValue }
+        get { regs.outW1TC.read().value }
+        nonmutating set { regs.outW1TC.write { $0.value = newValue } }
     }
-    
+
     // Offset 0x003C: GPIO_IN_REG (Read data)
     var input: UInt32 {
-        get { baseAddress.advanced(by: 15).pointee }
+        get { regs.input.read().value }
     }
 }
 
 // Instantiate the bank at the correct memory address for ESP32-C6 GPIO
-let gpio = GPIORegisters(address: 0x60091000)
+let gpio = GPIORegisters(address: GPIORegisters.base)
