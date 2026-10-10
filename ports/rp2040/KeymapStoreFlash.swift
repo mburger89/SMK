@@ -70,12 +70,14 @@ private func flashOffset() -> UInt32 {
 private var stage = [UInt8](repeating: 0, count: smkKeymapFrameLen)
 private var stageTotalLen: UInt16 = 0
 
-// UnsafePointer<UInt8>(bitPattern:) against a raw XIP address: this is the
-// same pattern ports/rp2040/GPIORegisters.swift already uses (and has
-// running on real hardware) for the SIO MMIO block at a hardcoded
-// 0xD0000000 address — memory-mapped reads through a bitPattern-constructed
-// pointer are already proven to work on this target, not something new
-// introduced here.
+// UnsafePointer<UInt8>(bitPattern:) against a raw XIP address, deliberately
+// NOT a swift-mmio register (unlike ports/rp2040/GPIORegisters.swift's SIO
+// block). This points at flash *contents* through the XIP window — plain
+// memory data reads with no side effects, not a peripheral register — so
+// ordinary (non-volatile) loads are correct and LLVM is free to optimise
+// them. This is the only bitPattern: pointer in this file; it has no
+// genuine peripheral registers to convert (flash erase/program go through
+// pico-sdk's flash_range_erase/flash_range_program C calls).
 private func flashFramePointer() -> UnsafePointer<UInt8> {
     UnsafePointer<UInt8>(bitPattern: UInt(xipBase) + UInt(flashOffset()))!
 }
