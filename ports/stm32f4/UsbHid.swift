@@ -7,14 +7,9 @@
 // already established (and verified against the vendored source) the real
 // exported equivalents used below.
 
-private let gpioaBase: UInt32 = 0x40020000
-private let gpioaModer = UnsafeMutablePointer<UInt32>(bitPattern: UInt(gpioaBase + 0x00))!
-private let gpioaAfrh = UnsafeMutablePointer<UInt32>(bitPattern: UInt(gpioaBase + 0x24))!
-
-private let rccAhb1Enr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(0x40023800 + 0x30))!
-private let rccAhb2Enr = UnsafeMutablePointer<UInt32>(bitPattern: UInt(0x40023800 + 0x34))!
-private let rccAhb1EnrGpioaEn: UInt32 = 1 << 0
-private let rccAhb2EnrOtgfsEn: UInt32 = 1 << 7
+// GPIOA (base 0x4002_0000) through GPIOInit.swift's GPIOConfigPort; RCC
+// through ClockInit.swift's RCCBlock. All accesses are swift-mmio (volatile).
+private let gpioaConfig = GPIOConfigPort(unsafeAddress: 0x40020000)
 
 private let afAlternateFunctionMode: UInt32 = 0b10
 private let af10: UInt32 = 0b1010
@@ -25,17 +20,17 @@ private let af10: UInt32 = 0b1010
 // that vendored header during this plan's research). Must run before
 // init_wired_link() below.
 private func enableUsbClockAndPins() {
-    rccAhb1Enr.pointee |= rccAhb1EnrGpioaEn
-    rccAhb2Enr.pointee |= rccAhb2EnrOtgfsEn
+    rcc.ahb1enr.modify { $0.gpioaen = true }
+    rcc.ahb2enr.modify { $0.otgfsen = true }
 
     // PA11 = D-, PA12 = D+, both alternate-function mode, AF10 (OTG_FS).
     let moderMask: UInt32 = (0b11 << 22) | (0b11 << 24)
     let moderValue: UInt32 = (afAlternateFunctionMode << 22) | (afAlternateFunctionMode << 24)
-    gpioaModer.pointee = (gpioaModer.pointee & ~moderMask) | moderValue
+    gpioaConfig.moder.modify { $0.value = ($0.value & ~moderMask) | moderValue }
 
     let afrhMask: UInt32 = (0b1111 << 12) | (0b1111 << 16)
     let afrhValue: UInt32 = (af10 << 12) | (af10 << 16)
-    gpioaAfrh.pointee = (gpioaAfrh.pointee & ~afrhMask) | afrhValue
+    gpioaConfig.afrh.modify { $0.value = ($0.value & ~afrhMask) | afrhValue }
 }
 
 @_extern(c, "tusb_rhport_init")
