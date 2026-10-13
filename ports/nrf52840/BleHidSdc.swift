@@ -157,7 +157,7 @@ private var sdcRandSource = SdcRandSource(randPoll: smk_sdc_rand_poll)
 
 // HCI_MSG_BUFFER_MAX_SIZE (sdc_hci.h): HCI_CMD_MAX_SIZE(255) +
 // HCI_CMD_HEADER_SIZE(3) = 258.
-private var sdcMsgBuf = [UInt8](repeating: 0, count: 258)
+private var sdcMsgBuf = InlineArray<258, UInt8>(repeating: 0)
 
 // Drains any pending event/data from SDC and forwards it to BTstack — the
 // "read" half of this transport (send_packet above is the "write" half).
@@ -172,7 +172,8 @@ private var sdcMsgBuf = [UInt8](repeating: 0, count: 258)
 // original's git history for the full analysis.
 @c
 func sdc_transport_poll() {
-    sdcMsgBuf.withUnsafeMutableBufferPointer { buf in
+    var msgSpan = sdcMsgBuf.mutableSpan
+    msgSpan.withUnsafeMutableBufferPointer { buf in
         let base = buf.baseAddress!
         var msgType: UInt8 = 0 // zero-init: cheap insurance for the enum-width hazard
         while hci_internal_msg_get(base, &msgType) == 0 {

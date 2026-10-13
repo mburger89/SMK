@@ -145,7 +145,9 @@ func send_wired_report(_ modifier: UInt8, _ keys: UnsafePointer<UInt8>) {
 // TEMPORARY bring-up probe: exercises the Swift heap (array allocation)
 // and String→C-string conversion — the exact machinery the first kb_log()
 // call in app_main_swift needs — in isolation, between LED markers in
-// platform_glue.c's main(). Remove once USB enumeration works.
+// platform_glue.c's main(). Remove once USB enumeration works. The heap
+// array below is the point of the probe, so it is deliberately not an
+// InlineArray.
 @c
 func smk_debug_probe() -> Int32 {
     var arr = [UInt8](repeating: 0, count: 64)

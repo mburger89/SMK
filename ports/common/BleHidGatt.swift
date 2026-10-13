@@ -174,13 +174,13 @@ private var smEventCallbackRegistration = BtstackPacketCallbackRegistration()
 private let battery: UInt8 = 100
 private var conHandle: UInt16 = hciConHandleInvalid
 private var protocolMode: UInt8 = 1
-private var pendingReport = [UInt8](repeating: 0, count: 8)
+private var pendingReport = InlineArray<8, UInt8>(repeating: 0)
 private var reportDirty = false
 
 private func sendPending() {
     guard conHandle != hciConHandleInvalid else { return }
     reportDirty = false
-    pendingReport.withUnsafeBufferPointer { _ = hids_device_send_input_report(conHandle, $0.baseAddress!, 8) }
+    pendingReport.span.withUnsafeBufferPointer { _ = hids_device_send_input_report(conHandle, $0.baseAddress!, 8) }
 }
 
 // hci_event_packet_get_type / hci_event_hids_meta_get_subevent_code /
@@ -258,8 +258,8 @@ func smk_ble_hid_gatt_setup() {
     // gap_advertisements_set_params's direct_address is memcpy'd into
     // hci_stack's own storage synchronously — BTstack does NOT retain this
     // pointer, so a withUnsafeBufferPointer-scoped one is fine here.
-    let nullAddr = [UInt8](repeating: 0, count: 6)
-    nullAddr.withUnsafeBufferPointer { addrPtr in
+    let nullAddr = InlineArray<6, UInt8>(repeating: 0)
+    nullAddr.span.withUnsafeBufferPointer { addrPtr in
         gap_advertisements_set_params(0x0030, 0x0030, 0, 0, addrPtr.baseAddress!, 0x07, 0x00)
     }
     // gap_advertisements_set_data stores this pointer long-term too — must
