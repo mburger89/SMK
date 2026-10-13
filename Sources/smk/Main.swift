@@ -373,13 +373,11 @@ func app_main_swift() {
         // iPhone: thousands of identical notify procedures), wasting
         // airtime and battery on every target.
         if report != lastSentReport || currentMode != lastSentMode {
-            report.keys.withUnsafeBufferPointer { ptr in
-                if let base = ptr.baseAddress {
-                    if currentMode == .bluetooth {
-                        send_keyboard_report(report.modifier, base)
-                    } else {
-                        send_wired_report(report.modifier, base)
-                    }
+            report.withKeyBytes { base in
+                if currentMode == .bluetooth {
+                    send_keyboard_report(report.modifier, base)
+                } else {
+                    send_wired_report(report.modifier, base)
                 }
             }
             lastSentReport = report

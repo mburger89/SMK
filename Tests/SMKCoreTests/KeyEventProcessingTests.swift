@@ -17,7 +17,7 @@ import Testing
         currentMode: &currentMode
     )
 
-    #expect(result.report.keys == [KeyCode.a.rawValue, 0, 0, 0, 0, 0])
+    #expect(result.report.withKeyBytes { p in (0..<6).map { p[$0] } } == [KeyCode.a.rawValue, 0, 0, 0, 0, 0])
     #expect(result.transitions == [KeyTransition(position: KeyPosition(row: 0, col: 0), pressed: true)])
 }
 
@@ -39,7 +39,7 @@ import Testing
 
     #expect(pressedActions == [.none])
     #expect(result.transitions == [KeyTransition(position: KeyPosition(row: 0, col: 0), pressed: false)])
-    #expect(result.report.keys == [0, 0, 0, 0, 0, 0])
+    #expect(result.report.withKeyBytes { p in (0..<6).map { p[$0] } } == [0, 0, 0, 0, 0, 0])
 }
 
 @Test func keyEventProcessingMomentaryLayerActivatesWhileHeld() {
@@ -127,7 +127,7 @@ import Testing
     )
 
     #expect(result.report.modifier == Modifier.leftShift.rawValue)
-    #expect(result.report.keys == [KeyCode.a.rawValue, 0, 0, 0, 0, 0])
+    #expect(result.report.withKeyBytes { p in (0..<6).map { p[$0] } } == [KeyCode.a.rawValue, 0, 0, 0, 0, 0])
 }
 
 @Test func keyEventProcessingCapturesModeAtEachToggleInstantWhenTwoKeysToggleInOneCycle() {
