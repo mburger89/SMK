@@ -163,14 +163,15 @@ func bleHiddEventCallback(_ handlerArgs: UnsafeMutableRawPointer?, _ base: Unsaf
 
 func send_keyboard_report(_ modifier: UInt8, _ keycodes: UnsafePointer<UInt8>) {
     guard let dev = hidDev, esp_hidd_dev_connected(dev) else { return }
-    var report = [UInt8](repeating: 0, count: 8)
+    var report = InlineArray<8, UInt8>(repeating: 0)
     report[0] = modifier
     // report[1] stays 0 (Reserved byte).
     for i in 0..<6 { report[2 + i] = keycodes[i] }
     // Map index 0, Report ID 1 (matches hidReportMapBytes above). Mutable
     // buffer pointer: esp_hidd_dev_input_set's real imported signature
     // takes non-const `uint8_t *data`.
-    _ = report.withUnsafeMutableBufferPointer { esp_hidd_dev_input_set(dev, 0, 1, $0.baseAddress!, 8) }
+    var ms = report.mutableSpan
+    _ = ms.withUnsafeMutableBufferPointer { esp_hidd_dev_input_set(dev, 0, 1, $0.baseAddress!, 8) }
 }
 
 // Reports a 0-100 battery level via the standard BLE Battery Service —
@@ -214,22 +215,24 @@ private func smkUploadAccessCb(_ connHandle: UInt16, _ attrHandle: UInt16, _ ctx
         return Int32(BLE_ATT_ERR_UNLIKELY)
     }
 
-    var packet = [UInt8](repeating: 0, count: smkUploadPacketLen)
+    var packet = InlineArray<32, UInt8>(repeating: 0) // smkUploadPacketLen
     var len: UInt16 = 0
-    let flatOk = packet.withUnsafeMutableBufferPointer { buf in
+    var packetSpan = packet.mutableSpan
+    let flatOk = packetSpan.withUnsafeMutableBufferPointer { buf in
         ble_hs_mbuf_to_flat(ctxt.pointee.om, buf.baseAddress!, UInt16(buf.count), &len) == 0
     }
     guard flatOk else { return Int32(BLE_ATT_ERR_UNLIKELY) }
     guard len == UInt16(smkUploadPacketLen) else { return Int32(BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN) }
 
-    var response = [UInt8](repeating: 0, count: smkUploadPacketLen)
-    packet.withUnsafeBufferPointer { pkt in
-        response.withUnsafeMutableBufferPointer { resp in
+    var response = InlineArray<32, UInt8>(repeating: 0) // smkUploadPacketLen
+    var responseSpan = response.mutableSpan
+    packet.span.withUnsafeBufferPointer { pkt in
+        responseSpan.withUnsafeMutableBufferPointer { resp in
             smk_keymap_dispatch_packet(pkt.baseAddress!, resp.baseAddress!)
         }
     }
 
-    let om = response.withUnsafeBufferPointer { resp in
+    let om = response.span.withUnsafeBufferPointer { resp in
         ble_hs_mbuf_from_flat(resp.baseAddress!, UInt16(resp.count))
     }
     guard let om else { return Int32(BLE_ATT_ERR_INSUFFICIENT_RES) }

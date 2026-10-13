@@ -133,20 +133,20 @@ func init_wired_link() {
 // [0-1] Header 0x57 0xAB, [2] ID 0x01 (Keyboard), [3-10] 8-byte HID report,
 // [11] Checksum (sum of ID + 8 data bytes, low 8 bits).
 func send_wired_report(_ modifier: UInt8, _ keys: UnsafePointer<UInt8>) {
-    var frame = [UInt8](repeating: 0, count: 12)
+    var frame = InlineArray<12, UInt8>(repeating: 0)
     frame[0] = 0x57
     frame[1] = 0xAB
     frame[2] = 0x01
 
-    var hidReport = [UInt8](repeating: 0, count: 8)
+    var hidReport = InlineArray<8, UInt8>(repeating: 0)
     hidReport[0] = modifier
     for i in 0..<6 { hidReport[2 + i] = keys[i] }
 
     for i in 0..<8 { frame[3 + i] = hidReport[i] }
 
     var checksum = frame[2]
-    for b in hidReport { checksum = checksum &+ b }
+    for i in 0..<8 { checksum = checksum &+ hidReport[i] }
     frame[11] = checksum
 
-    _ = frame.withUnsafeBufferPointer { uart_write_bytes(uartNum1, $0.baseAddress!, 12) }
+    _ = frame.span.withUnsafeBufferPointer { uart_write_bytes(uartNum1, $0.baseAddress!, 12) }
 }
