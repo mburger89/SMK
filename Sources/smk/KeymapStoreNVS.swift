@@ -37,13 +37,13 @@ func smk_keymap_load(_ buf: UnsafeMutablePointer<UInt8>, _ bufSize: UInt32) -> I
         return -1
     }
 
-    guard let jsonLen = frame.withUnsafeBufferPointer({ smkKeymapFrameValidate($0.baseAddress!, frameLen: frameLen) }) else {
+    guard let payloadLen = smkKeymapFrameValidate(frame.span.extracting(0..<frameLen)) else {
         return -1
     }
-    guard jsonLen + 1 <= Int(bufSize) else { return -1 }
+    guard payloadLen + 1 <= Int(bufSize) else { return -1 }
 
-    for i in 0..<jsonLen { buf[i] = frame[11 + i] }
-    return Int32(jsonLen)
+    for i in 0..<payloadLen { buf[i] = frame[11 + i] }
+    return Int32(payloadLen)
 }
 
 func smk_keymap_erase() {
@@ -61,17 +61,17 @@ func smk_keymap_begin_write(_ totalLen: UInt16) -> Int32 {
     return 0
 }
 
-func smk_keymap_write_chunk(_ offset: UInt16, _ data: UnsafePointer<UInt8>, _ len: UInt16) -> Int32 {
-    guard Int(offset) + Int(len) <= Int(stageTotalLen) else { return -1 }
-    for i in 0..<Int(len) { stage[11 + Int(offset) + i] = data[i] }
+func smk_keymap_write_chunk(_ offset: UInt16, _ data: Span<UInt8>) -> Int32 {
+    guard Int(offset) + data.count <= Int(stageTotalLen) else { return -1 }
+    for i in 0..<data.count { stage[11 + Int(offset) + i] = data[i] }
     return 0
 }
 
 func smk_keymap_commit(_ crc32: UInt32) -> Int32 {
-    let computed = stage.withUnsafeBufferPointer { smkCrc32($0.baseAddress! + 11, Int(stageTotalLen)) }
-    guard computed == crc32 else { return -1 }
+    guard smkCrc32(stage.span.extracting(11..<11 + Int(stageTotalLen))) == crc32 else { return -1 }
 
-    stage.withUnsafeMutableBufferPointer { smkKeymapFrameWriteHeader($0.baseAddress!, jsonLen: Int(stageTotalLen), crc32: crc32) }
+    var header = stage.mutableSpan
+    smkKeymapFrameWriteHeader(&header, payloadLen: Int(stageTotalLen), crc32: crc32)
 
     var handle: UInt32 = 0
     guard nvs_open("smk_kmap", NVS_READWRITE, &handle) == espOk else { return -1 }

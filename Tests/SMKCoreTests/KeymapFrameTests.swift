@@ -3,20 +3,25 @@ import Testing
 
 @Test func crc32MatchesKnownVector() {
     let bytes: [UInt8] = Array("123456789".utf8)
-    let crc = bytes.withUnsafeBufferPointer { smkCrc32($0.baseAddress!, $0.count) }
+    let crc = smkCrc32(bytes.span)
     #expect(crc == 0xCBF4_3926) // standard CRC-32 check value for "123456789"
 }
 
 @Test func frameValidateRejectsTruncatedFrame() {
     let short: [UInt8] = [0x53, 0x4D, 0x4B, 0x4D, 1, 0, 0]
-    let result = short.withUnsafeBufferPointer { smkKeymapFrameValidate($0.baseAddress!, frameLen: $0.count) }
+    let result = smkKeymapFrameValidate(short.span)
     #expect(result == nil)
+}
+
+@Test func frameShorterThanHeaderIsRejected() {
+    let short = [UInt8](repeating: 0, count: 10)
+    #expect(smkKeymapFrameValidate(short.span) == nil)
 }
 
 @Test func frameValidateRejectsBadMagic() {
     var frame = [UInt8](repeating: 0, count: 11)
     frame[0] = 0x00 // wrong magic
-    let result = frame.withUnsafeBufferPointer { smkKeymapFrameValidate($0.baseAddress!, frameLen: $0.count) }
+    let result = smkKeymapFrameValidate(frame.span)
     #expect(result == nil)
 }
 
@@ -24,39 +29,38 @@ import Testing
     var frame = [UInt8](repeating: 0, count: 11)
     frame[0] = 0x53; frame[1] = 0x4D; frame[2] = 0x4B; frame[3] = 0x4D
     frame[4] = 1 // wrong version -- version 1 was the retired JSON frame; frame format version is now 2
-    let result = frame.withUnsafeBufferPointer { smkKeymapFrameValidate($0.baseAddress!, frameLen: $0.count) }
+    let result = smkKeymapFrameValidate(frame.span)
     #expect(result == nil)
 }
 
 @Test func frameValidateRejectsJsonLenOverMax() {
     var frame = [UInt8](repeating: 0, count: 11)
     frame[0] = 0x53; frame[1] = 0x4D; frame[2] = 0x4B; frame[3] = 0x4D; frame[4] = 2
-    // jsonLen = smkKeymapMaxLen + 1, little-endian
+    // payloadLen = smkKeymapMaxLen + 1, little-endian
     let overMax = smkKeymapMaxLen + 1
     frame[5] = UInt8(overMax & 0xFF)
     frame[6] = UInt8((overMax >> 8) & 0xFF)
-    let result = frame.withUnsafeBufferPointer { smkKeymapFrameValidate($0.baseAddress!, frameLen: $0.count) }
+    let result = smkKeymapFrameValidate(frame.span)
     #expect(result == nil)
 }
 
 @Test func frameValidateRejectsCrcMismatch() {
     var frame = [UInt8](repeating: 0, count: 11 + 4)
     frame[0] = 0x53; frame[1] = 0x4D; frame[2] = 0x4B; frame[3] = 0x4D; frame[4] = 2
-    frame[5] = 4; frame[6] = 0 // jsonLen = 4
+    frame[5] = 4; frame[6] = 0 // payloadLen = 4
     // bytes 7-10 (stored CRC) left at 0 — won't match the real CRC of frame[11..<15]
     frame[11] = 0x7B; frame[12] = 0x7D // arbitrary payload bytes
-    let result = frame.withUnsafeBufferPointer { smkKeymapFrameValidate($0.baseAddress!, frameLen: $0.count) }
+    let result = smkKeymapFrameValidate(frame.span)
     #expect(result == nil)
 }
 
 @Test func crc32OfZeroLengthInputIsWellDefined() {
     // Loop body never executes for len == 0, so this reduces to the
     // initial 0xFFFFFFFF XORed with the final 0xFFFFFFFF -- i.e. 0. This
-    // asserts that fixed value rather than merely "doesn't crash". Uses a
-    // non-empty backing array (with a real baseAddress) but passes
-    // len: 0, so the pointer is never dereferenced.
+    // asserts that fixed value rather than merely "doesn't crash". Passes
+    // an empty span carved out of a non-empty array, so no byte is read.
     let bytes: [UInt8] = [0xAB]
-    let crc = bytes.withUnsafeBufferPointer { smkCrc32($0.baseAddress!, 0) }
+    let crc = smkCrc32(bytes.span.extracting(0..<0))
     #expect(crc == 0)
 }
 
@@ -64,9 +68,10 @@ import Testing
     var frame = [UInt8](repeating: 0, count: 11 + 4)
     let payload: [UInt8] = [0x7B, 0x7D, 0x00, 0x00]
     for i in 0..<4 { frame[11 + i] = payload[i] }
-    let crc = payload.withUnsafeBufferPointer { smkCrc32($0.baseAddress!, $0.count) }
-    frame.withUnsafeMutableBufferPointer { smkKeymapFrameWriteHeader($0.baseAddress!, jsonLen: 4, crc32: crc) }
-    let result = frame.withUnsafeBufferPointer { smkKeymapFrameValidate($0.baseAddress!, frameLen: $0.count) }
+    let crc = smkCrc32(payload.span)
+    var out = frame.mutableSpan
+    smkKeymapFrameWriteHeader(&out, payloadLen: 4, crc32: crc)
+    let result = smkKeymapFrameValidate(frame.span)
     #expect(result == 4)
 }
 
@@ -97,7 +102,7 @@ private func frame(payload: [UInt8], version: UInt8) -> [UInt8] {
     f.append(version)
     f.append(UInt8(payload.count & 0xFF))
     f.append(UInt8((payload.count >> 8) & 0xFF))
-    let crc = payload.withUnsafeBufferPointer { smkCrc32($0.baseAddress!, $0.count) }
+    let crc = smkCrc32(payload.span)
     f.append(UInt8(crc & 0xFF))
     f.append(UInt8((crc >> 8) & 0xFF))
     f.append(UInt8((crc >> 16) & 0xFF))
@@ -110,27 +115,21 @@ private func frame(payload: [UInt8], version: UInt8) -> [UInt8] {
     // fails a clean version check rather than being read as garbage.
     let payload = samplePayload(layerCount: 1)
     let f = frame(payload: payload, version: 1)
-    let ok = f.withUnsafeBufferPointer {
-        smkKeymapFrameValidate($0.baseAddress!, frameLen: f.count)
-    }
+    let ok = smkKeymapFrameValidate(f.span)
     #expect(ok == nil)
 }
 
 @Test func versionTwoFrameValidates() {
     let payload = samplePayload(layerCount: 1)
     let f = frame(payload: payload, version: 2)
-    let len = f.withUnsafeBufferPointer {
-        smkKeymapFrameValidate($0.baseAddress!, frameLen: f.count)
-    }
+    let len = smkKeymapFrameValidate(f.span)
     #expect(len == payload.count)
 }
 
 @Test func versionTwoFrameWithBadCrcIsRejected() {
     var f = frame(payload: samplePayload(layerCount: 1), version: 2)
     f[11] ^= 0xFF                        // corrupt the first payload byte
-    let ok = f.withUnsafeBufferPointer {
-        smkKeymapFrameValidate($0.baseAddress!, frameLen: f.count)
-    }
+    let ok = smkKeymapFrameValidate(f.span)
     #expect(ok == nil)
 }
 

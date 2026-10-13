@@ -39,15 +39,19 @@ let smkKeymapStatusErr: UInt8 = 0x01
 // with chunk_len > smkKeymapPacketLen - 4 short-circuits to result = -1
 // without ever invoking `writeChunk`.
 //
+// `packet` and `response` are spans over the transport's fixed
+// smkKeymapPacketLen-byte buffers; `writeChunk` gets a span of exactly the
+// CHUNK's data bytes, so its count *is* the chunk length.
+//
 // `caps` reports (macroBytes, macroSlots, keymapMaxLen) — the real per-port
 // values a board has for macro storage and keymap payload size, so the
 // configurator's capacity meter can show actual numbers instead of its
 // conservative floor estimate.
 func smkKeymapDispatchPacket(
-    _ packet: UnsafePointer<UInt8>,
-    _ response: UnsafeMutablePointer<UInt8>,
+    _ packet: Span<UInt8>,
+    _ response: inout MutableSpan<UInt8>,
     beginWrite: (UInt16) -> Int32,
-    writeChunk: (UInt16, UnsafePointer<UInt8>, UInt16) -> Int32,
+    writeChunk: (UInt16, Span<UInt8>) -> Int32,
     commit: (UInt32) -> Int32,
     erase: () -> Void,
     caps: () -> (macroBytes: UInt16, macroSlots: UInt8, keymapMaxLen: UInt16)
@@ -66,7 +70,7 @@ func smkKeymapDispatchPacket(
         if Int(chunkLen) > smkKeymapPacketLen - 4 {
             result = -1
         } else {
-            result = writeChunk(offset, packet + 4, UInt16(chunkLen))
+            result = writeChunk(offset, packet.extracting(4..<4 + Int(chunkLen)))
         }
     case smkKeymapOpCommit:
         let crc32 = UInt32(packet[1]) | (UInt32(packet[2]) << 8) | (UInt32(packet[3]) << 16) | (UInt32(packet[4]) << 24)
@@ -130,10 +134,15 @@ func smkKeymapRealCaps() -> (macroBytes: UInt16, macroSlots: UInt8, keymapMaxLen
 // via smk_keymap_usb_service(); ble_helper.c's BLE Report ID 2 path calls
 // it too. The `@c` boundary is real even though the dispatch logic
 // above now lives in Swift.
+//
+// Both C buffers are always smkKeymapPacketLen bytes (the transports'
+// fixed report size); the spans make that length explicit and
+// bounds-checked from here on.
 @c
 func smk_keymap_dispatch_packet(_ packet: UnsafePointer<UInt8>, _ response: UnsafeMutablePointer<UInt8>) {
+    var out = UnsafeMutableBufferPointer(start: response, count: smkKeymapPacketLen).mutableSpan
     smkKeymapDispatchPacket(
-        packet, response,
+        UnsafeBufferPointer(start: packet, count: smkKeymapPacketLen).span, &out,
         beginWrite: smk_keymap_begin_write,
         writeChunk: smk_keymap_write_chunk,
         commit: smk_keymap_commit,

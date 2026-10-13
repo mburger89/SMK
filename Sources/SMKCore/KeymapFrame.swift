@@ -27,9 +27,9 @@ private let magic2: UInt8 = 0x4B // 'K'
 private let magic3: UInt8 = 0x4D // 'M'
 private let frameVersion: UInt8 = 2
 
-public func smkCrc32(_ data: UnsafePointer<UInt8>, _ len: Int) -> UInt32 {
+public func smkCrc32(_ data: Span<UInt8>) -> UInt32 {
     var crc: UInt32 = 0xFFFF_FFFF
-    for i in 0..<len {
+    for i in 0..<data.count {
         crc ^= UInt32(data[i])
         for _ in 0..<8 {
             let mask: UInt32 = (crc & 1) == 1 ? 0xFFFF_FFFF : 0
@@ -43,33 +43,32 @@ public func smkCrc32(_ data: UnsafePointer<UInt8>, _ len: Int) -> UInt32 {
 // if the frame is malformed/corrupt (including a stale version-1 JSON
 // frame, which fails the version check on `frame[4]` and is deliberately
 // indistinguishable here from any other corruption -- both fall back to
-// the compiled default). `frame` must point to at least `frameLen`
-// readable bytes.
-public func smkKeymapFrameValidate(_ frame: UnsafePointer<UInt8>, frameLen: Int) -> Int? {
-    guard frameLen >= 11 else { return nil }
+// the compiled default). The span's count is the readable frame length;
+// the guards below keep every subscript in range, so a short or lying
+// frame is rejected rather than trapping on the span's bounds check.
+public func smkKeymapFrameValidate(_ frame: Span<UInt8>) -> Int? {
+    guard frame.count >= 11 else { return nil }
     guard frame[0] == magic0, frame[1] == magic1, frame[2] == magic2, frame[3] == magic3, frame[4] == frameVersion else {
         return nil
     }
-    let jsonLen = Int(frame[5]) | (Int(frame[6]) << 8)
+    let payloadLen = Int(frame[5]) | (Int(frame[6]) << 8)
     let storedCrc = UInt32(frame[7]) | (UInt32(frame[8]) << 8) | (UInt32(frame[9]) << 16) | (UInt32(frame[10]) << 24)
-    guard jsonLen <= smkKeymapMaxLen, 11 + jsonLen <= frameLen else { return nil }
-    guard smkCrc32(frame + 11, jsonLen) == storedCrc else { return nil }
-    return jsonLen
+    guard payloadLen <= smkKeymapMaxLen, 11 + payloadLen <= frame.count else { return nil }
+    guard smkCrc32(frame.extracting(11..<11 + payloadLen)) == storedCrc else { return nil }
+    return payloadLen
 }
 
 // Writes the 11-byte header (magic/version/length/crc) into `frame[0..<11]`.
 // Caller must have already placed the payload (binary as of version 2) at
-// frame[11...] and computed crc32 over exactly those jsonLen bytes. The
-// parameter is still named `jsonLen` -- it is just a byte count, and
-// renaming it is out of scope for this change.
-public func smkKeymapFrameWriteHeader(_ frame: UnsafeMutablePointer<UInt8>, jsonLen: Int, crc32: UInt32) {
+// frame[11...] and computed crc32 over exactly those payloadLen bytes.
+public func smkKeymapFrameWriteHeader(_ frame: inout MutableSpan<UInt8>, payloadLen: Int, crc32: UInt32) {
     frame[0] = magic0
     frame[1] = magic1
     frame[2] = magic2
     frame[3] = magic3
     frame[4] = frameVersion
-    frame[5] = UInt8(jsonLen & 0xFF)
-    frame[6] = UInt8((jsonLen >> 8) & 0xFF)
+    frame[5] = UInt8(payloadLen & 0xFF)
+    frame[6] = UInt8((payloadLen >> 8) & 0xFF)
     frame[7] = UInt8(crc32 & 0xFF)
     frame[8] = UInt8((crc32 >> 8) & 0xFF)
     frame[9] = UInt8((crc32 >> 16) & 0xFF)

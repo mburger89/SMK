@@ -14,7 +14,7 @@ private func packet(_ bytes: [UInt8]) -> [UInt8] {
     return p
 }
 
-private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8>, _ len: UInt16) -> Int32 {
+private func neverCalledWriteChunk(_ offset: UInt16, _ data: Span<UInt8>) -> Int32 {
     Issue.record("writeChunk should not have been called")
     return -1
 }
@@ -24,18 +24,15 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
     let pkt = packet([smkKeymapOpBegin, 0x34, 0x12]) // totalLen = 0x1234 LE
     var response = [UInt8](repeating: 0xFF, count: smkKeymapPacketLen)
 
-    pkt.withUnsafeBufferPointer { pktBuf in
-        response.withUnsafeMutableBufferPointer { respBuf in
-            smkKeymapDispatchPacket(
-                pktBuf.baseAddress!, respBuf.baseAddress!,
-                beginWrite: { totalLen in seenTotalLen = totalLen; return 0 },
-                writeChunk: neverCalledWriteChunk,
-                commit: { _ in Issue.record("commit should not have been called"); return -1 },
-                erase: { Issue.record("erase should not have been called") },
-                caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
-            )
-        }
-    }
+    var out = response.mutableSpan
+    smkKeymapDispatchPacket(
+        pkt.span, &out,
+        beginWrite: { totalLen in seenTotalLen = totalLen; return 0 },
+        writeChunk: neverCalledWriteChunk,
+        commit: { _ in Issue.record("commit should not have been called"); return -1 },
+        erase: { Issue.record("erase should not have been called") },
+        caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
+    )
 
     #expect(seenTotalLen == 0x1234)
     #expect(response[0] == 0x00) // status OK
@@ -47,18 +44,15 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
     let pkt = packet([smkKeymapOpChunk, 0x00, 0x00, 29])
     var response = [UInt8](repeating: 0xFF, count: smkKeymapPacketLen)
 
-    pkt.withUnsafeBufferPointer { pktBuf in
-        response.withUnsafeMutableBufferPointer { respBuf in
-            smkKeymapDispatchPacket(
-                pktBuf.baseAddress!, respBuf.baseAddress!,
-                beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
-                writeChunk: neverCalledWriteChunk,
-                commit: { _ in Issue.record("commit should not have been called"); return -1 },
-                erase: { Issue.record("erase should not have been called") },
-                caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
-            )
-        }
-    }
+    var out = response.mutableSpan
+    smkKeymapDispatchPacket(
+        pkt.span, &out,
+        beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
+        writeChunk: neverCalledWriteChunk,
+        commit: { _ in Issue.record("commit should not have been called"); return -1 },
+        erase: { Issue.record("erase should not have been called") },
+        caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
+    )
 
     #expect(response[0] == 0x01) // status ERR
     #expect(response[1] == smkKeymapOpChunk)
@@ -73,23 +67,20 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
     let pkt = packet(header)
     var response = [UInt8](repeating: 0xFF, count: smkKeymapPacketLen)
 
-    pkt.withUnsafeBufferPointer { pktBuf in
-        response.withUnsafeMutableBufferPointer { respBuf in
-            smkKeymapDispatchPacket(
-                pktBuf.baseAddress!, respBuf.baseAddress!,
-                beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
-                writeChunk: { offset, data, len in
-                    seenOffset = offset
-                    seenLen = len
-                    seenFirstByte = data[0]
-                    return 0
-                },
-                commit: { _ in Issue.record("commit should not have been called"); return -1 },
-                erase: { Issue.record("erase should not have been called") },
-                caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
-            )
-        }
-    }
+    var out = response.mutableSpan
+    smkKeymapDispatchPacket(
+        pkt.span, &out,
+        beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
+        writeChunk: { offset, data in
+            seenOffset = offset
+            seenLen = UInt16(data.count)
+            seenFirstByte = data[0]
+            return 0
+        },
+        commit: { _ in Issue.record("commit should not have been called"); return -1 },
+        erase: { Issue.record("erase should not have been called") },
+        caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
+    )
 
     #expect(seenOffset == 2)
     #expect(seenLen == 28)
@@ -102,18 +93,15 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
     let pkt = packet([smkKeymapOpCommit, 0x26, 0x39, 0xF4, 0xCB]) // 0xCBF43926 LE
     var response = [UInt8](repeating: 0xFF, count: smkKeymapPacketLen)
 
-    pkt.withUnsafeBufferPointer { pktBuf in
-        response.withUnsafeMutableBufferPointer { respBuf in
-            smkKeymapDispatchPacket(
-                pktBuf.baseAddress!, respBuf.baseAddress!,
-                beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
-                writeChunk: neverCalledWriteChunk,
-                commit: { crc32 in seenCrc = crc32; return 0 },
-                erase: { Issue.record("erase should not have been called") },
-                caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
-            )
-        }
-    }
+    var out = response.mutableSpan
+    smkKeymapDispatchPacket(
+        pkt.span, &out,
+        beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
+        writeChunk: neverCalledWriteChunk,
+        commit: { crc32 in seenCrc = crc32; return 0 },
+        erase: { Issue.record("erase should not have been called") },
+        caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
+    )
 
     #expect(seenCrc == 0xCBF4_3926)
     #expect(response[0] == 0x00) // status OK
@@ -124,18 +112,15 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
     let pkt = packet([smkKeymapOpErase])
     var response = [UInt8](repeating: 0xFF, count: smkKeymapPacketLen)
 
-    pkt.withUnsafeBufferPointer { pktBuf in
-        response.withUnsafeMutableBufferPointer { respBuf in
-            smkKeymapDispatchPacket(
-                pktBuf.baseAddress!, respBuf.baseAddress!,
-                beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
-                writeChunk: neverCalledWriteChunk,
-                commit: { _ in Issue.record("commit should not have been called"); return -1 },
-                erase: { eraseCalled = true },
-                caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
-            )
-        }
-    }
+    var out = response.mutableSpan
+    smkKeymapDispatchPacket(
+        pkt.span, &out,
+        beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
+        writeChunk: neverCalledWriteChunk,
+        commit: { _ in Issue.record("commit should not have been called"); return -1 },
+        erase: { eraseCalled = true },
+        caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
+    )
 
     #expect(eraseCalled)
     #expect(response[0] == 0x00) // status OK
@@ -146,18 +131,15 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
     let pkt = packet([0xFF])
     var response = [UInt8](repeating: 0xFF, count: smkKeymapPacketLen)
 
-    pkt.withUnsafeBufferPointer { pktBuf in
-        response.withUnsafeMutableBufferPointer { respBuf in
-            smkKeymapDispatchPacket(
-                pktBuf.baseAddress!, respBuf.baseAddress!,
-                beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
-                writeChunk: neverCalledWriteChunk,
-                commit: { _ in Issue.record("commit should not have been called"); return -1 },
-                erase: { Issue.record("erase should not have been called") },
-                caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
-            )
-        }
-    }
+    var out = response.mutableSpan
+    smkKeymapDispatchPacket(
+        pkt.span, &out,
+        beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
+        writeChunk: neverCalledWriteChunk,
+        commit: { _ in Issue.record("commit should not have been called"); return -1 },
+        erase: { Issue.record("erase should not have been called") },
+        caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
+    )
 
     #expect(response[0] == 0x01) // status ERR
     #expect(response[1] == 0xFF)
@@ -167,18 +149,15 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
     let pkt = packet([smkKeymapOpErase])
     var response = [UInt8](repeating: 0xAB, count: smkKeymapPacketLen)
 
-    pkt.withUnsafeBufferPointer { pktBuf in
-        response.withUnsafeMutableBufferPointer { respBuf in
-            smkKeymapDispatchPacket(
-                pktBuf.baseAddress!, respBuf.baseAddress!,
-                beginWrite: { _ in -1 },
-                writeChunk: { _, _, _ in -1 },
-                commit: { _ in -1 },
-                erase: { },
-                caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
-            )
-        }
-    }
+    var out = response.mutableSpan
+    smkKeymapDispatchPacket(
+        pkt.span, &out,
+        beginWrite: { _ in -1 },
+        writeChunk: { _, _ in -1 },
+        commit: { _ in -1 },
+        erase: { },
+        caps: { Issue.record("caps should not have been called"); return (0, 0, 0) }
+    )
 
     // Everything past byte 1 (status/opcode) must be zeroed, not left at
     // the caller's stale 0xAB filler.
@@ -189,18 +168,15 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
     let pkt = packet([smkKeymapOpCaps])
     var response = [UInt8](repeating: 0xFF, count: smkKeymapPacketLen)
 
-    pkt.withUnsafeBufferPointer { pktBuf in
-        response.withUnsafeMutableBufferPointer { respBuf in
-            smkKeymapDispatchPacket(
-                pktBuf.baseAddress!, respBuf.baseAddress!,
-                beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
-                writeChunk: neverCalledWriteChunk,
-                commit: { _ in Issue.record("commit should not have been called"); return -1 },
-                erase: { Issue.record("erase should not have been called") },
-                caps: { (macroBytes: 0x1234, macroSlots: 7, keymapMaxLen: 0xABCD) }
-            )
-        }
-    }
+    var out = response.mutableSpan
+    smkKeymapDispatchPacket(
+        pkt.span, &out,
+        beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
+        writeChunk: neverCalledWriteChunk,
+        commit: { _ in Issue.record("commit should not have been called"); return -1 },
+        erase: { Issue.record("erase should not have been called") },
+        caps: { (macroBytes: 0x1234, macroSlots: 7, keymapMaxLen: 0xABCD) }
+    )
 
     #expect(response[0] == 0x00) // status OK
     #expect(response[1] == smkKeymapOpCaps)
@@ -232,18 +208,15 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
     let pkt = packet([smkKeymapOpCaps])
     var response = [UInt8](repeating: 0xFF, count: smkKeymapPacketLen)
 
-    pkt.withUnsafeBufferPointer { pktBuf in
-        response.withUnsafeMutableBufferPointer { respBuf in
-            smkKeymapDispatchPacket(
-                pktBuf.baseAddress!, respBuf.baseAddress!,
-                beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
-                writeChunk: neverCalledWriteChunk,
-                commit: { _ in Issue.record("commit should not have been called"); return -1 },
-                erase: { Issue.record("erase should not have been called") },
-                caps: smkKeymapRealCaps
-            )
-        }
-    }
+    var out = response.mutableSpan
+    smkKeymapDispatchPacket(
+        pkt.span, &out,
+        beginWrite: { _ in Issue.record("beginWrite should not have been called"); return -1 },
+        writeChunk: neverCalledWriteChunk,
+        commit: { _ in Issue.record("commit should not have been called"); return -1 },
+        erase: { Issue.record("erase should not have been called") },
+        caps: smkKeymapRealCaps
+    )
 
     let maxLen = UInt16(smkKeymapMaxLen) // 4085 = 0x0FF5
     #expect(response[0] == 0x00) // status OK
@@ -252,4 +225,16 @@ private func neverCalledWriteChunk(_ offset: UInt16, _ data: UnsafePointer<UInt8
     #expect(response[4] == 0xFF) // macroSlots
     #expect(response[5] == UInt8(maxLen & 0xFF)) // keymapMaxLen low byte
     #expect(response[6] == UInt8((maxLen >> 8) & 0xFF)) // keymapMaxLen high byte
+}
+
+@Test func chunkPassesExactlyChunkLenBytesAsASpan() {
+    var seen: [UInt8] = []
+    let pkt = packet([smkKeymapOpChunk, 0x00, 0x00, 3, 0xAA, 0xBB, 0xCC, 0xDD])
+    var response = [UInt8](repeating: 0xFF, count: smkKeymapPacketLen)
+    var out = response.mutableSpan
+    smkKeymapDispatchPacket(pkt.span, &out,
+        beginWrite: { _ in -1 },
+        writeChunk: { _, data in for i in 0..<data.count { seen.append(data[i]) }; return 0 },
+        commit: { _ in -1 }, erase: {}, caps: smkKeymapRealCaps)
+    #expect(seen == [0xAA, 0xBB, 0xCC])
 }

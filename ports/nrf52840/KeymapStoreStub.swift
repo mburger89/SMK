@@ -29,7 +29,7 @@ func smk_keymap_begin_write(_ totalLen: UInt16) -> Int32 {
     -1
 }
 
-func smk_keymap_write_chunk(_ offset: UInt16, _ data: UnsafePointer<UInt8>, _ len: UInt16) -> Int32 {
+func smk_keymap_write_chunk(_ offset: UInt16, _ data: Span<UInt8>) -> Int32 {
     -1
 }
 
