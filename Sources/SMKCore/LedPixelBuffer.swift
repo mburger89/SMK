@@ -21,9 +21,11 @@ public func smkLedStripClampCount(_ requestedNumLeds: Int32, maxLeds: Int) -> In
 // indices (negative, or >= numLeds) are a silent no-op, matching the
 // bounds guard both port drivers had inline before this was extracted —
 // a caller mustn't be able to corrupt a neighboring pixel or crash by
-// passing a bad index.
-public func smkLedStripSetPixel(_ pixels: inout [UInt8], index: Int32, numLeds: Int, r: UInt8, g: UInt8, b: UInt8) {
-    guard index >= 0, Int(index) < numLeds else { return }
+// passing a bad index. `pixels` is a MutableSpan over the driver's
+// fixed-size InlineArray; an index the span itself can't hold is also a
+// no-op, since a span subscript traps where the old array one did too.
+public func smkLedStripSetPixel(_ pixels: inout MutableSpan<UInt8>, index: Int32, numLeds: Int, r: UInt8, g: UInt8, b: UInt8) {
+    guard index >= 0, Int(index) < numLeds, Int(index) * 3 + 2 < pixels.count else { return }
     let i = Int(index)
     pixels[i * 3 + 0] = g
     pixels[i * 3 + 1] = r

@@ -272,7 +272,7 @@ private let rmtClkSrcDefault: Int32 = 5
 
 private var ledChan: UnsafeMutableRawPointer? = nil
 private var ledEncoder: UnsafeMutableRawPointer? = nil
-private var pixels = [UInt8](repeating: 0, count: ledStripMaxLeds * 3)
+private var pixels = InlineArray<180, UInt8>(repeating: 0) // ledStripMaxLeds * 3
 private var numLeds = 0
 private var ready = false
 
@@ -300,13 +300,14 @@ func led_strip_driver_init(_ gpioNum: Int32, _ requestedNumLeds: Int32) {
 
 func led_strip_set_pixel(_ index: Int32, _ r: UInt8, _ g: UInt8, _ b: UInt8) {
     guard ready else { return }
-    smkLedStripSetPixel(&pixels, index: index, numLeds: numLeds, r: r, g: g, b: b)
+    var span = pixels.mutableSpan
+    smkLedStripSetPixel(&span, index: index, numLeds: numLeds, r: r, g: g, b: b)
 }
 
 func led_strip_refresh() {
     guard ready else { return }
     var txConfig = RmtTransmitConfig(loopCount: 0, flags: 0)
-    let sendResult = pixels.withUnsafeBufferPointer { buf in
+    let sendResult = pixels.span.withUnsafeBufferPointer { buf in
         withUnsafePointer(to: &txConfig) { cfg in
             rmt_transmit(ledChan, ledEncoder, buf.baseAddress!, numLeds * 3, UnsafeRawPointer(cfg))
         }

@@ -27,6 +27,10 @@ private let ledStripMaxLeds = 60 // matches ROWS*COLS in generate_kbd_rp2040.py
 
 private var pio: UnsafeMutableRawPointer? = nil
 private var sm: UInt32 = 0
+// Stays a heap array, unlike the ESP32-C6 RMT driver's InlineArray: it is
+// allocated once, on first use at boot, never per frame, and moving its 180
+// bytes into .bss would push smk_kbd_rp2040's static RAM past the +2 % size
+// budget (it has ~130 bytes left).
 private var pixels = [UInt8](repeating: 0, count: ledStripMaxLeds * 3)
 private var numLeds = 0
 private var ready = false
@@ -41,7 +45,8 @@ func led_strip_driver_init(_ gpioNum: Int32, _ requestedNumLeds: Int32) {
 
 func led_strip_set_pixel(_ index: Int32, _ r: UInt8, _ g: UInt8, _ b: UInt8) {
     guard ready else { return }
-    smkLedStripSetPixel(&pixels, index: index, numLeds: numLeds, r: r, g: g, b: b)
+    var span = pixels.mutableSpan
+    smkLedStripSetPixel(&span, index: index, numLeds: numLeds, r: r, g: g, b: b)
 }
 
 func led_strip_refresh() {
