@@ -1,19 +1,18 @@
 struct DebouncedMatrix {
     private let totalKeys: Int
-    private let debounceThreshold = 5
+    private let debounceThreshold: UInt8 = 5
 
-    private var counters: [Int]
-    private var stableState: [Bool]
+    // Fixed-size inline state (KeyBitset.capacity positions) so a debounce
+    // pass never touches the heap.
+    private var counters: InlineArray<256, UInt8> = .init(repeating: 0)
+    private var stableState = KeyBitset()
 
     init(totalKeys: Int) {
-        self.totalKeys = totalKeys
-        self.counters = [Int](repeating: 0, count: totalKeys)
-        self.stableState = [Bool](repeating: false, count: totalKeys)
+        self.totalKeys = min(totalKeys, KeyBitset.capacity)
     }
 
-    mutating func update(rawScan: [Bool]) -> [Bool] {
+    mutating func update(rawScan: KeyBitset) -> KeyBitset {
         for i in 0..<totalKeys {
-            if i >= rawScan.count { break }
             if rawScan[i] != stableState[i] {
                 counters[i] += 1
                 if counters[i] >= debounceThreshold {

@@ -27,3 +27,13 @@ import Testing
 @Test func capacityMatchesMatrixCap() {
     #expect(KeyBitset.capacity == smkMaxMatrixPositions)
 }
+
+// Test helpers: build a KeyBitset from a Bool list, and read the first `n`
+// positions back out, so scan/debounce tests stay readable as literals.
+func bits(_ b: [Bool]) -> KeyBitset {
+    var s = KeyBitset()
+    for (i, v) in b.enumerated() { s[i] = v }
+    return s
+}
+
+func bools(_ s: KeyBitset, _ n: Int) -> [Bool] { (0..<n).map { s[$0] } }

@@ -36,10 +36,12 @@ struct KeyEventProcessingResult {
 /// `macroEvents` (also scan-index order, one entry per macro-key
 /// press-transition, holding the slot number) tells the caller which
 /// macro(s) to start — this function only records the press, it never
-/// starts playback itself.
+/// starts playback itself. `keyCount` is rows × cols: the scans are
+/// fixed-capacity bitsets, so they no longer carry the board's key count.
 func processKeyEvents(
-    cleanScan: [Bool],
-    lastScan: [Bool],
+    cleanScan: KeyBitset,
+    lastScan: KeyBitset,
+    keyCount: Int,
     colCount: Int,
     pressedActions: inout [KeyAction],
     engine: inout LayerEngine,
@@ -48,7 +50,7 @@ func processKeyEvents(
 ) -> KeyEventProcessingResult {
     var result = KeyEventProcessingResult()
 
-    for i in 0..<cleanScan.count {
+    for i in 0..<keyCount {
         let row = i / colCount
         let col = i % colCount
 
@@ -88,7 +90,7 @@ func processKeyEvents(
         }
     }
 
-    for i in 0..<cleanScan.count {
+    for i in 0..<keyCount {
         if cleanScan[i] {
             switch pressedActions[i] {
             case .key(let code):

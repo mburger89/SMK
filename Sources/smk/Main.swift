@@ -280,7 +280,7 @@ func app_main_swift() {
 
     let totalKeys = cfg.rowPins.count * cfg.colPins.count
     let colCount = cfg.colPins.count
-    var lastScan = [Bool](repeating: false, count: totalKeys)
+    var lastScan = KeyBitset()
     // Last report/mode actually handed to a transport — the send-on-change
     // gate at the bottom of the scan loop compares against these.
     var lastSentReport = HIDReport()
@@ -306,6 +306,7 @@ func app_main_swift() {
         let result = processKeyEvents(
             cleanScan: cleanScan,
             lastScan: lastScan,
+            keyCount: totalKeys,
             colCount: colCount,
             pressedActions: &pressedActions,
             engine: &engine,

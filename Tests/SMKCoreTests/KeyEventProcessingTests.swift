@@ -8,9 +8,9 @@ import Testing
     var currentMode = ConnectionMode.bluetooth
 
     let result = processKeyEvents(
-        cleanScan: [true, false],
-        lastScan: [false, false],
-        colCount: 2,
+        cleanScan: bits([true, false]),
+        lastScan: bits([false, false]),
+        keyCount: 2, colCount: 2,
         pressedActions: &pressedActions,
         engine: &engine,
         hasWiredBridge: false,
@@ -28,9 +28,9 @@ import Testing
     var currentMode = ConnectionMode.bluetooth
 
     let result = processKeyEvents(
-        cleanScan: [false],
-        lastScan: [true],
-        colCount: 1,
+        cleanScan: bits([false]),
+        lastScan: bits([true]),
+        keyCount: 1, colCount: 1,
         pressedActions: &pressedActions,
         engine: &engine,
         hasWiredBridge: false,
@@ -49,14 +49,14 @@ import Testing
     var currentMode = ConnectionMode.bluetooth
 
     _ = processKeyEvents(
-        cleanScan: [true], lastScan: [false], colCount: 1,
+        cleanScan: bits([true]), lastScan: bits([false]), keyCount: 1, colCount: 1,
         pressedActions: &pressedActions, engine: &engine,
         hasWiredBridge: false, currentMode: &currentMode
     )
     #expect(engine.isLayerActive(1) == true)
 
     _ = processKeyEvents(
-        cleanScan: [false], lastScan: [true], colCount: 1,
+        cleanScan: bits([false]), lastScan: bits([true]), keyCount: 1, colCount: 1,
         pressedActions: &pressedActions, engine: &engine,
         hasWiredBridge: false, currentMode: &currentMode
     )
@@ -70,12 +70,12 @@ import Testing
     var currentMode = ConnectionMode.bluetooth
 
     _ = processKeyEvents(
-        cleanScan: [true], lastScan: [false], colCount: 1,
+        cleanScan: bits([true]), lastScan: bits([false]), keyCount: 1, colCount: 1,
         pressedActions: &pressedActions, engine: &engine,
         hasWiredBridge: false, currentMode: &currentMode
     )
     _ = processKeyEvents(
-        cleanScan: [false], lastScan: [true], colCount: 1,
+        cleanScan: bits([false]), lastScan: bits([true]), keyCount: 1, colCount: 1,
         pressedActions: &pressedActions, engine: &engine,
         hasWiredBridge: false, currentMode: &currentMode
     )
@@ -89,7 +89,7 @@ import Testing
     var currentMode = ConnectionMode.bluetooth
 
     let result = processKeyEvents(
-        cleanScan: [true], lastScan: [false], colCount: 1,
+        cleanScan: bits([true]), lastScan: bits([false]), keyCount: 1, colCount: 1,
         pressedActions: &pressedActions, engine: &engine,
         hasWiredBridge: true, currentMode: &currentMode
     )
@@ -105,7 +105,7 @@ import Testing
     var currentMode = ConnectionMode.bluetooth
 
     let result = processKeyEvents(
-        cleanScan: [true], lastScan: [false], colCount: 1,
+        cleanScan: bits([true]), lastScan: bits([false]), keyCount: 1, colCount: 1,
         pressedActions: &pressedActions, engine: &engine,
         hasWiredBridge: false, currentMode: &currentMode
     )
@@ -121,7 +121,7 @@ import Testing
     var currentMode = ConnectionMode.bluetooth
 
     let result = processKeyEvents(
-        cleanScan: [true, true], lastScan: [false, false], colCount: 2,
+        cleanScan: bits([true, true]), lastScan: bits([false, false]), keyCount: 2, colCount: 2,
         pressedActions: &pressedActions, engine: &engine,
         hasWiredBridge: false, currentMode: &currentMode
     )
@@ -137,7 +137,7 @@ import Testing
     var currentMode = ConnectionMode.bluetooth
 
     let result = processKeyEvents(
-        cleanScan: [true, true], lastScan: [false, false], colCount: 2,
+        cleanScan: bits([true, true]), lastScan: bits([false, false]), keyCount: 2, colCount: 2,
         pressedActions: &pressedActions, engine: &engine,
         hasWiredBridge: true, currentMode: &currentMode
     )
@@ -153,7 +153,7 @@ import Testing
     var currentMode = ConnectionMode.bluetooth
 
     let result = processKeyEvents(
-        cleanScan: [true, false], lastScan: [false, false], colCount: 2,
+        cleanScan: bits([true, false]), lastScan: bits([false, false]), keyCount: 2, colCount: 2,
         pressedActions: &pressedActions, engine: &engine,
         hasWiredBridge: false, currentMode: &currentMode
     )
@@ -167,7 +167,7 @@ import Testing
     var currentMode = ConnectionMode.bluetooth
 
     let result = processKeyEvents(
-        cleanScan: [true], lastScan: [false], colCount: 1,
+        cleanScan: bits([true]), lastScan: bits([false]), keyCount: 1, colCount: 1,
         pressedActions: &pressedActions, engine: &engine,
         hasWiredBridge: false, currentMode: &currentMode
     )
@@ -181,7 +181,7 @@ import Testing
     var currentMode = ConnectionMode.bluetooth
 
     let result = processKeyEvents(
-        cleanScan: [false], lastScan: [true], colCount: 1,
+        cleanScan: bits([false]), lastScan: bits([true]), keyCount: 1, colCount: 1,
         pressedActions: &pressedActions, engine: &engine,
         hasWiredBridge: false, currentMode: &currentMode
     )
@@ -205,10 +205,23 @@ import Testing
     var currentMode = ConnectionMode.bluetooth
 
     let result = processKeyEvents(
-        cleanScan: [true], lastScan: [true], colCount: 1,
+        cleanScan: bits([true]), lastScan: bits([true]), keyCount: 1, colCount: 1,
         pressedActions: &pressedActions, engine: &engine,
         hasWiredBridge: false, currentMode: &currentMode
     )
     #expect(result.transitions.isEmpty)
     #expect(result.report.keys[0] == KeyCode.a.rawValue)
+}
+
+@Test func positionZeroIsRowZeroColZero() {
+    // Review focus: Main.swift's factory-reset check reads matrix.scan()[0]
+    // as "row 0, col 0" -- bitset position 0 must map back to exactly that.
+    var engine = LayerEngine()
+    engine.loadTestKeymap([[["key:a", "none", "none"], ["none", "none", "none"]]])
+    var pressed = [KeyAction](repeating: .none, count: 6)
+    var mode = ConnectionMode.bluetooth
+    var clean = KeyBitset(); clean[0] = true
+    let r = processKeyEvents(cleanScan: clean, lastScan: KeyBitset(), keyCount: 6, colCount: 3,
+                             pressedActions: &pressed, engine: &engine, hasWiredBridge: false, currentMode: &mode)
+    #expect(r.transitions == [KeyTransition(position: KeyPosition(row: 0, col: 0), pressed: true)])
 }

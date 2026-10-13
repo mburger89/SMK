@@ -58,6 +58,7 @@ struct KeyMatrix {
         self.colPins = colPins
         self.totalKeys = rowPins.count * colPins.count
         self.colsAreDriven = colsAreDriven
+        precondition(totalKeys <= KeyBitset.capacity)
 
         rowPins.withUnsafeBufferPointer { rowPtr in
             colPins.withUnsafeBufferPointer { colPtr in
@@ -68,8 +69,8 @@ struct KeyMatrix {
         }
     }
 
-    func scan() -> [Bool] {
-        var state = [Bool](repeating: false, count: totalKeys)
+    func scan() -> KeyBitset {
+        var state = KeyBitset()
         let colCount = colPins.count
 
         if colsAreDriven {
