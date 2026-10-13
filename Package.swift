@@ -126,7 +126,10 @@ if !hostTestsOnly {
 
 let package = Package(
     name: "smk",
-    platforms: [.macOS(.v15)],
+    // macOS 26: InlineArray/Span (SMKCore's KeyBitset and later buffers)
+    // carry macOS 26 availability on the host. String form because
+    // `.v26` needs swift-tools-version 6.2.
+    platforms: [.macOS("26.0")],
     products: hostTestsOnly ? [] : [
         .executable(name: "SMK", targets: ["smk"])
     ],

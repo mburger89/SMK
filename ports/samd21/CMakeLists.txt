@@ -91,6 +91,7 @@ set(swift_srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/UartDebug.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Modifier.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Debounce.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/KeyBitset.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/ConnectionMode.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/HIDReport.swift"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../Sources/SMKCore/Config.swift"
