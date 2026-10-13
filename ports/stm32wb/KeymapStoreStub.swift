@@ -4,7 +4,7 @@
 // "nothing stored" placeholder, NOT a real implementation. Mirrors
 // ports/stm32f4/KeymapStoreStub.swift exactly.
 
-func smk_keymap_load(_ buf: UnsafeMutablePointer<CChar>, _ bufSize: UInt32) -> Int32 {
+func smk_keymap_load(_ buf: UnsafeMutablePointer<UInt8>, _ bufSize: UInt32) -> Int32 {
     -1 // no stored keymap
 }
 

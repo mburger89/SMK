@@ -54,24 +54,20 @@ import Testing
 // "layers" array). With cJSON retired the equivalent malformed inputs are
 // bytes: one that cannot decode at all, and one that decodes cleanly but
 // declares no layers. Both must leave `keymaps` untouched -- the load path
-// is all-or-nothing by design (see LayerEngine.loadKeymap(binary:count:)).
+// is all-or-nothing by design (see LayerEngine.loadKeymap(_:)).
 @Test func layerEngineLoadKeymapLeavesKeymapsEmptyOnUndecodablePayload() {
     var engine = LayerEngine()
     // Header claims a 5x12 matrix but the payload stops after the header,
     // so the bounds check rejects it before any cell is read.
     let truncated: [UInt8] = [5, 12, 1, 1, 0, 0]
-    truncated.withUnsafeBufferPointer {
-        engine.loadKeymap(binary: $0.baseAddress!, count: truncated.count)
-    }
+    engine.loadKeymap(truncated.span)
     #expect(engine.keymaps.isEmpty)
 }
 
 @Test func layerEngineLoadKeymapLeavesKeymapsEmptyWhenPayloadDeclaresNoLayers() {
     var engine = LayerEngine()
     let noLayers: [UInt8] = [1, 1, 0, 0, 0, 0, 0, 0]   // 1x1 matrix, zero layers
-    noLayers.withUnsafeBufferPointer {
-        engine.loadKeymap(binary: $0.baseAddress!, count: noLayers.count)
-    }
+    engine.loadKeymap(noLayers.span)
     #expect(engine.keymaps.isEmpty)
 }
 
@@ -80,9 +76,7 @@ import Testing
     engine.loadTestKeymap([[["key:a"]]])
     #expect(!engine.keymaps.isEmpty)
     let truncated: [UInt8] = [5, 12, 1, 1, 0, 0]
-    truncated.withUnsafeBufferPointer {
-        engine.loadKeymap(binary: $0.baseAddress!, count: truncated.count)
-    }
+    engine.loadKeymap(truncated.span)
     #expect(!engine.keymaps.isEmpty)
     #expect(engine.getAction(row: 0, col: 0) == .key(.a))
 }
@@ -101,9 +95,7 @@ import Testing
     #expect(engine.getAction(row: 0, col: 0) == .key(.a))
 
     let attack: [UInt8] = [0, 0, 1, 200, 0, 0]
-    attack.withUnsafeBufferPointer {
-        engine.loadKeymap(binary: $0.baseAddress!, count: attack.count)
-    }
+    engine.loadKeymap(attack.span)
     #expect(engine.getAction(row: 0, col: 0) == .key(.a))
 }
 

@@ -17,7 +17,7 @@
 // against this board today will be accepted over USB but silently fail
 // to persist.
 
-func smk_keymap_load(_ buf: UnsafeMutablePointer<CChar>, _ bufSize: UInt32) -> Int32 {
+func smk_keymap_load(_ buf: UnsafeMutablePointer<UInt8>, _ bufSize: UInt32) -> Int32 {
     -1 // no stored keymap
 }
 

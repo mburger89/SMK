@@ -82,13 +82,11 @@ private func flashFramePointer() -> UnsafePointer<UInt8> {
     UnsafePointer<UInt8>(bitPattern: UInt(xipBase) + UInt(flashOffset()))!
 }
 
-func smk_keymap_load(_ buf: UnsafeMutablePointer<CChar>, _ bufSize: UInt32) -> Int32 {
+func smk_keymap_load(_ buf: UnsafeMutablePointer<UInt8>, _ bufSize: UInt32) -> Int32 {
     let frame = flashFramePointer()
     guard let jsonLen = smkKeymapFrameValidate(frame, frameLen: smkKeymapFrameLen) else { return -1 }
     guard jsonLen + 1 <= Int(bufSize) else { return -1 }
-    buf.withMemoryRebound(to: UInt8.self, capacity: jsonLen) { dst in
-        for i in 0..<jsonLen { dst[i] = frame[11 + i] }
-    }
+    for i in 0..<jsonLen { buf[i] = frame[11 + i] }
     return Int32(jsonLen)
 }
 

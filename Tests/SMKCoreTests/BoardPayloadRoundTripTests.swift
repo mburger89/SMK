@@ -61,10 +61,7 @@ private func expectedAction(_ token: String) -> KeyAction {
         let jsonDriven = try #require(matrix["colsAreDriven"] as? Int) != 0
         let jsonLayers = try layers(of: spec)
 
-        let decoded = board.bytes.withUnsafeBufferPointer {
-            decodeKeymapPayload($0.baseAddress, count: $0.count)
-        }
-        let payload = try #require(decoded, "\(board.board) payload did not decode")
+        let payload = try decodeKeymapPayload(board.bytes.span)
 
         #expect(payload.rows == jsonRows, "\(board.board) rows")
         #expect(payload.cols == jsonCols, "\(board.board) cols")

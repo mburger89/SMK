@@ -43,17 +43,15 @@ private func samplePayload(layerCount: Int) -> [UInt8] {
     return b
 }
 
-@Test func decodesMatrixLayersAndCells() {
+@Test func decodesMatrixLayersAndCells() throws {
     let bytes = samplePayload(layerCount: 2)
-    let p = bytes.withUnsafeBufferPointer {
-        decodeKeymapPayload($0.baseAddress!, count: bytes.count)
-    }
-    #expect(p?.rows == [5])
-    #expect(p?.cols == [6, 7])
-    #expect(p?.colsAreDriven == true)
-    #expect(p?.layers.count == 2)
-    #expect(p?.layers[0][0][0] == KeyAction.key(.a))
-    #expect(p?.layers[1][0][1] == KeyAction.transparent)
+    let p = try decodeKeymapPayload(bytes.span)
+    #expect(p.rows == [5])
+    #expect(p.cols == [6, 7])
+    #expect(p.colsAreDriven == true)
+    #expect(p.layers.count == 2)
+    #expect(p.layers[0][0][0] == KeyAction.key(.a))
+    #expect(p.layers[1][0][1] == KeyAction.transparent)
 }
 
 @Test func truncatedPayloadIsRejectedNotIndexed() {
@@ -62,31 +60,59 @@ private func samplePayload(layerCount: Int) -> [UInt8] {
     let full = samplePayload(layerCount: 2)
     for cut in 1..<full.count {
         let short = Array(full[0..<cut])
-        let p = short.withUnsafeBufferPointer {
-            decodeKeymapPayload($0.baseAddress!, count: short.count)
+        #expect(throws: KeymapDecodeError.self, "prefix of length \(cut) should have been rejected") {
+            _ = try decodeKeymapPayload(short.span)
         }
-        #expect(p == nil, "prefix of length \(cut) should have been rejected")
     }
 }
 
 @Test func emptyPayloadIsRejected() {
-    var empty: [UInt8] = []
-    let p = empty.withUnsafeMutableBufferPointer { buf -> KeymapPayload? in
-        guard let base = buf.baseAddress else { return decodeKeymapPayload(nil, count: 0) }
-        return decodeKeymapPayload(base, count: 0)
+    let empty: [UInt8] = []
+    #expect(throws: KeymapDecodeError.truncated) { _ = try decodeKeymapPayload(empty.span) }
+}
+
+@Test func everyPrefixOfAValidPayloadThrowsInsteadOfTrapping() throws {
+    // Review Focus 1: `Span` subscripts are bounds-checked and *trap* (a
+    // hard fault on device) where the old pointer code relied on explicit
+    // guards. A stored keymap cut short by a torn write must make the
+    // decoder throw -- the caller then falls back to the compiled default
+    // -- never crash the board. A trap here kills the whole test process,
+    // so this passing at all is the proof.
+    let full = defaultKeymapBytes
+    #expect((try? decodeKeymapPayload(full.span)) != nil)
+    for n in 0..<full.count {
+        let prefix = Array(full[0..<n])
+        #expect(throws: KeymapDecodeError.self) { _ = try decodeKeymapPayload(prefix.span) }
     }
-    #expect(p == nil)
+}
+
+@Test func matrixOver256PositionsIsRejected() {
+    // KeyBitset holds smkMaxMatrixPositions (256) keys; a larger matrix
+    // would index past it. 17 x 16 = 272 positions, zero layers, zero macros.
+    var bytes: [UInt8] = [17, 16, 0, 0, 0, 0]
+    bytes += [UInt8](repeating: 1, count: 17 + 16)
+    #expect(throws: KeymapDecodeError.matrixTooLarge) { _ = try decodeKeymapPayload(bytes.span) }
+}
+
+@Test func exactly256PositionsIsAccepted() throws {
+    var bytes: [UInt8] = [16, 16, 0, 0, 0, 0]
+    bytes += [UInt8](repeating: 1, count: 32)
+    let p = try decodeKeymapPayload(bytes.span)
+    #expect(p.rows.count == 16 && p.cols.count == 16)
+}
+
+@Test func trailingBytesAreRejected() {
+    let bytes = defaultKeymapBytes + [0]
+    #expect(throws: KeymapDecodeError.trailingBytes) { _ = try decodeKeymapPayload(bytes.span) }
 }
 
 @Test func absurdCountsAreRejectedBeforeAllocating() {
     // A corrupt header claiming 200 layers of a 200x200 matrix must be
-    // refused on arithmetic, not attempted.
+    // refused on arithmetic, not attempted. (200 x 200 is also over the
+    // 256-position cap, which is now the check that fires first.)
     var b: [UInt8] = [200, 200, 1, 200, 0, 0]
     b += [UInt8](repeating: 0, count: 8)
-    let p = b.withUnsafeBufferPointer {
-        decodeKeymapPayload($0.baseAddress!, count: b.count)
-    }
-    #expect(p == nil)
+    #expect(throws: KeymapDecodeError.self) { _ = try decodeKeymapPayload(b.span) }
 }
 
 @Test func zeroByZeroMatrixWithLayersIsRejected() {
@@ -98,25 +124,20 @@ private func samplePayload(layerCount: Int) -> [UInt8] {
     // empty array of empty rows. A declared layer with no rows or columns
     // is never valid, so this must be refused at decode.
     let attack: [UInt8] = [0, 0, 1, 200, 0, 0]
-    let p = attack.withUnsafeBufferPointer {
-        decodeKeymapPayload($0.baseAddress!, count: attack.count)
-    }
-    #expect(p == nil)
+    #expect(throws: KeymapDecodeError.layersWithoutMatrix) { _ = try decodeKeymapPayload(attack.span) }
 }
 
-@Test func layerCountZeroWithZeroSizedMatrixIsStillAccepted() {
+@Test func layerCountZeroWithZeroSizedMatrixIsStillAccepted() throws {
     // The new rowCount>0/colCount>0 guard must only fire when layerCount >
     // 0 -- a macro-only payload legitimately has layerCount == 0, and
     // nothing about that requires a real matrix either. (In practice every
     // real payload has a non-empty matrix regardless; this just confirms
     // the guard's `layerCount == 0 ||` escape hatch doesn't overreach.)
     let b: [UInt8] = [0, 0, 1, 0, 0, 0]  // header only: 0x0 matrix, 0 layers, 0 macros
-    let p = b.withUnsafeBufferPointer {
-        decodeKeymapPayload($0.baseAddress!, count: b.count)
-    }
-    #expect(p?.layers.isEmpty == true)
-    #expect(p?.rows.isEmpty == true)
-    #expect(p?.cols.isEmpty == true)
+    let p = try decodeKeymapPayload(b.span)
+    #expect(p.layers.isEmpty)
+    #expect(p.rows.isEmpty)
+    #expect(p.cols.isEmpty)
 }
 
 @Test func trailingBytesAfterAValidPayloadAreRejected() {
@@ -129,10 +150,7 @@ private func samplePayload(layerCount: Int) -> [UInt8] {
     // silently ignored.
     var bytes = samplePayload(layerCount: 1)
     bytes.append(0xFF)
-    let p = bytes.withUnsafeBufferPointer {
-        decodeKeymapPayload($0.baseAddress!, count: bytes.count)
-    }
-    #expect(p == nil)
+    #expect(throws: KeymapDecodeError.trailingBytes) { _ = try decodeKeymapPayload(bytes.span) }
 }
 
 @Test func sixteenLayersFitTheExistingCeiling() {
@@ -184,14 +202,12 @@ private func sampleMacroPayload() -> [UInt8] {
     return b
 }
 
-@Test func macroEntryDecodesEveryStepKind() {
+@Test func macroEntryDecodesEveryStepKind() throws {
     let bytes = sampleMacroPayload()
-    let p = bytes.withUnsafeBufferPointer {
-        decodeKeymapPayload($0.baseAddress!, count: bytes.count)
-    }
-    #expect(p?.macros.count == 1)
-    #expect(p?.macros[0].id == 7)
-    #expect(p?.macros[0].steps == [
+    let p = try decodeKeymapPayload(bytes.span)
+    #expect(p.macros.count == 1)
+    #expect(p.macros[0].id == 7)
+    #expect(p.macros[0].steps == [
         .keystroke(mods: Modifier.leftShift.rawValue, key: KeyCode.b.rawValue, holdMs: 300),
         .text("x", msPerChar: 10),
         .delay(ms: 500),
@@ -204,10 +220,9 @@ private func sampleMacroPayload() -> [UInt8] {
     let full = sampleMacroPayload()
     for cut in 1..<full.count {
         let short = Array(full[0..<cut])
-        let p = short.withUnsafeBufferPointer {
-            decodeKeymapPayload($0.baseAddress!, count: short.count)
+        #expect(throws: KeymapDecodeError.self, "macro prefix of length \(cut) should have been rejected") {
+            _ = try decodeKeymapPayload(short.span)
         }
-        #expect(p == nil, "macro prefix of length \(cut) should have been rejected")
     }
 }
 
@@ -229,10 +244,7 @@ private func sampleMacroPayload() -> [UInt8] {
     b += [0x05, 2, 4, 0]
     b += [0x05, 1, 0, 0]
 
-    let p = b.withUnsafeBufferPointer {
-        decodeKeymapPayload($0.baseAddress!, count: b.count)
-    }
-    #expect(p == nil)
+    #expect(throws: KeymapDecodeError.badMacro) { _ = try decodeKeymapPayload(b.span) }
 }
 
 @Test func repeatBlockBodyLengthMismatchIsRejected() {
@@ -251,10 +263,7 @@ private func sampleMacroPayload() -> [UInt8] {
     b += [1]           // stepCount=1
     b += [0x05, 1, 2, 0]   // repeatBlock: count=1, bodyLength=2 (claimed, too small)
     b += [0x02, 20, 0]     // body's actual content: one delay step, 3 bytes
-    let p = b.withUnsafeBufferPointer {
-        decodeKeymapPayload($0.baseAddress!, count: b.count)
-    }
-    #expect(p == nil)
+    #expect(throws: KeymapDecodeError.badMacro) { _ = try decodeKeymapPayload(b.span) }
 }
 
 // MARK: - Compiled-in default keymap (generate_default_keymap.sh)
@@ -265,13 +274,9 @@ private func sampleMacroPayload() -> [UInt8] {
 // independent encoder for the exact format `decodeKeymapPayload` above
 // reads, and nothing but this test keeps the two honest with each other.
 
-@Test func compiledDefaultKeymapRoundTrips() {
+@Test func compiledDefaultKeymapRoundTrips() throws {
     let bytes = defaultKeymapBytes
-    let payload = bytes.withUnsafeBufferPointer {
-        decodeKeymapPayload($0.baseAddress!, count: bytes.count)
-    }
-    #expect(payload != nil)
-    guard let payload else { return }
+    let payload = try decodeKeymapPayload(bytes.span)
 
     // Matches ~/esp/SMK/keymap.json's "matrix" object -- the smk_kbd
     // board's GPIO map (5 rows, 12 cols, COL2ROW).

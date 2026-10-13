@@ -44,11 +44,7 @@
 // `Config(payload:)` in app_main_swift below -- one artifact, so the matrix
 // and the layers cannot disagree about how many rows and columns exist.
 func loadCompiledDefaultKeymap(into engine: inout LayerEngine) {
-    defaultKeymapBytes.withUnsafeBufferPointer { ptr in
-        if let base = ptr.baseAddress {
-            engine.loadKeymap(binary: base, count: ptr.count)
-        }
-    }
+    engine.loadKeymap(defaultKeymapBytes.span)
 }
 
 // Applies the layer effects `MacroPlayer.tick()` handed back for a `.layer`
@@ -119,17 +115,14 @@ func app_main_swift() {
     // re-map GPIO would let a configurator bug leave a board unable to scan
     // even the keys needed to recover. A stored keymap contributes layers
     // and macros only (see the store path further down).
-    let cfg: Config = defaultKeymapBytes.withUnsafeBufferPointer { ptr in
-        guard let base = ptr.baseAddress,
-              let payload = decodeKeymapPayload(base, count: ptr.count) else {
-            // Unreachable short of a generator bug -- these bytes are
-            // compiled in, not read from storage. Returning an empty Config
-            // makes the check below fail loudly rather than scanning
-            // undefined pins.
-            kb_log("Critical Error: compiled-in keymap payload did not decode")
-            return Config()
-        }
-        return Config(payload: payload)
+    let cfg: Config
+    do { cfg = Config(payload: try decodeKeymapPayload(defaultKeymapBytes.span)) }
+    catch {
+        // Unreachable short of a generator bug -- these bytes are compiled
+        // in, not read from storage. An empty Config makes the check below
+        // fail loudly rather than scanning undefined pins.
+        kb_log("Critical Error: compiled-in keymap payload did not decode")
+        cfg = Config()
     }
     if cfg.rowPins.isEmpty || cfg.colPins.isEmpty {
         // KNOWN CONSEQUENCE, deliberately preserved rather than fixed here:
@@ -233,11 +226,11 @@ func app_main_swift() {
     // the old "+1 for the null terminator" no longer applies; kept as
     // slack above smkKeymapMaxLen regardless.
     let keymapBufSize = 4096
-    var keymapBuf = [Int8](repeating: 0, count: keymapBufSize)
+    var keymapBuf = [UInt8](repeating: 0, count: keymapBufSize)
     var loadedFromStore = false
     // Declared outside the `if !resetHeld` block: smk_keymap_load's return
-    // is also the exact payload byte count `loadKeymap(binary:count:)`
-    // below needs, not just a load/no-load flag.
+    // is also the exact payload byte count `loadKeymap(_:)`'s span below
+    // needs, not just a load/no-load flag.
     var storedLen: Int32 = -1
     if !resetHeld {
         storedLen = keymapBuf.withUnsafeMutableBufferPointer { ptr -> Int32 in
@@ -256,18 +249,12 @@ func app_main_swift() {
         // validated version-2 binary payload -- decode it as one, not as
         // a JSON C string (the two used to be the same null-terminated
         // buffer by coincidence; they have not been since the frame
-        // format moved to binary). Pass storedLen, the real payload byte
-        // count, not keymapBufSize/ptr.count (the buffer's capacity) --
-        // decodeKeymapPayload's bounds checks are strict by design, and a
-        // count longer than the actual payload makes it reject good data
-        // instead of accepting garbage.
-        keymapBuf.withUnsafeBufferPointer { ptr in
-            if let base = ptr.baseAddress {
-                base.withMemoryRebound(to: UInt8.self, capacity: Int(storedLen)) { bytes in
-                    engine.loadKeymap(binary: bytes, count: Int(storedLen))
-                }
-            }
-        }
+        // format moved to binary). Span storedLen, the real payload byte
+        // count, not keymapBufSize (the buffer's capacity) --
+        // decodeKeymapPayload refuses trailing bytes by design, so a span
+        // longer than the actual payload makes it reject good data instead
+        // of accepting garbage.
+        engine.loadKeymap(keymapBuf.span.extracting(0..<Int(storedLen)))
         if engine.keymaps.isEmpty {
             kb_log("Stored keymap invalid, falling back to compiled default")
             loadCompiledDefaultKeymap(into: &engine)

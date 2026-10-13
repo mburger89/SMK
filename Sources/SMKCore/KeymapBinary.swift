@@ -150,22 +150,45 @@ private enum MacroStepOpcode: UInt8 {
     case repeatBlock = 0x05
 }
 
+/// Why a payload was refused. The caller treats every case the same way
+/// (keep the previous / compiled-in keymap); the cases exist so tests can
+/// pin *which* guard fired.
+enum KeymapDecodeError: Error, Equatable {
+    /// A declared length runs past the end of the bytes.
+    case truncated
+    /// `rowCount * colCount` exceeds `smkMaxMatrixPositions`, the number of
+    /// keys `KeyBitset` can hold.
+    case matrixTooLarge
+    /// `layerCount > 0` over a 0x0 matrix -- see the guard's comment below.
+    case layersWithoutMatrix
+    /// A macro entry or step that is truncated, has an unknown opcode, nests
+    /// a repeat block, or whose repeat body doesn't match its bodyLength.
+    case badMacro
+    /// Bytes left over after everything the header declared.
+    case trailingBytes
+}
+
 /// Decodes a full binary keymap payload: the 6-byte header, the matrix's
 /// `rows`/`cols` GPIO arrays, `layerCount` layers of two-byte cells, and
-/// `macroCount` macro entries -- or `nil` if any of it doesn't fit.
+/// `macroCount` macro entries -- or throws if any of it doesn't fit.
 ///
 /// Binary loses the bounds checking JSON parsing gave for free, so every
 /// field is validated against the bytes actually remaining *before* it is
 /// read -- header, then rows+cols, then the computed layer region, then
 /// each macro's declared name length and step count -- never indexed first
-/// and checked after. Sizes are computed in `Int` throughout (each header
+/// and checked after. `Span`'s subscript is itself bounds-checked, but an
+/// out-of-range index *traps* (a hard fault on device), so these guards are
+/// still what turn a truncated stored keymap into a thrown error the caller
+/// can fall back from (pinned by everyPrefixOfAValidPayloadThrowsInsteadOfTrapping).
+/// Sizes are computed in `Int` throughout (each header
 /// byte is widened with `Int(...)` immediately on read), never left as
 /// `UInt8`/`UInt16` arithmetic, so a corrupt header claiming e.g. 200 rows
 /// and 200 columns cannot overflow into a small number that then slips
 /// past a bounds check -- it is instead rejected by the plain `Int`
 /// comparison against how many bytes are actually present.
-func decodeKeymapPayload(_ bytes: UnsafePointer<UInt8>?, count: Int) -> KeymapPayload? {
-    guard let bytes = bytes, count >= 6 else { return nil }
+func decodeKeymapPayload(_ bytes: Span<UInt8>) throws(KeymapDecodeError) -> KeymapPayload {
+    let count = bytes.count
+    guard count >= 6 else { throw .truncated }
 
     let rowCount = Int(bytes[0])
     let colCount = Int(bytes[1])
@@ -174,28 +197,36 @@ func decodeKeymapPayload(_ bytes: UnsafePointer<UInt8>?, count: Int) -> KeymapPa
     let macroCount = Int(bytes[4])
     // bytes[5] is reserved.
 
-    var offset = 6
-    guard offset + rowCount + colCount <= count else { return nil }
+    // KeyBitset (scan, debounce, event processing) holds exactly
+    // smkMaxMatrixPositions keys; a larger matrix would index past it.
+    guard rowCount * colCount <= smkMaxMatrixPositions else { throw .matrixTooLarge }
 
-    let rows = Array(UnsafeBufferPointer(start: bytes + offset, count: rowCount))
+    var offset = 6
+    guard offset + rowCount + colCount <= count else { throw .truncated }
+
+    var rows: [UInt8] = []
+    rows.reserveCapacity(rowCount)
+    for i in 0..<rowCount { rows.append(bytes[offset + i]) }
     offset += rowCount
-    let cols = Array(UnsafeBufferPointer(start: bytes + offset, count: colCount))
+    var cols: [UInt8] = []
+    cols.reserveCapacity(colCount)
+    for i in 0..<colCount { cols.append(bytes[offset + i]) }
     offset += colCount
 
     // `layerRegionBytes` is 0 whenever rowCount or colCount is 0, regardless
     // of layerCount -- so without this guard a header claiming e.g. 200
     // layers of a 0x0 matrix would pass the size check below (0 <= count)
     // and decode into 200 layers that are each an empty array of empty
-    // rows. `LayerEngine.loadKeymap(binary:)`'s own `!layers.isEmpty` check
+    // rows. `LayerEngine.loadKeymap(_:)`'s own `!layers.isEmpty` check
     // is true for that (the outer array has 200 elements), so it would
     // replace a working keymap with one where every cell resolves to
     // `.none` -- a six-byte payload permanently blanking the keyboard,
     // recoverable only via the reset-held boot path. A declared layer with
     // no rows or columns is never valid, so refuse it here instead.
-    guard layerCount == 0 || (rowCount > 0 && colCount > 0) else { return nil }
+    guard layerCount == 0 || (rowCount > 0 && colCount > 0) else { throw .layersWithoutMatrix }
 
     let layerRegionBytes = layerCount * rowCount * colCount * 2
-    guard offset + layerRegionBytes <= count else { return nil }
+    guard offset + layerRegionBytes <= count else { throw .truncated }
 
     var layers: [[[KeyAction]]] = []
     layers.reserveCapacity(layerCount)
@@ -217,8 +248,7 @@ func decodeKeymapPayload(_ bytes: UnsafePointer<UInt8>?, count: Int) -> KeymapPa
     var macros: [MacroDefinition] = []
     macros.reserveCapacity(macroCount)
     for _ in 0..<macroCount {
-        guard let macro = decodeMacroEntry(bytes, &offset, count) else { return nil }
-        macros.append(macro)
+        macros.append(try decodeMacroEntry(bytes, &offset))
     }
 
     // Every length in this format is validated against bytes remaining
@@ -229,7 +259,7 @@ func decodeKeymapPayload(_ bytes: UnsafePointer<UInt8>?, count: Int) -> KeymapPa
     // `guard offset == bodyEnd` below). Trailing garbage past what the
     // declared counts account for is a format error, not something to
     // silently ignore.
-    guard offset == count else { return nil }
+    guard offset == count else { throw .trailingBytes }
 
     return KeymapPayload(rows: rows, cols: cols, colsAreDriven: colsAreDriven, layers: layers, macros: macros)
 }
@@ -239,26 +269,26 @@ func decodeKeymapPayload(_ bytes: UnsafePointer<UInt8>?, count: Int) -> KeymapPa
 /// here since `MacroDefinition` has no name field to hold it), then a
 /// length-prefixed step list. Every length is checked against the bytes
 /// remaining before anything past it is read.
-private func decodeMacroEntry(_ bytes: UnsafePointer<UInt8>, _ offset: inout Int, _ count: Int) -> MacroDefinition? {
-    guard offset + 1 <= count else { return nil }
+private func decodeMacroEntry(_ bytes: Span<UInt8>, _ offset: inout Int) throws(KeymapDecodeError) -> MacroDefinition {
+    let count = bytes.count
+    guard offset + 1 <= count else { throw .badMacro }
     let id = Int(bytes[offset])
     offset += 1
 
-    guard offset + 1 <= count else { return nil }
+    guard offset + 1 <= count else { throw .badMacro }
     let nameLen = Int(bytes[offset])
     offset += 1
-    guard offset + nameLen <= count else { return nil }
+    guard offset + nameLen <= count else { throw .badMacro }
     offset += nameLen  // Name bytes aren't retained; see comment above.
 
-    guard offset + 1 <= count else { return nil }
+    guard offset + 1 <= count else { throw .badMacro }
     let stepCount = Int(bytes[offset])
     offset += 1
 
     var steps: [MacroStep] = []
     steps.reserveCapacity(stepCount)
     for _ in 0..<stepCount {
-        guard let step = decodeMacroStep(bytes, &offset, count, allowRepeatBlock: true) else { return nil }
-        steps.append(step)
+        steps.append(try decodeMacroStep(bytes, &offset, allowRepeatBlock: true))
     }
     return MacroDefinition(id: id, steps: steps)
 }
@@ -270,16 +300,17 @@ private func decodeMacroEntry(_ bytes: UnsafePointer<UInt8>, _ offset: inout Int
 /// playback, because `MacroPlayer` uses a single loop counter, not a
 /// stack, and nesting must never reach it.
 private func decodeMacroStep(
-    _ bytes: UnsafePointer<UInt8>, _ offset: inout Int, _ count: Int, allowRepeatBlock: Bool
-) -> MacroStep? {
-    guard offset + 1 <= count else { return nil }
-    guard let opcode = MacroStepOpcode(rawValue: bytes[offset]) else { return nil }
+    _ bytes: Span<UInt8>, _ offset: inout Int, allowRepeatBlock: Bool
+) throws(KeymapDecodeError) -> MacroStep {
+    let count = bytes.count
+    guard offset + 1 <= count else { throw .badMacro }
+    guard let opcode = MacroStepOpcode(rawValue: bytes[offset]) else { throw .badMacro }
     offset += 1
 
     switch opcode {
     case .keystroke:
         // opcode(1) + mods(1) + keycode(1) + holdMs(2 LE) -- already consumed opcode.
-        guard offset + 4 <= count else { return nil }
+        guard offset + 4 <= count else { throw .badMacro }
         let mods = bytes[offset]
         let key = bytes[offset + 1]
         let holdMs = Int(bytes[offset + 2]) | (Int(bytes[offset + 3]) << 8)
@@ -288,7 +319,7 @@ private func decodeMacroStep(
 
     case .delay:
         // opcode(1) + ms(2 LE)
-        guard offset + 2 <= count else { return nil }
+        guard offset + 2 <= count else { throw .badMacro }
         let ms = Int(bytes[offset]) | (Int(bytes[offset + 1]) << 8)
         offset += 2
         return .delay(ms: ms)
@@ -302,7 +333,7 @@ private func decodeMacroStep(
         // confirmation against the configurator's actual compiler in the
         // task report -- NOT independently verified against another
         // implementation the way the modifier bit order was.
-        guard offset + 2 <= count else { return nil }
+        guard offset + 2 <= count else { throw .badMacro }
         let op = bytes[offset]
         let index = Int(bytes[offset + 1])
         offset += 2
@@ -315,12 +346,14 @@ private func decodeMacroStep(
         // refuses to save it, so this decoder reads past the byte without
         // interpreting it, rather than dropping the stride all three
         // implementations share.
-        guard offset + 3 <= count else { return nil }
+        guard offset + 3 <= count else { throw .badMacro }
         let msPerChar = Int(bytes[offset + 1])
         let length = Int(bytes[offset + 2])
         offset += 3
-        guard offset + length <= count else { return nil }
-        let text = String(decoding: UnsafeBufferPointer(start: bytes + offset, count: length), as: UTF8.self)
+        guard offset + length <= count else { throw .badMacro }
+        let text = bytes.extracting(offset..<offset + length).withUnsafeBufferPointer {
+            String(decoding: $0, as: UTF8.self)
+        }
         offset += length
         return .text(text, msPerChar: msPerChar)
 
@@ -329,18 +362,17 @@ private func decodeMacroStep(
         // bodyLength is attacker-controlled (a corrupt/malicious frame), so
         // it is validated against the bytes remaining before any nested
         // step is decoded, exactly like every other length in this format.
-        guard allowRepeatBlock else { return nil }
-        guard offset + 3 <= count else { return nil }
+        guard allowRepeatBlock else { throw .badMacro }
+        guard offset + 3 <= count else { throw .badMacro }
         let repeatCount = Int(bytes[offset])
         let bodyLength = Int(bytes[offset + 1]) | (Int(bytes[offset + 2]) << 8)
         offset += 3
-        guard offset + bodyLength <= count else { return nil }
+        guard offset + bodyLength <= count else { throw .badMacro }
         let bodyEnd = offset + bodyLength
 
         var nested: [MacroStep] = []
         while offset < bodyEnd {
-            guard let step = decodeMacroStep(bytes, &offset, count, allowRepeatBlock: false) else { return nil }
-            nested.append(step)
+            nested.append(try decodeMacroStep(bytes, &offset, allowRepeatBlock: false))
         }
         // A nested step's own fields are always bounds-checked against the
         // real buffer (`count`), so overrunning bodyEnd is never a memory
@@ -348,7 +380,7 @@ private func decodeMacroStep(
         // bodyLength means the body doesn't parse as a clean sequence of
         // steps, which is refused as a format error rather than silently
         // accepted with a mismatched length.
-        guard offset == bodyEnd else { return nil }
+        guard offset == bodyEnd else { throw .badMacro }
         return .repeatBlock(count: repeatCount, steps: nested)
     }
 }

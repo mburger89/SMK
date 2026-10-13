@@ -5,9 +5,7 @@ import Testing
     let bytes = payloadBytes(rows: [0, 1, 2], cols: [3, 4], colsAreDriven: true,
                              layers: [[["key:a", "key:b"], ["key:c", "key:d"],
                                        ["key:e", "key:f"]]])
-    let payload = try #require(bytes.withUnsafeBufferPointer {
-        decodeKeymapPayload($0.baseAddress, count: $0.count)
-    })
+    let payload = try decodeKeymapPayload(bytes.span)
     let cfg = Config(payload: payload)
     #expect(cfg.rowPins == [0, 1, 2])
     #expect(cfg.colPins == [3, 4])
@@ -19,9 +17,7 @@ import Testing
     // board, so its payload is a bare header. app_main_swift's
     // rowPins.isEmpty check is what acts on it.
     let bytes: [UInt8] = [0, 0, 0, 0, 0, 0]
-    let payload = try #require(bytes.withUnsafeBufferPointer {
-        decodeKeymapPayload($0.baseAddress, count: $0.count)
-    })
+    let payload = try decodeKeymapPayload(bytes.span)
     let cfg = Config(payload: payload)
     #expect(cfg.rowPins.isEmpty)
     #expect(cfg.colPins.isEmpty)

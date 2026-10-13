@@ -83,15 +83,16 @@ struct LayerEngine {
 
     private(set) var keymaps: [[[KeyAction]]] = []
     /// Macros decoded from the version-2 binary payload by
-    /// `loadKeymap(binary:count:)`, the only keymap loader there is since
+    /// `loadKeymap(_:)`, the only keymap loader there is since
     /// cJSON was retired.
     private(set) var macros: [MacroDefinition] = []
 
     // Loads a keymap from a version-2 binary payload -- the bytes
     // immediately following the 11-byte frame header, once
     // `smkKeymapFrameValidate` has already confirmed the frame's magic,
-    // version, length and CRC. `bytes` must point to at least `count`
-    // readable bytes. See KeymapBinary.swift and
+    // version, length and CRC. `bytes` must span exactly the payload, not
+    // the buffer it sits in: the decoder refuses trailing bytes. See
+    // KeymapBinary.swift and
     // docs/superpowers/specs/2026-08-21-binary-keymap-format-design.md for
     // the payload layout this decodes.
     //
@@ -100,8 +101,9 @@ struct LayerEngine {
     // compiled-in default) keymap with nothing. `macros` is always replaced
     // with whatever decoded, including an empty list -- a keymap legitimately
     // can have zero macros, unlike zero layers.
-    mutating func loadKeymap(binary bytes: UnsafePointer<UInt8>, count: Int) {
-        guard let payload = decodeKeymapPayload(bytes, count: count) else {
+    mutating func loadKeymap(_ bytes: Span<UInt8>) {
+        let payload: KeymapPayload
+        do { payload = try decodeKeymapPayload(bytes) } catch {
             kb_log("Binary keymap payload invalid")
             return
         }

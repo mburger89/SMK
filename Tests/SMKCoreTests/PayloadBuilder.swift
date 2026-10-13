@@ -69,9 +69,7 @@ extension LayerEngine {
             cols: cols ?? Array(0..<UInt8(colCount)),
             colsAreDriven: colsAreDriven,
             layers: layers)
-        bytes.withUnsafeBufferPointer {
-            if let base = $0.baseAddress { loadKeymap(binary: base, count: $0.count) }
-        }
+        loadKeymap(bytes.span)
     }
 }
 

@@ -137,9 +137,7 @@ private func frame(payload: [UInt8], version: UInt8) -> [UInt8] {
 @Test func engineLoadsActionsFromBinary() {
     var engine = LayerEngine()
     let payload = samplePayload(layerCount: 1)
-    payload.withUnsafeBufferPointer {
-        engine.loadKeymap(binary: $0.baseAddress!, count: payload.count)
-    }
+    engine.loadKeymap(payload.span)
     #expect(engine.getAction(row: 0, col: 0) == .key(.a))
     // Not .transparent, as the brief's sketch guessed: getAction's existing,
     // already-tested contract (see layerEngineTransparentFallsThroughToLowerActiveLayer
