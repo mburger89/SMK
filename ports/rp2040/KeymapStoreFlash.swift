@@ -67,6 +67,9 @@ private func flashOffset() -> UInt32 {
     smk_pico_flash_size_bytes() - UInt32(flashSectorSize)
 }
 
+// Stays a heap array, unlike ESP32-C6's InlineArray stage: it is allocated
+// once, on the first upload, never per report, and 4 KB of .bss would put
+// every RP2040-family board far past the +2 % static-RAM budget.
 private var stage = [UInt8](repeating: 0, count: smkKeymapFrameLen)
 private var stageTotalLen: UInt16 = 0
 

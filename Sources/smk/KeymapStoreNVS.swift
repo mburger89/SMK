@@ -23,7 +23,7 @@
 // hand-written @_extern(c, ...) declarations or mirrored enum values needed.
 private let espOk: Int32 = 0 // ESP_OK
 
-private var stage = [UInt8](repeating: 0, count: smkKeymapFrameLen)
+private var stage = InlineArray<4096, UInt8>(repeating: 0) // smkKeymapFrameLen
 private var stageTotalLen: UInt16 = 0
 
 func smk_keymap_load(_ buf: UnsafeMutablePointer<UInt8>, _ bufSize: UInt32) -> Int32 {
@@ -31,6 +31,8 @@ func smk_keymap_load(_ buf: UnsafeMutablePointer<UInt8>, _ bufSize: UInt32) -> I
     guard nvs_open("smk_kmap", NVS_READONLY, &handle) == espOk else { return -1 }
     defer { nvs_close(handle) }
 
+    // Stays a heap array: a 4 KB InlineArray here would land on the main
+    // task's 8 KB stack, and this runs once at boot, never per report.
     var frame = [UInt8](repeating: 0, count: smkKeymapFrameLen)
     var frameLen = smkKeymapFrameLen
     guard frame.withUnsafeMutableBufferPointer({ nvs_get_blob(handle, "frame", $0.baseAddress, &frameLen) }) == espOk else {
@@ -77,6 +79,6 @@ func smk_keymap_commit(_ crc32: UInt32) -> Int32 {
     guard nvs_open("smk_kmap", NVS_READWRITE, &handle) == espOk else { return -1 }
     defer { nvs_close(handle) }
     let writeLen = 11 + Int(stageTotalLen)
-    guard stage.withUnsafeBufferPointer({ nvs_set_blob(handle, "frame", $0.baseAddress!, writeLen) }) == espOk else { return -1 }
+    guard stage.span.withUnsafeBufferPointer({ nvs_set_blob(handle, "frame", $0.baseAddress!, writeLen) }) == espOk else { return -1 }
     return (nvs_commit(handle) == espOk) ? 0 : -1
 }

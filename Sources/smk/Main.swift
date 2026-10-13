@@ -224,7 +224,9 @@ func app_main_swift() {
     // SMK_KEYMAP_MAX_LEN (4085) -- the buffer now holds a raw binary
     // (frame version 2) payload, not a null-terminated JSON C string, so
     // the old "+1 for the null terminator" no longer applies; kept as
-    // slack above smkKeymapMaxLen regardless.
+    // slack above smkKeymapMaxLen regardless. Stays a heap array: it is
+    // filled once at boot, never per report, and 4 KB is too much to put
+    // on the smaller ports' main stacks.
     let keymapBufSize = 4096
     var keymapBuf = [UInt8](repeating: 0, count: keymapBufSize)
     var loadedFromStore = false
